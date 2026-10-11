@@ -191,6 +191,7 @@ struct RootView: View {
         // its next stage guard, then the account's file goes dormant.
         container.syncController.deactivate()
         container.navigation.path = []
+        container.navigation.resetTapRequests()
         boundUserID = nil
         // A stale bind error must never leak into a later sign-in: the error
         // branch's sign-out is the only escape from a failed bind, and the

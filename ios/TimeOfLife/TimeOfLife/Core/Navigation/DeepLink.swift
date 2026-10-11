@@ -10,6 +10,10 @@ import LifioLiveActivityCore
 enum DeepLink: Equatable {
     /// Select the Track tab (the running timer lives there).
     case track
+    /// Select the Track tab AND stop the running timer (Island-Stop link —
+    /// fix-terminated-stop-saved-face Spike D). Parsed only from the shared
+    /// stop URL; anything else matching scheme/host stays plain `.track`.
+    case stopTimer
 
     /// Parses an incoming URL, or nil when it is not a known link
     /// (unknown links are ignored — never routed, never crashed on).
@@ -17,6 +21,13 @@ enum DeepLink: Equatable {
         guard url.scheme == LiveActivityDeepLink.trackScheme,
               url.host == LiveActivityDeepLink.trackHost
         else { return nil }
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        if items.contains(where: {
+            $0.name == LiveActivityDeepLink.stopQueryKey
+                && $0.value == LiveActivityDeepLink.stopQueryValue
+        }) {
+            return .stopTimer
+        }
         return .track
     }
 }

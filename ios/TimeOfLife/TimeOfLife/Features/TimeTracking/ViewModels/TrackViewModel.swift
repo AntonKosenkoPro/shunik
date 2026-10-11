@@ -48,10 +48,16 @@ final class TrackViewModel: ObservableObject {
     /// reload and the sync-exit reload race on every first-sync landing.
     /// `needsReload` starts true so the first appear loads; `invalidate()`
     /// marks the snapshot stale and the next `loadIfNeeded()` reloads it.
-    /// A call arriving mid-load keeps `needsReload` set so the next appear
-    /// retries (HistoryViewModel precedent).
-    private var isLoading = false
+    /// A call arriving mid-load awaits `inFlightLoad` (see `loadIfNeeded`).
+    private var inFlightLoad: Task<Void, Never>?
     private var needsReload = true
+    /// Test hook (nil in production): awaited while `.saving`, before the
+    /// save — lets tests hold the save window open and interleave a `load()`
+    /// or a chip tap deterministically. Debug-only so no Release caller can
+    /// ever suspend a stop mid-save; never set outside tests.
+#if DEBUG
+    var stopGate: (@Sendable () async -> Void)?
+#endif
 
     init(
         service: TimerService,
@@ -89,26 +95,31 @@ final class TrackViewModel: ObservableObject {
             categories = Dictionary(uniqueKeysWithValues: try await service.store.categories().map { ($0.id, $0) })
             let persisted = try await service.runningTimerDraft()
             if let persisted, !persisted.activityText.isEmpty {
-                let startedAt = persisted.startedAt ?? Date()
-                state = .running(
-                    TrackState.Draft(
+                // An in-flight save owns `.saving`: reviving over it would
+                // clobber the state back to `.running` and start a ticker no
+                // later transition stops (ticking digits on an idle screen).
+                if !state.isSaving {
+                    let startedAt = persisted.startedAt ?? Date()
+                    state = .running(
+                        TrackState.Draft(
+                            text: persisted.activityText,
+                            categoryIDs: persisted.categoryIDs,
+                            notes: persisted.notes
+                        ),
+                        startedAt: startedAt
+                    )
+                    nameDraft = persisted.activityText
+                    startTicker(from: startedAt)
+                    // Revived runs never pass through beginRunning, so no
+                    // Live Activity would exist for them (cold start, upgrade
+                    // install, relaunch) — re-mirror here. Singleton-guarded:
+                    // an already-live activity is a no-op.
+                    await service.refreshLiveActivity(
                         text: persisted.activityText,
                         categoryIDs: persisted.categoryIDs,
-                        notes: persisted.notes
-                    ),
-                    startedAt: startedAt
-                )
-                nameDraft = persisted.activityText
-                startTicker(from: startedAt)
-                // Revived runs never pass through beginRunning, so no
-                // Live Activity would exist for them (cold start, upgrade
-                // install, relaunch) — re-mirror here. Singleton-guarded:
-                // an already-live activity is a no-op.
-                await service.refreshLiveActivity(
-                    text: persisted.activityText,
-                    categoryIDs: persisted.categoryIDs,
-                    startedAt: startedAt
-                )
+                        startedAt: startedAt
+                    )
+                }
             } else if case let .running(draft, _) = state {
                 await reconcileExternalStop(draft: draft)
             }
@@ -118,15 +129,32 @@ final class TrackViewModel: ObservableObject {
     }
 
     /// Reloads only when the snapshot is stale or was never loaded.
-    /// Re-entrancy safe: never runs two loads concurrently; a call arriving
-    /// mid-load keeps `needsReload` set so the next appear retries
-    /// (HistoryViewModel precedent).
+    /// Re-entrancy safe: never runs two loads concurrently. A call arriving
+    /// mid-load awaits the in-flight load's task value instead of returning
+    /// with an unloaded snapshot — callers awaiting this expect loaded state
+    /// afterwards (fix-terminated-stop-saved-face Spike D: the cold-open
+    /// island-stop bump lands while the first appear load still runs; an
+    /// early return lets the sequenced `stop()` no-op on `.idle` while the
+    /// late load repaints Running). Awaiting `Task<Void, Never>.value` is
+    /// precise (no polling), never throws, and does not inherit caller
+    /// cancellation — the load-then-stop sequencing holds even if the
+    /// waiter was cancelled (e.g. sign-out teardown mid cold-open load).
     func loadIfNeeded() async {
-        guard needsReload, !isLoading else { return }
+        if let inFlightLoad {
+            await inFlightLoad.value
+        }
+        guard needsReload else { return }
         needsReload = false
-        isLoading = true
-        defer { isLoading = false }
-        await load()
+        let load = Task { await self.load() }
+        inFlightLoad = load
+        await load.value
+        // Deliberately NOT cleared: resumption order after `load.value` is
+        // unspecified, and nulling here can discard a NEWER in-flight load
+        // installed by another waiter's mid-load resumption (an `invalidate()`
+        // landing between its claim and this resumption) — breaking the
+        // single-load invariant. Awaiting a completed task's `.value`
+        // returns immediately, so a stale handle is harmless and is
+        // overwritten at the next claim.
     }
 
     /// Marks the snapshot stale so the next `loadIfNeeded` reloads it.
@@ -205,9 +233,11 @@ final class TrackViewModel: ObservableObject {
 
     /// Selects a recents chip: fills the exact text plus that recent's full
     /// ordered categories without starting timing and without creating
-    /// anything.
+    /// anything. Ignored while saving (like `syncReadyFromDraft`): a
+    /// mid-save tap must not flip to `.ready`, or the completing `stop()`
+    /// no-ops and the run is never saved.
     func select(_ recent: ExactName) {
-        guard !state.isRunning else { return }
+        guard !state.isRunning, !state.isSaving else { return }
         nameDraft = recent.text
         state = .ready(TrackState.Draft(text: recent.text, categoryIDs: recent.categoryIDs))
         elapsed = 0
@@ -323,6 +353,9 @@ final class TrackViewModel: ObservableObject {
         guard case let .running(draft, startedAt) = state else { return }
         state = .saving(draft, startedAt: startedAt)
         stopTicker()
+#if DEBUG
+        if let stopGate { await stopGate() }
+#endif
         do {
             try await service.stopTimerDraft(
                 text: draft.text,
@@ -331,6 +364,10 @@ final class TrackViewModel: ObservableObject {
                 endedAt: Date(),
                 notes: draft.notes
             )
+            // A concurrent revive may have restarted the ticker mid-save
+            // (pre-revive-guard histories); it owns nothing now — kill it so
+            // the saved confirmation (and the ready state after it) freezes.
+            stopTicker()
             let duration = max(0, Date().timeIntervalSince(startedAt))
             state = .saved(draft, duration: duration)
             elapsed = duration

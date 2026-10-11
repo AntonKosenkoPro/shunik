@@ -75,10 +75,30 @@ struct AppShellView: View {
             Task { await vm.load() }
         }
         // Live Activity tap: a bumped counter selects Track without
-        // disturbing per-tab push state. `dropFirst` skips the initial
-        // value (no request has arrived yet).
-        .onReceive(navigation.$trackRequestID.dropFirst()) { _ in
+        // disturbing per-tab push state. `filter { $0 > 0 }` (not
+        // `dropFirst`): on a terminated cold open `onOpenURL` bumps the
+        // counter BEFORE the shell subscribes, and `$trackRequestID`
+        // replays its current value on subscribe — `dropFirst` would drop
+        // that replay and lose the tap. Filtering out only the resting 0
+        // keeps normal launches quiet while cold opens still fire.
+        .onReceive(navigation.$trackRequestID.filter { $0 > 0 }) { _ in
             vm.selectedTab = .track
+        }
+        // Island-Stop link (fix-terminated-stop-saved-face Spike D): the
+        // widget cannot stop anything with the app dead, so opening the app
+        // IS the stop — select Track, reload (orders the cold-open case:
+        // the draft lands before the stop reads it), then stop through the
+        // exact in-app path. No running draft → `stop()` no-ops gracefully.
+        // `filter { $0 > 0 }` (not `dropFirst`): see the track observer
+        // above — `dropFirst` loses a terminated cold open because the bump
+        // happens before this subscription exists (device finding: first
+        // Island tap only opened the app, second tap stopped).
+        .onReceive(navigation.$islandStopRequestID.filter { $0 > 0 }) { _ in
+            vm.selectedTab = .track
+            Task {
+                await reloadTrack()
+                await trackVM.stop()
+            }
         }
         // A sync cycle merges relay state into LocalStore behind Track: the
         // first-sync pull lands after the shell mounts, so reload on exit
