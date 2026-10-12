@@ -12,7 +12,7 @@
 | S4    | Entire app should be able to run locally and in a cloud                                                                                                                 |         |
 | S5    | Source code should be minimal and standardized, following modern best practices. Every iteration should include a revision process that preserves this requirement.      |         |
 | S6    | Code linters and analyzers should enforce code quality.                                                                                                                  |         |
-| S6    | Tests and linters should run on every GitHub pull request as mandatory checks.                                                                                           |         |
+| S6    | Tests and linters should run on every pull request as mandatory checks (provider-neutral: GitHub Actions or Xcode Cloud status checks).                       |         |
 | S7    | `AGENTS.md` should provide an effective entrypoint to all necessary information and context for AI agents.                                                               | ✅ `AGENTS.md` (concise entrypoint) + `docs/project-context.md` (canonical context) + `openspec/README.md` |
 | S8    | There should be logging across all parts of the system                                                                                                                  |         |
 | S9    | There should be Figma-compatible Design Tokens to store all suitable design variable                                                                                    |         |
