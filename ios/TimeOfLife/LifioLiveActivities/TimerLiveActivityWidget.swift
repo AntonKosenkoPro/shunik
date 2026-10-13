@@ -31,28 +31,24 @@ struct TimerLiveActivityWidget: Widget {
             if let saved = context.state.savedDurationSeconds {
                 savedBanner(duration: TimerClock.formatted(saved))
             } else {
-                runningBanner(
+                RunningBannerFace(
                     text: context.attributes.entryText,
                     iconSymbol: context.attributes.iconSymbol,
-                    startedAt: context.state.startedAt
+                    startedAt: context.state.startedAt,
+                    trackURL: trackURL,
+                    trackStopURL: trackStopURL
                 )
             }
         } dynamicIsland: { context in
             DynamicIsland {
-                // Layout (device finding): timer top-left, Stop top-right,
-                // name full-width along the bottom for longer texts. No
-                // visible Go-to control — tapping anywhere outside Stop
-                // navigates via widgetURL.
+                // Layout: big borderless timer top-left, Stop top-right,
+                // name + icon category chips stacked full-width along the
+                // bottom. No visible Go-to control — tapping anywhere
+                // outside Stop navigates via widgetURL.
                 DynamicIslandExpandedRegion(.leading) {
                     expandedTimer(context: context)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 4)
-                        // Hugging capsule, restored after the debug-blue
-                        // removal took the border with it: subtle white —
-                        // the island is always black (see LiveActivityTheme).
-                        .overlay(Capsule().stroke(LiveActivityTheme.timerBorder, lineWidth: 1))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
                         .widgetURL(trackURL)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
@@ -79,12 +75,15 @@ struct TimerLiveActivityWidget: Widget {
                     .widgetURL(trackURL)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    HStack(spacing: 8) {
-                        Image(systemName: context.attributes.iconSymbol)
+                    VStack(alignment: .leading, spacing: 6) {
                         Text(context.attributes.entryText)
                             .font(.headline)
-                            .lineLimit(2)
+                            .lineLimit(1)
+                        if !context.state.categoryChips.isEmpty {
+                            categoryChips(chips: context.state.categoryChips)
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     // Same trailing breathing room as the timer above —
                     // keeps long names clear of the island's curve.
                     .padding(.horizontal, 8)
@@ -113,58 +112,6 @@ struct TimerLiveActivityWidget: Widget {
     }
 
     // MARK: - Lock Screen banner
-
-    // Banner: icon + name + live ticking timer + Stop. No luminance
-    // branch, no accent wrappers: the AoD blank was a device setting
-    // (Face ID & Passcode → Allow Access When Locked → Live Activities),
-    // not rendering — the system dims the live timer itself, like Apple's.
-    private func runningBanner(text: String, iconSymbol: String, startedAt: Date) -> some View {
-        HStack(spacing: 12) {
-            // Deep-link zone scoped to the label: the root must NOT carry
-            // widgetURL — a root URL also engages on Stop taps and demands
-            // unlock on a locked phone (device finding), fighting the
-            // alwaysAllowed intent. Body taps still go to Track.
-            // NOTE (Spike E log-proven): the outer stack must NOT combine
-            // accessibility children — `.accessibilityElement(children:
-            // .combine)` collapses both widgetURLs into one element and the
-            // label-zone track URL wins every Stop tap (log showed
-            // `lifio://track` on a Stop tap). Each zone stays its own
-            // accessible element so the Stop circle keeps its stop URL.
-            HStack(spacing: 12) {
-                Image(systemName: iconSymbol)
-                    .font(.title)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(text)
-                        .font(.headline)
-                        .lineLimit(1)
-                    Text(timerInterval: startedAt...Date.distantFuture, countsDown: false)
-                        // Subheadline monospaced: legible dimmed without
-                        // crowding the name line (device-tuned).
-                        .font(.subheadline.monospacedDigit())
-                        .lineLimit(1)
-                }
-            }
-            .widgetURL(trackURL)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(LiveActivityStrings.runningAccessibilityLabel(text: text))
-            Spacer()
-            // Spike E: a stop-URL link, not the intent button — tapping it
-            // opens the app and the app stops itself (same mechanism as the
-            // Island pill). Sibling widgetURL scoping (no root URL, no outer
-            // combine — see above). Nil URL is impossible (literal
-            // contract), but the intent button stays as the fail-safe so
-            // Stop never vanishes.
-            if let stopURL = trackStopURL {
-                LiveActivityStopCircleLink(destination: stopURL)
-            } else {
-                LiveActivityStopButton()
-            }
-        }
-        // Banner breathing room, verified on-device: 8pt vertical (flush
-        // edges otherwise) + 8pt horizontal.
-        .padding(.vertical, 8)
-        .padding(.horizontal, 8)
-    }
 
     private func savedBanner(duration: String) -> some View {
         HStack(spacing: 8) {
@@ -196,15 +143,20 @@ struct TimerLiveActivityWidget: Widget {
         .accessibilityLabel(LiveActivityStrings.runningAccessibilityLabel(text: context.attributes.entryText))
     }
     
-    /// Expanded leading timer with a dynamically hugging border: the
-    /// capsule wraps the visible digits only and grows with them
-    /// (`0:01` narrow → `1:23:45` wide). The live timer view has no
-    /// intrinsic size (it fills any proposal and collapses to zero under
-    /// fixedSize), so the size comes from a hidden static twin in the same
-    /// format (`TimerClock.liveStyle`) that the live view fills exactly —
-    /// no fixed points, so Dynamic Type stays safe. The twin freezes at
-    /// render time: a phase crossing (59→1:00) without a re-render keeps
-    /// the previous width until the next render.
+    /// Expanded leading timer, big and borderless: the hero
+    /// readout of the card. The live timer view has no intrinsic size (it
+    /// fills any proposal and collapses to zero under fixedSize), so the
+    /// size still comes from a hidden static twin in the same format
+    /// (`TimerClock.liveStyle`) that the live view fills exactly via
+    /// `overlay` (overlay content takes no part in layout) — no fixed
+    /// points, so Dynamic Type stays safe.
+    ///
+    /// Truncation fix: the twin carries one trailing figure space
+    /// (digit-width slack), so a width phase crossing (`9:59`→`10:00`,
+    /// `59:59`→`1:00:00` — always a single-digit growth) without a
+    /// re-render still fits instead of spilling into the Island curve.
+    /// `.lineLimit(1)` + `.minimumScaleFactor` is the backstop: shrink
+    /// slightly, never clip.
     private func expandedTimer(context: ActivityViewContext<TimerActivityAttributes>) -> some View {
         let totalSeconds: Int = {
             if let saved = context.state.savedDurationSeconds {
@@ -220,16 +172,46 @@ struct TimerLiveActivityWidget: Widget {
                 // layout, so the hidden twin alone sizes the capsule and
                 // the live view fills exactly that rect. (A ZStack sizes
                 // to every child including the stretchy live view, which
-                // is why the border went full-width again.)
-                Text(TimerClock.liveStyle(totalSeconds))
+                // is why the border went full-width again.) The trailing
+                // figure space is the phase-crossing slack (see above).
+                    Text(TimerClock.liveStyle(totalSeconds) + "\u{2007}")
                     .hidden()
                     .overlay(alignment: .leading) {
                         Text(timerInterval: context.state.startedAt...Date.distantFuture, countsDown: false)
                     }
             }
         }
-        .font(.subheadline.monospacedDigit())
+        .font(.title.monospacedDigit())
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
         .accessibilityLabel(LiveActivityStrings.runningAccessibilityLabel(text: context.attributes.entryText))
+    }
+
+    /// Category chip row for the expanded bottom region: validated SF
+    /// Symbol + name per chip. User data, never localized. Cap 2 chips +
+    /// `+n` overflow — never a half-clipped third chip. Subtle hairline
+    /// capsules (the island is always black).
+    private func categoryChips(chips: [LiveCategoryChip]) -> some View {
+        HStack(spacing: 6) {
+            ForEach(Array(chips.prefix(2)), id: \.self) { chip in
+                HStack(spacing: 4) {
+                    Image(systemName: chip.iconSymbol)
+                        .font(.caption2)
+                    Text(chip.name)
+                        .font(.caption2)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 0.5))
+            }
+            if chips.count > 2 {
+                Text("+\(chips.count - 2)")
+                    .font(.caption2)
+                    .foregroundStyle(Color.white.opacity(0.7))
+            }
+        }
+        .lineLimit(1)
     }
 }
 
@@ -349,4 +331,13 @@ struct LiveActivityStopLink: View {
         .opacity(isLuminanceReduced ? 0.4 : 1.0)
         .accessibilityLabel(LiveActivityStrings.stopAccessibilityLabel)
     }
+}
+
+// Widget-extension previews must go through the Widget (plain View previews
+// are "unsupported preview type" in an appex). Pick the Lock Screen banner
+// variant in the canvas to see the banner face.
+#Preview("Glass banner", as: .content, using: TimerActivityAttributes(entryText: "Glass prototype", iconSymbol: "briefcase.fill")) {
+    TimerLiveActivityWidget()
+} contentStates: {
+    TimerActivityAttributes.ContentState(startedAt: Date().addingTimeInterval(-24))
 }

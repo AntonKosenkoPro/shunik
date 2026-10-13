@@ -16,12 +16,7 @@ import UIKit
 ///   dark — the iOS system-red pair), so it tracks light/dark without an
 ///   asset lookup.
 /// - `stopForeground` mirrors `Theme.textOnAccent` (`Color.white`).
-/// - `timerBorder` is island-contextual (the expanded island is always
-///   black): white at low opacity for the hugging timer capsule. No
-///   `Theme` equivalent is mirrored — no asset-free system color matches
-///   a hairline, so the opacity value is explicit here.
 enum LiveActivityTheme {
     static let stopBackground = Color(.systemRed)
     static let stopForeground = Color.white
-    static let timerBorder = Color.white.opacity(0.3)
 }

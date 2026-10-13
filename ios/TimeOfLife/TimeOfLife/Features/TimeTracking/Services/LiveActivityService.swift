@@ -19,8 +19,10 @@ import LifioLiveActivityCore
 @MainActor
 protocol LiveActivityControlling: Sendable {
     /// Mirrors a timer start on the Island/banner. No-op when an activity
-    /// for the same exact text is already live (singleton guard).
-    func runStarted(text: String, iconSymbol: String, startedAt: Date) async
+    /// for the same exact text is already live (singleton guard) — except
+    /// that a changed chip set refreshes the live activity in
+    /// place via `update()` (mid-run retag).
+    func runStarted(text: String, iconSymbol: String, startedAt: Date, categoryChips: [LiveCategoryChip]) async
     /// Ends every live timer activity with the Saved card. No-op when
     /// none is live (idempotent — covers app/intent double stops).
     func runEnded(startedAt: Date, durationSeconds: Int) async
@@ -34,7 +36,7 @@ protocol LiveActivityControlling: Sendable {
 /// ActivityKit.
 @MainActor
 final class NoopLiveActivityController: LiveActivityControlling {
-    func runStarted(text: String, iconSymbol: String, startedAt: Date) async {}
+    func runStarted(text: String, iconSymbol: String, startedAt: Date, categoryChips: [LiveCategoryChip] = []) async {}
     func runEnded(startedAt: Date, durationSeconds: Int) async {}
     func endOrphanedActivities(knownDurationSeconds: Int?) async {}
 }
@@ -71,7 +73,7 @@ final class LiveActivityService: LiveActivityControlling {
         self.isForeground = isForeground
     }
 
-    func runStarted(text: String, iconSymbol: String, startedAt: Date) async {
+    func runStarted(text: String, iconSymbol: String, startedAt: Date, categoryChips: [LiveCategoryChip] = []) async {
         let liveCount = Activity<TimerActivityAttributes>.activities.count
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             Self.logger.info("LiveActivityService: request skipped: activities disabled")
@@ -83,12 +85,27 @@ final class LiveActivityService: LiveActivityControlling {
         }
         let live = Activity<TimerActivityAttributes>.activities
         Self.logger.info("LiveActivityService: type is \(String(describing: TimerActivityAttributes.self), privacy: .public), liveCount=\(live.count)")
-        if live.contains(where: { $0.attributes.entryText == text }) { return }
+        if let same = live.first(where: {
+            $0.attributes.entryText == text && $0.activityState == .active
+        }) {
+            // Same-text singleton: refresh the chips in place
+            // (mid-run retag) instead of re-requesting. Started-at stays
+            // as-is; identical chips skip the update (no flicker).
+            if same.content.state.categoryChips != categoryChips {
+                let refreshed = TimerActivityAttributes.ContentState(
+                    startedAt: same.content.state.startedAt,
+                    categoryChips: categoryChips
+                )
+                await same.update(.init(state: refreshed, staleDate: nil))
+                Self.logger.info("LiveActivityService: retag refresh ok")
+            }
+            return
+        }
         for activity in live {
             await activity.end(nil, dismissalPolicy: .immediate)
         }
         let attributes = TimerActivityAttributes(entryText: text, iconSymbol: iconSymbol)
-        let state = TimerActivityAttributes.ContentState(startedAt: startedAt)
+        let state = TimerActivityAttributes.ContentState(startedAt: startedAt, categoryChips: categoryChips)
         do {
             let activity = try Activity.request(
                 attributes: attributes,

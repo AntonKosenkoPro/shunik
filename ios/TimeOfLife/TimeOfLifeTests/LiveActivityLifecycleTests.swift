@@ -2,6 +2,8 @@ import Testing
 import Foundation
 @testable import TimeOfLife
 
+import LifioLiveActivityCore
+
 /// TimerService ↔ Live Activity wiring (live-activities spec: "Live
 /// Activity follows the running timer"). The fake stands in for
 /// ActivityKit; the real service's singleton guard (same-text reuse) is
@@ -23,6 +25,9 @@ struct LiveActivityLifecycleTests {
         #expect(fake.started.first?.text == "Gym")
         #expect(fake.started.first?.iconSymbol == CatalogIcon.briefcase.rawValue)
         #expect(fake.started.first?.startedAt == startedAt)
+        #expect(fake.started.first?.categoryChips == [
+            LiveCategoryChip(name: "Work", iconSymbol: CatalogIcon.briefcase.rawValue)
+        ])
         #expect(fake.ended.isEmpty)
     }
 
@@ -36,6 +41,41 @@ struct LiveActivityLifecycleTests {
         try await service.startTimerDraft(text: "Run", categoryIDs: ["gone"], startedAt: startedAt)
 
         #expect(fake.started.map(\.iconSymbol) == ["timer", "timer"])
+    }
+
+    @Test("mid-run retag re-mirrors with refreshed category chips")
+    func retagRefreshesCategoryNames() async throws {
+        let fake = FakeLiveActivities()
+        let service = makeService(liveActivities: fake)
+        try await service.store.createCategory(Category(id: "c1", name: "Work", icon: CatalogIcon.briefcase.rawValue))
+        try await service.store.createCategory(Category(id: "c2", name: "Health", icon: CatalogIcon.heart.rawValue))
+        let startedAt = Date(timeIntervalSince1970: 1_600_000_000)
+
+        try await service.startTimerDraft(text: "Gym", categoryIDs: ["c1"], startedAt: startedAt)
+        try await service.startTimerDraft(text: "Gym", categoryIDs: ["c1", "c2"], startedAt: startedAt)
+
+        #expect(fake.started.count == 2)
+        #expect(fake.started.map(\.categoryChips) == [
+            [LiveCategoryChip(name: "Work", iconSymbol: CatalogIcon.briefcase.rawValue)],
+            [
+                LiveCategoryChip(name: "Work", iconSymbol: CatalogIcon.briefcase.rawValue),
+                LiveCategoryChip(name: "Health", iconSymbol: CatalogIcon.heart.rawValue),
+            ],
+        ])
+    }
+
+    @Test("unknown category ids drop from the mirrored names")
+    func unknownCategoryIDsDropFromNames() async throws {
+        let fake = FakeLiveActivities()
+        let service = makeService(liveActivities: fake)
+        try await service.store.createCategory(Category(id: "c1", name: "Work", icon: CatalogIcon.briefcase.rawValue))
+        let startedAt = Date(timeIntervalSince1970: 1_600_000_000)
+
+        try await service.startTimerDraft(text: "Gym", categoryIDs: ["c1", "gone"], startedAt: startedAt)
+
+        #expect(fake.started.first?.categoryChips == [
+            LiveCategoryChip(name: "Work", iconSymbol: CatalogIcon.briefcase.rawValue)
+        ])
     }
 
     @Test("stop ends the activity with the saved duration")
@@ -206,6 +246,7 @@ final class FakeLiveActivities: LiveActivityControlling {
         var text: String
         var iconSymbol: String
         var startedAt: Date
+        var categoryChips: [LiveCategoryChip]
     }
 
     struct Ended: Equatable {
@@ -217,8 +258,8 @@ final class FakeLiveActivities: LiveActivityControlling {
     var ended: [Ended] = []
     var orphanEnds: [Int?] = []
 
-    func runStarted(text: String, iconSymbol: String, startedAt: Date) async {
-        started.append(Started(text: text, iconSymbol: iconSymbol, startedAt: startedAt))
+    func runStarted(text: String, iconSymbol: String, startedAt: Date, categoryChips: [LiveCategoryChip] = []) async {
+        started.append(Started(text: text, iconSymbol: iconSymbol, startedAt: startedAt, categoryChips: categoryChips))
     }
 
     func runEnded(startedAt: Date, durationSeconds: Int) async {

@@ -1,6 +1,8 @@
 import Foundation
 import UIKit
 
+import LifioLiveActivityCore
+
 /// Orchestrates the timer against the local database (local-first-store spec).
 ///
 /// The service is the single entry point for view models. It writes only to
@@ -36,7 +38,8 @@ final class TimerService: ObservableObject {
         await liveActivities.runStarted(
             text: text,
             iconSymbol: firstIconSymbol(for: categoryIDs),
-            startedAt: startedAt
+            startedAt: startedAt,
+            categoryChips: categoryChips(for: categoryIDs)
         )
         BackgroundReapScheduler.scheduleReapCheck()
     }
@@ -95,7 +98,8 @@ final class TimerService: ObservableObject {
         await liveActivities.runStarted(
             text: text,
             iconSymbol: firstIconSymbol(for: categoryIDs),
-            startedAt: startedAt
+            startedAt: startedAt,
+            categoryChips: categoryChips(for: categoryIDs)
         )
     }
     /// Ends live activities whose persisted draft is gone (stopped from
@@ -149,6 +153,22 @@ final class TimerService: ObservableObject {
         let now = Date()
         guard endedAt <= now, now.timeIntervalSince(endedAt) <= Self.reapRecencySeconds else { return nil }
         return durationSeconds
+    }
+
+    /// Ordered chips for the draft's category snapshot, in draft order;
+    /// unknown ids drop (same prune rule as stop). Icons resolve through
+    /// the validated display symbol, so the extension renders them as-is.
+    /// Feeds the expanded Island chip row.
+    private func categoryChips(for categoryIDs: [String]) async -> [LiveCategoryChip] {
+        guard let all = try? await store.categories() else { return [] }
+        let byID = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
+        return categoryIDs.compactMap { id in
+            guard let match = byID[id] else { return nil }
+            return LiveCategoryChip(
+                name: match.name,
+                iconSymbol: CatalogIcon(validated: match.icon).displaySymbol
+            )
+        }
     }
 
     /// The first-position category's display icon for the Live Activity

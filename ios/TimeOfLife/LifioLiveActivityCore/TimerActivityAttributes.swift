@@ -28,15 +28,39 @@ public struct TimerActivityAttributes: ActivityAttributes, Equatable {
 
     /// The live slice. Faces tick from `startedAt` via the system's
     /// `Text(timerInterval:)` — no per-second `update()` calls (D1).
+    /// Category chips refresh on mid-run retag via a targeted `update()`
+    /// — retag-only frequency, never a loop.
     public struct ContentState: Codable, Hashable {
         /// When the run started.
         public var startedAt: Date
         /// Final duration for the Saved end-card; nil while running.
         public var savedDurationSeconds: Int?
+        /// Ordered chips for the draft's categories at the last
+        /// start/retag; empty when the run has no categories. Names are
+        /// user data (never localized); icon symbols arrive pre-validated
+        /// from the app, so the extension never validates.
+        public var categoryChips: [LiveCategoryChip]
 
-        public init(startedAt: Date, savedDurationSeconds: Int? = nil) {
+        public init(startedAt: Date, savedDurationSeconds: Int? = nil, categoryChips: [LiveCategoryChip] = []) {
             self.startedAt = startedAt
             self.savedDurationSeconds = savedDurationSeconds
+            self.categoryChips = categoryChips
         }
+    }
+}
+
+/// One category chip for the expanded Island bottom row. Top-level (not
+/// nested) so the app, the widget, and tests all reference it bare. Lives
+/// in the shared core so both sides share one shape.
+public struct LiveCategoryChip: Codable, Hashable, Sendable {
+    /// Display name, verbatim user data.
+    public var name: String
+    /// Pre-validated SF Symbol name (`CatalogIcon.displaySymbol` at request
+    /// time).
+    public var iconSymbol: String
+
+    public init(name: String, iconSymbol: String) {
+        self.name = name
+        self.iconSymbol = iconSymbol
     }
 }
