@@ -25,7 +25,11 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://postgres:${DB_PASSWORD}@postgres:5432/timeoflife?sslmode=disable
+      # Hosted-DB split (migrate-db-to-supabase-free): a set DATABASE_URL
+      # repoints the backend at hosted Postgres (Supabase); empty keeps the
+      # VM-local Postgres composed from DB_PASSWORD. Local postgres keeps
+      # running either way so rollback is instant (retention: see change).
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:${DB_PASSWORD}@postgres:5432/timeoflife?sslmode=disable}
       JWT_SECRET: ${JWT_SECRET}
       EMAIL_BACKEND: ${EMAIL_BACKEND:-console}
       PORT: "8080"

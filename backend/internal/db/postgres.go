@@ -15,12 +15,19 @@ type PostgresStore struct {
 	pool *pgxpool.Pool
 }
 
+// hostedMaxConns bounds the pgx pool for hosted Postgres (Supabase Free,
+// migrate-db-to-supabase-free). pgx defaults are CPU-scaled and assume a
+// local database; against a hosted micro a burst turns into connection
+// churn and risks plan limits. Tuned to 4–8 by the k6 probe (task 4.2).
+const hostedMaxConns = 5
+
 // NewPostgresStore creates a new PostgresStore and connects to the database.
 func NewPostgresStore(ctx context.Context, databaseURL string) (*PostgresStore, error) {
 	config, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse database config: %w", err)
 	}
+	config.MaxConns = hostedMaxConns
 
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {

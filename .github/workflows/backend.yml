@@ -31,6 +31,7 @@ permissions:
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -89,6 +90,7 @@ jobs:
       github.event_name == 'workflow_dispatch'
     needs: [lint-and-test]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: ${{ github.event.inputs.environment || 'stage' }}
     steps:
       - uses: actions/checkout@v4
@@ -157,6 +159,13 @@ jobs:
             APPLE_CLIENT_ID=${{ secrets.APPLE_CLIENT_ID }}
             APPLE_JWKS_URL=${{ vars.APPLE_JWKS_URL }}
             TRUSTED_PROXIES=${{ vars.TRUSTED_PROXIES }}
+            # Hosted-DB split (migrate-db-to-supabase-free): empty (default)
+            # keeps the VM-local Postgres composed from DB_PASSWORD below; a
+            # set value repoints the backend at hosted Postgres (Supabase
+            # session-mode pooler). Rollback stays config-only: clear the
+            # secret and redeploy. Prefer alphanumeric-safe secrets ($ in a
+            # value breaks the sourcing step below, same as DB_PASSWORD).
+            DATABASE_URL=${{ secrets.DATABASE_URL }}
             ENVEOF
             chmod 600 .env
 
@@ -178,6 +187,22 @@ jobs:
               : "${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY required when EMAIL_BACKEND=ses}"
               : "${AWS_REGION:?AWS_REGION required when EMAIL_BACKEND=ses}"
               : "${SES_FROM:?SES_FROM required when EMAIL_BACKEND=ses}"
+            fi
+            # DATABASE_URL selects the database: empty keeps VM-local Postgres;
+            # a set value must be a TLS-only hosted URL (fail loudly otherwise).
+            if [ -n "${DATABASE_URL:-}" ]; then
+              case "$DATABASE_URL" in
+                *sslmode=require*) ;;
+                *) echo "DATABASE_URL for hosted Postgres must use sslmode=require"; exit 1 ;;
+              esac
+              # Session-scoped migration advisory lock is invalid through a
+              # transaction-mode pooler: reject port 6543 (Supabase UI surfaces
+              # it prominently) so a set-once secret mistake fails here instead
+              # of hanging boots on pg_advisory_lock. Use port 5432.
+              case "$DATABASE_URL" in
+                *:6543/*)
+                  echo "DATABASE_URL uses the transaction-mode pooler (6543), which breaks the migration advisory lock; use the session-mode pooler (5432)."; exit 1 ;;
+              esac
             fi
 
             # Use the production compose file (local .env is read from this cwd).
