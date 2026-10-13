@@ -6,3 +6,9 @@
 // https://timeoflife-api.antonkosenko.pro (the Cloudflare-fronted origin).
 EMPTY =
 API_BASE_URL = https:/$(EMPTY)/timeoflife-api.antonkosenko.pro
+
+// Sentry DSN (observability Stage 0): empty = crash reporting disabled.
+// CI overrides this on the xcodebuild command line from the SENTRY_IOS_DSN
+// secret (`xcodebuild ... SENTRY_DSN="$SENTRY_IOS_DSN"`); a build with an
+// empty DSN ships with the SDK disabled.
+SENTRY_DSN =

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/antonkosenko/time-of-life/backend/internal/config"
 	"github.com/antonkosenko/time-of-life/backend/internal/db"
@@ -40,6 +41,16 @@ func run() int {
 		"otp_expiry", cfg.OTPExpiry.String(),
 		"otp_max_attempts", cfg.OTPMaxAttempts,
 	)
+
+	// Sentry error reporting (observability Stage 0): empty SENTRY_DSN =
+	// fully disabled, zero behavior change. Init failure is non-fatal: the
+	// server continues without reporting.
+	if err := server.InitSentry(cfg.SentryDSN); err != nil {
+		slog.Error("failed to initialize sentry, continuing without error reporting", "error", err)
+	} else if server.SentryEnabled() {
+		defer server.FlushSentry(2 * time.Second)
+		slog.Info("sentry error reporting enabled")
+	}
 
 	// Create database store
 	ctx := context.Background()

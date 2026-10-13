@@ -423,3 +423,6 @@ jobs:
     uses: ./.github/workflows/ios.yml
     permissions:
       contents: read
+    # Threads Sentry secrets (dSYM upload + archive DSN; all optional in
+    # ios.yml — absent secrets skip gracefully) into the verify run.
+    secrets: inherit

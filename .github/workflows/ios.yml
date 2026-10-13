@@ -8,6 +8,23 @@ name: ios
 # explicitly). Intentional billed-minutes residue: one macOS run per release.
 on:
   workflow_call:
+    # Sentry symbolication wiring (observability Stage 0, task 3.3). All
+    # optional: when any are absent the upload step skips with a warning
+    # instead of failing. release.yml passes them via `secrets: inherit`.
+    secrets:
+      SENTRY_AUTH_TOKEN:
+        required: false
+      SENTRY_ORG:
+        required: false
+      SENTRY_PROJECT_STAGING:
+        required: false
+      SENTRY_PROJECT_RELEASE:
+        required: false
+      # iOS DSN threaded into the archive build as SENTRY_DSN (empty =
+      # SDK disabled). Absent = the archived binary simply has no DSN;
+      # dSYM upload still proceeds if its own secrets exist.
+      SENTRY_IOS_DSN:
+        required: false
 
 permissions:
   contents: read
@@ -58,3 +75,55 @@ jobs:
           xcodebuild -scheme TimeOfLife \
             -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.name }},OS=latest" \
             test | xcpretty
+
+  # Symbolication for shipped crashes (observability Stage 0, task 3.3):
+  # archives Release unsigned (no signing identity on CI runners) purely to
+  # produce dSYMs, then uploads them with sentry-cli. dSYMs match by debug
+  # ID, so one archive covers both environments — the upload loops over the
+  # staging and release projects, skipping each whose secrets are absent.
+  # Runs only after lint-build-test is green (no symbols for unverified code).
+  sentry-dsym:
+    needs: lint-build-test
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install xcodegen + sentry-cli
+        run: brew install xcodegen getsentry/tools/sentry-cli
+
+      - name: Generate Xcode project
+        working-directory: ios/TimeOfLife
+        run: xcodegen generate
+
+      - name: Archive Release (unsigned) for dSYMs
+        working-directory: ios/TimeOfLife
+        env:
+          SENTRY_IOS_DSN: ${{ secrets.SENTRY_IOS_DSN }}
+        run: |
+          set -o pipefail
+          xcodebuild archive -scheme TimeOfLife \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/TimeOfLife.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            DEBUG_INFORMATION_FORMAT=dwarf-with-dsym \
+            SENTRY_DSN="$SENTRY_IOS_DSN" | xcpretty
+
+      - name: Upload dSYMs to Sentry (staging + release)
+        working-directory: ios/TimeOfLife
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT_STAGING: ${{ secrets.SENTRY_PROJECT_STAGING }}
+          SENTRY_PROJECT_RELEASE: ${{ secrets.SENTRY_PROJECT_RELEASE }}
+        run: |
+          upload_project() {
+            name="$1"; project="$2"; secret_name="$3"
+            if [ -z "$SENTRY_AUTH_TOKEN" ] || [ -z "$SENTRY_ORG" ] || [ -z "$project" ]; then
+              echo "::warning::Sentry secrets absent — skipping dSYM upload ($name). Needs SENTRY_AUTH_TOKEN, SENTRY_ORG, $secret_name."
+              return 0
+            fi
+            sentry-cli debug-files upload --org "$SENTRY_ORG" --project "$project" \
+              build/TimeOfLife.xcarchive/dSYMs
+          }
+          upload_project staging "$SENTRY_PROJECT_STAGING" SENTRY_PROJECT_STAGING
+          upload_project release "$SENTRY_PROJECT_RELEASE" SENTRY_PROJECT_RELEASE

@@ -6,6 +6,11 @@ services:
   postgres:
     image: postgres:15-alpine
     restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     volumes:
       - pgdata:/var/lib/postgresql/data
     environment:
@@ -21,6 +26,11 @@ services:
   backend:
     image: ghcr.io/antonkosenkopro/timeoflife/backend:latest
     restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       postgres:
         condition: service_healthy
@@ -47,6 +57,9 @@ services:
       # empty disables the feature (the /auth/apple route returns 503).
       APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
       APPLE_JWKS_URL: ${APPLE_JWKS_URL:-}
+      # Sentry error reporting (observability Stage 0). Empty = disabled,
+      # the server runs exactly as without Sentry.
+      SENTRY_DSN: ${SENTRY_DSN:-}
       # Comma-separated IPs/CIDRs of reverse proxies allowed to set forwarded
       # IP headers for rate limiting. Empty = trust nobody.
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
@@ -56,6 +69,11 @@ services:
   nginx:
     image: nginx:alpine
     restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     ports:
       - "80:80"
       - "443:443"

@@ -15,6 +15,10 @@ struct TimeOfLifeApp: App {
     @StateObject private var navigation: AppNavigationStack
 
     init() {
+        // Crash reporting (observability Stage 0): starts only when a DSN
+        // is configured; otherwise a no-op. First so early-launch crashes
+        // are captured.
+        SentryReporter.startIfConfigured()
         // UI-feedback loop: when launched with `UITEST_SCREEN=<screen>` (or
         // `SIMCTL_CHILD_UITEST_SCREEN=<screen>`, which `simctl launch` preserves)
         // in DEBUG, build a deterministic, stub-backed graph seeded to that

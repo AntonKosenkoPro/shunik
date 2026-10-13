@@ -166,6 +166,9 @@ jobs:
             # secret and redeploy. Prefer alphanumeric-safe secrets ($ in a
             # value breaks the sourcing step below, same as DB_PASSWORD).
             DATABASE_URL=${{ secrets.DATABASE_URL }}
+            # Error reporting (observability-stage-0): empty keeps Sentry
+            # disabled; set the secret to enable panic/5xx capture.
+            SENTRY_DSN=${{ secrets.SENTRY_DSN }}
             ENVEOF
             chmod 600 .env
 
@@ -216,6 +219,17 @@ jobs:
 
             # Recreate all services
             docker compose up -d
+
+            # Dead-man's-switch pinger (observability-stage-0): every minute,
+            # curl /health through nginx and ping Healthchecks.io only on 200.
+            # Missed pings page Telegram via the HC integration. Empty secret =
+            # skipped with a warning (staging can deploy before accounts exist).
+            if [ -n "${{ secrets.HC_PING_URL }}" ]; then
+              (crontab -l 2>/dev/null | grep -v 'hc-ping.com' || true; echo "*/1 * * * * curl -sk -m 10 -f https://127.0.0.1/health >/dev/null 2>&1 && curl -sm 10 \"${{ secrets.HC_PING_URL }}\" >/dev/null 2>&1") | crontab -
+              echo "healthchecks pinger installed"
+            else
+              echo "::warning::HC_PING_URL secret is empty — skipping healthchecks pinger install"
+            fi
 
             # Clean up old images
             docker image prune -f

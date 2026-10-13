@@ -5,3 +5,9 @@
 // The $(EMPTY) reference expands to nothing, resulting in http://127.0.0.1:8080.
 EMPTY =
 API_BASE_URL = http:/$(EMPTY)/127.0.0.1:8080
+
+// Sentry DSN (observability Stage 0): empty = crash reporting disabled.
+// CI overrides this on the xcodebuild command line from the SENTRY_IOS_DSN
+// secret (`xcodebuild ... SENTRY_DSN="$SENTRY_IOS_DSN"`); local builds stay
+// empty so simulator runs never report.
+SENTRY_DSN =

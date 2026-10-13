@@ -105,6 +105,11 @@ targets:
           - CFBundleURLName: com.antonkosenko.timeoflifeapp.track
             CFBundleURLSchemes: [lifio]
         API_BASE_URL: "$(API_BASE_URL)"
+        # Crash reporting DSN (observability Stage 0): build setting fed by
+        # `SENTRY_DSN` in the per-config xcconfig (empty = SDK disabled).
+        # CI threads the `SENTRY_IOS_DSN` secret into that setting at archive
+        # time; local builds stay empty (no reporting). Like API_BASE_URL.
+        SENTRY_DSN: "$(SENTRY_DSN)"
         # Build-stamped commit SHA (profile-version-sha): the trailing Run
         # Script Phase below overwrites this "?" default in the *built* plist
         # on every build, so a build that skips the script still reads a
@@ -173,6 +178,10 @@ targets:
       - target: LifioLiveActivityCore
       - package: GRDB
         product: GRDB
+      # Crash reporting (observability Stage 0): app target only — the
+      # widget extension stays dependency-light by design (see above).
+      - package: Sentry
+        product: Sentry
     # Trailing stamp (profile-version-sha): writes the built commit's 7-char
     # SHA into the *built* Info.plist as GIT_COMMIT_SHA for the Profile
     # version footer. Trailing on purpose — the built plist only exists after
@@ -383,3 +392,8 @@ packages:
   GRDB:
     url: https://github.com/groue/GRDB.swift
     from: 7.0.0
+  # Crash reporting (observability Stage 0): crashes + sync-distress
+  # breadcrumbs; no performance spans (Stage 1 owns spans).
+  Sentry:
+    url: https://github.com/getsentry/sentry-cocoa
+    from: 8.0.0

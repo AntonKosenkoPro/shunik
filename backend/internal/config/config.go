@@ -51,6 +51,9 @@ type Config struct {
 	// Empty (default) = deny all: no Origin is reflected and no
 	// Access-Control-Allow-Credentials is ever sent.
 	CORSAllowedOrigins string
+	// SentryDSN enables Sentry error reporting (observability Stage 0).
+	// Empty (default) = fully disabled, zero behavior change.
+	SentryDSN string
 }
 
 // Load reads configuration from environment variables.
@@ -195,6 +198,9 @@ func Load() (*Config, error) {
 	// (default) = deny all: no Origin is echoed and no credentials are
 	// advertised. Localhost dev origins work only via explicit listing.
 	cfg.CORSAllowedOrigins = os.Getenv("CORS_ALLOWED_ORIGINS")
+
+	// Optional: SENTRY_DSN — Sentry error reporting. Empty = disabled.
+	cfg.SentryDSN = os.Getenv("SENTRY_DSN")
 
 	return cfg, nil
 }

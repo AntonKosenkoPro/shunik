@@ -385,6 +385,9 @@ final class SyncController: ObservableObject {
     /// relaunch). Only the still-bound owning generation surfaces `.error`.
     private func finishFailedCycle(_ error: Error, userID: String, generation: Int) {
         Self.logger.error("sync cycle failed: \(error.localizedDescription, privacy: .public)")
+        // Sync-distress breadcrumb (observability Stage 0): fixed string
+        // only — error details can echo user content, so they stay out.
+        SentryReporter.addSyncDistressBreadcrumb("sync cycle failed")
         if cycleGeneration == generation, boundUserID == userID {
             status = .error(error.localizedDescription)
         }

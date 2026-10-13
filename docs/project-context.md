@@ -207,6 +207,27 @@ The backend is deployed to a **Google Cloud Compute Engine VM** (`timeoflife-bac
 
 Code signing is **split per configuration** in `project.yml`: Debug (base) stays unsigned (`DEVELOPMENT_TEAM: ""`, `CODE_SIGNING_REQUIRED: NO`) so simulator/CI builds need no Apple Developer account; Release carries `DEVELOPMENT_TEAM: 7923U48U87`, `CODE_SIGN_IDENTITY: Apple Development`, `CODE_SIGNING_REQUIRED: YES` — automatic signing pairs the development identity with device builds, and archives pick the distribution identity on their own (an explicit `Apple Distribution` there conflicts with automatic signing). **TestFlight/App Store distribution is the next step**: create the App Store Connect app record, archive the Release configuration, and upload (fastlane/App Store Connect API automation deferred). Releases are cut with the manual `release` workflow (`.github/workflows/release.yml`: `workflow_dispatch` with a `version` X.Y.Z input — validates strictly-greater-than-current on `main`, bumps the `project.yml` marketing version, auto-increments the build by +1, commits, and pushes an annotated `vX.Y.Z` tag). The bump covers **every target in lockstep** (app + each extension's `CFBundleShortVersionString`/`CFBundleVersion` must be unanimous or the workflow refuses; every Release `Info.plist` is mirrored, Debug plists stay pinned) — **when adding an Xcode target, wire it into `release.yml` (`RELEASE_PLISTS` + `git add`) and the `ios.yml` scheme coverage in the same PR** (the `LifioLiveActivities` appex broke the `0.2.1` release by adding duplicate version keys the single-target workflow rejected); full checklist: `docs/ci.md` → "New-target checklist". Profile shows the built commit in a trailing version row (`1.0.0 (a1b2c3d)`; `1.0.0 (a1b2c3d) • Debug` on Debug builds) so testers can report the exact commit. The integer build (`CFBundleVersion` / `CURRENT_PROJECT_VERSION`, auto-+1 per release) survives solely as the App Store Connect upload identifier and is no longer displayed. Account deletion (App Store 5.1.1(v)) and Apple token revocation are still open — see "Incomplete / deferred".
 
+## Observability (Stage 0)
+
+Solo-dev, anti-fatigue: two lanes. **Interrupt** (Telegram, sound on): `/health` failing 3 consecutive off-box checks, a Sentry NEW issue type, Supabase DB size crossing ~350 MB, VM disk > 80%. **Digest** (morning Telegram): deploy results, 70% tripwire crossings, daily uptime % / Sentry issue count / DB size / quota consumption, weekly quota trend. **Ratchet**: anything paging more than 2×/month gets demoted from interrupt to digest.
+
+### Tripwires (70% alert → 90% shed load → 100% migrate)
+
+| Tier | 70% alert | 90% shed-load |
+|---|---|---|
+| Sentry events/mo | Telegram ping | errors-only, drop breadcrumbs/perf |
+| Grafana series (10k, Stage 1) | Telegram ping | cut `operation`, coarsen status |
+| Grafana logs GB (Stage 1) | Telegram ping | retention 30→7d, drop DEBUG |
+| Supabase 500 MB | already specced (see below) | already specced (see below) |
+
+Supabase convention (from `migrate-db-to-supabase-free`, unchanged): Free flips the project read-only above 500 MB database size — the guard alerts at ~350 MB (70%) via `backend/scripts/supabase-size-check.sh`, and the deployment is not repointed above the line without the paid-tier upgrade first.
+
+All 70% alerts route to Telegram. The Telegram channel/bot itself is a separate pending task (observability Stage 0 task 1.2) — routing targets it once it exists.
+
+### Daily digest
+
+Uptime % (off-box `/health`), Sentry issue count (new + total), DB size in MB, quota consumption per tier; weekly quota trend on top.
+
 ## Pre-release policy
 
 The app is unreleased; there is no on-disk data in the wild. **No backward compatibility / migration for local on-disk formats is needed before release.** Do not add legacy-decode branches, `legacy*` fields, or `migrateIfNeeded` paths to local stores. On-disk schema changes are applied by editing the `Codable` shape in place; existing test fixtures and dev devices simply start fresh. Revisit this policy once a build ships to TestFlight or any external tester — the first `vX.Y.Z` release tag marks that point.

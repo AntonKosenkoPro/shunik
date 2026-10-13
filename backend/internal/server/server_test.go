@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"log/slog"
@@ -272,5 +273,40 @@ func TestServerContentType(t *testing.T) {
 	ct := w.Header().Get("Content-Type")
 	if ct != "application/json" {
 		t.Errorf("expected Content-Type application/json, got %q", ct)
+	}
+}
+
+func TestHealthExcludedFromAccessLogs(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	defer slog.SetDefault(prev)
+
+	s := newTestServer(t)
+	buf.Reset() // drop setup logs so only request logs are asserted on
+
+	before := HealthCheckCount()
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /health, got %d", w.Code)
+	}
+	if got := HealthCheckCount(); got != before+1 {
+		t.Errorf("expected health-check counter to increment by 1, got %d -> %d", before, got)
+	}
+	if out := buf.String(); strings.Contains(out, "/health") {
+		t.Errorf("expected no access-log line for /health, got %q", out)
+	}
+
+	// Other routes must still log.
+	buf.Reset()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/categories", nil)
+	w = httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+
+	if out := buf.String(); !strings.Contains(out, "/api/v1/categories") {
+		t.Errorf("expected access-log line for non-health route, got %q", out)
 	}
 }

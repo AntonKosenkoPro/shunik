@@ -244,6 +244,9 @@ final class AppContainer: ObservableObject {
         } catch {
             localStoreOpenError = error
             Self.logger.error("LocalStore account binding failed: \(String(describing: error), privacy: .public)")
+            // Sync-distress breadcrumb (observability Stage 0): fixed
+            // string only — the error can carry file paths.
+            SentryReporter.addSyncDistressBreadcrumb("local store open failed")
             return false
         }
     }

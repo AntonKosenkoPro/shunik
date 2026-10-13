@@ -175,6 +175,9 @@ struct RootView: View {
             // next sign-in (or relaunch restore) retries the prepare.
             guard ready else { return }
             boundUserID = userID
+            // Crash-reporting identity (observability Stage 0): opaque
+            // account id only, never email.
+            SentryReporter.setUserID(userID)
             container.syncController.activate(userID: userID)
         }
     }
@@ -190,6 +193,9 @@ struct RootView: View {
         // Sync stops before the file closes: an in-flight cycle aborts at
         // its next stage guard, then the account's file goes dormant.
         container.syncController.deactivate()
+        // Crash-reporting identity (observability Stage 0): a signed-out
+        // device must not attribute later crashes to the previous account.
+        SentryReporter.setUserID(nil)
         container.navigation.path = []
         container.navigation.resetTapRequests()
         boundUserID = nil

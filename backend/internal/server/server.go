@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -150,6 +151,9 @@ func New(deps Dependencies) *Server {
 
 	// Middleware
 	r.Use(chimw.Recoverer)
+	// Sentry panic/5xx capture sits inside Recoverer: it re-panics so
+	// Recoverer still renders the 500 (observability Stage 0).
+	r.Use(sentryMiddleware)
 	r.Use(chimw.RequestID)
 	r.Use(requestLogger)
 	r.Use(chimw.Timeout(deps.requestTimeout()))
@@ -211,13 +215,29 @@ func (d Dependencies) requestTimeout() time.Duration {
 
 // --- Middleware ---
 
-// requestLogger logs each request using slog.
+// healthCheckCount counts /health requests served since process start.
+// Uptime pings hit /health every minute, so they increment this counter
+// instead of emitting per-request access log lines (observability Stage 0).
+// Exposed for future metrics; read via HealthCheckCount.
+var healthCheckCount atomic.Int64
+
+// HealthCheckCount returns the number of /health requests served.
+func HealthCheckCount() int64 {
+	return healthCheckCount.Load()
+}
+
+// requestLogger logs each request using slog, except /health (quiet health
+// endpoint: uptime-ping traffic must not emit access-log lines).
 func requestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		ww := chimw.NewWrapResponseWriter(w, r.ProtoMajor)
 
 		defer func() {
+			if r.URL.Path == "/health" {
+				healthCheckCount.Add(1)
+				return
+			}
 			slog.Info("request",
 				"method", r.Method,
 				"path", r.URL.Path,
