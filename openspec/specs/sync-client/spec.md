@@ -31,7 +31,7 @@ On activation, the sync client SHALL pull the relay's current state (via `?modif
 - **THEN** the pull brings the relay's current records down and merges them into the local database (server-wins on conflicts); then the outbox drains and pushes any local-only records, which are idempotent on `id` against existing relay records
 
 ### Requirement: Delta pull via modified_since
-The sync client SHALL pull entries by following relay pagination to exhaustion: starting from `GET /entries` (with `?modified_since=<timestamp>` when a cursor exists, full pull when it does not), the client SHALL keep requesting subsequent pages with the relay's `cursor` parameter until the relay returns no `next_cursor`, and SHALL merge every page with the existing LWW rules. The client SHALL advance the entries sync cursor to the max `updated_at` over ALL pages received in the pull — never to the max of a partial page. A pull is complete only when the relay reports no further page; an empty pull (no records on any page) leaves the cursor unchanged. `GET /categories` is full-pull by design (catalog small: seeded plus a handful of user rows, so a snapshot merge with newer-owns-the-name is cheap; entries are unbounded and need the cursor): the client SHALL fetch the full category list on every pull and SHALL NOT send a categories cursor.
+The sync client SHALL pull entries by following relay pagination to exhaustion: starting from `GET /entries` (with `?modified_since=<timestamp>` when a cursor exists, full pull when it does not), the client SHALL keep requesting subsequent pages with the relay's `cursor` parameter until the relay returns no `next_cursor`, and SHALL merge every page with the existing LWW rules. The client SHALL advance the entries sync cursor to the max `updated_at` over ALL pages received in the pull — never to the max of a partial page. A pull is complete only when the relay reports no further page; an empty pull (no records on any page) leaves the cursor unchanged. Cursors recorded before pagination-aware pulls existed are poisoned (a partial-page max that hides older rows from every future delta): the client SHALL discard the persisted `entry` cursor exactly once per account file — guarded by a persisted re-baseline flag — so the next cycle runs a full paged pull and re-converges the complete history through the idempotent LWW merge. `GET /categories` is full-pull by design (catalog small: seeded plus a handful of user rows, so a snapshot merge with newer-owns-the-name is cheap; entries are unbounded and need the cursor): the client SHALL fetch the full category list on every pull and SHALL NOT send a categories cursor.
 
 #### Scenario: Incremental pull
 - **WHEN** the sync client runs after a previous successful pull recorded a cursor at time T
@@ -48,6 +48,14 @@ The sync client SHALL pull entries by following relay pagination to exhaustion: 
 #### Scenario: Delta after a complete paged pull is empty
 - **WHEN** a full paged pull converged completely and no record changed since
 - **THEN** the next delta pull returns no records, the cursor is unchanged, and no local updates are applied
+
+#### Scenario: Upgrade with a poisoned cursor heals on the next cycle
+- **WHEN** the account file holds an `entry` cursor recorded before pagination-aware pulls existed and the re-baseline flag is unset
+- **THEN** the next cycle discards that cursor, runs a full paged pull, merges the complete history (LWW-idempotent — no duplicates, no outbox churn), advances the cursor to the global max, and sets the flag; the `deletions` cursor, categories, outbox, undo buffer, and timer state are untouched
+
+#### Scenario: Re-baseline runs exactly once
+- **WHEN** the re-baseline flag is already set (or the `entry` cursor is nil, as on fresh installs)
+- **THEN** no cursor is discarded and pulls proceed as incremental or full by the normal cursor rules; a second upgrade never triggers another full re-pull
 
 #### Scenario: Mid-pull account swap aborts before further merge
 - **WHEN** the authenticated session's `userId` stops matching the cycle's bound account while pages remain unfetched
