@@ -6,7 +6,7 @@ Defines a stable product hierarchy for frequent capture, retrospective review, a
 ## Requirements
 
 ### Requirement: Three primary destinations
-The app SHALL provide Track, History, and Insights as its primary destinations, and SHALL identify Track as the destination for starting and controlling a timer. The History destination SHALL present committed time entries as a day-grouped, read-only list (see `history-entry-list` capability). The Insights destination SHALL present a period-scoped breakdown of committed tracked time with a hero total (see `insights-breakdown` capability), replacing the empty-state placeholder whenever committed entries exist. The History destination SHALL show the navigation bar (inline title and Profile button) at rest and collapse it on scroll; the Profile button remains present on Track and Insights. The app SHALL require authentication before presenting any primary destination: when the user is signed out, the app SHALL render the auth flow full-screen in place of the shell and MUST NOT render Track, History, Insights, or the tab bar; primary destinations become reachable only after sign-in. While a cached session restore is in flight and its outcome is still unknown, the app SHALL render a restoring splash (activity indicator, app identity) instead of the auth flow, so a restorable session never flashes the login screen. The shell SHALL mount only after the signed-in account's local store is bound, buffered deletions are committed, and starter categories are seeded; the first-sync network pull stays background and MUST NOT block the reveal.
+The app SHALL provide Track, History, and Insights as its primary destinations, and SHALL identify Track as the destination for starting and controlling a timer. The History destination SHALL present committed time entries as a day-grouped, read-only list (see `history-entry-list` capability). The Insights destination SHALL present a period-scoped breakdown of committed tracked time with a hero total (see `insights-breakdown` capability), replacing the empty-state placeholder whenever committed entries exist. The History destination SHALL show the navigation bar (inline title and Profile button) at rest and collapse it on scroll; the Profile button remains present on Track and Insights. The app SHALL require authentication before presenting any primary destination: when the user is signed out, the app SHALL render the auth flow full-screen in place of the shell and MUST NOT render Track, History, Insights, or the tab bar; primary destinations become reachable only after sign-in. When a cached session exists at launch, the app SHALL optimistically prepare that account's shell — bind the local store, commit buffered deletions, seed starter categories, and load the full Track snapshot (recents, names, categories, persisted running draft) — and mount the shell with the snapshot already in hand, so the first visible Track paint is complete with no splash, skeleton, spinner, or fade; session restore (`/me`) verifies concurrently in the background and is invisible on success, while an authentication failure cuts to the auth flow (lock-not-wipe semantics unchanged: local files are never touched). When no cached session exists, the app SHALL render the auth flow immediately with no waiting UI. The shell SHALL mount only after the signed-in account's local store is bound, buffered deletions are committed, starter categories are seeded, and the first Track snapshot is loaded; the first-sync network pull stays background and MUST NOT block the reveal.
 
 #### Scenario: Local launch
 - **WHEN** the user launches the app signed out, with no account or active timer
@@ -30,11 +30,19 @@ The app SHALL provide Track, History, and Insights as its primary destinations, 
 
 #### Scenario: Restoring session shows splash, not login
 - **WHEN** the app launches with a cached session and tokens whose server validation is still in flight
-- **THEN** the gate renders a restoring splash instead of the auth flow, and the auth flow appears only if the restore resolves to signed-out
+- **THEN** the gate mounts the shell optimistically with the locally prepared snapshot instead of the auth flow (the restoring splash no longer exists), and the auth flow appears only if the restore resolves to signed-out
+
+#### Scenario: Cached session launches straight into complete Track
+- **WHEN** the app launches with a cached session for an account with committed entries
+- **THEN** the first visible paint is the Track screen already showing Recents chips with icons (or the restored running state) — no splash, skeleton, spinner, or fade appears at any point, and no empty hint flashes
+
+#### Scenario: Failed background restore cuts to auth
+- **WHEN** the background session restore rejects the cached session (revoked, reused, or TTL-exhausted refresh)
+- **THEN** the app cuts to the full-screen auth flow with local account files intact, and a fresh sign-in reopens and resumes the same account file
 
 #### Scenario: Shell mounts after local ready
 - **WHEN** the user signs in (fresh, restored, or re-login) on a device whose account file needs binding, buffered-deletion commit, or starter seeding
-- **THEN** the shell appears only after the bind, commit, and seed complete, so the first Track paint already carries starter categories and never flashes an empty store
+- **THEN** the shell appears only after the bind, commit, seed, and first Track snapshot load complete, so the first Track paint already carries starter categories and local recents and never flashes an empty store
 
 ### Requirement: Profile owns secondary destinations
 The app SHALL expose account, sync, category management, and destructive data controls from a profile destination rather than as a primary tab. The profile destination SHALL open as a pushed page on the current tab's own navigation path with the system back button, and SHALL NOT present as a sheet or offer a Done/dismiss control. Each tab (Track, History, Insights) SHALL own an independent navigation path: opening Profile on one tab SHALL NOT push Profile on any other tab, and switching tabs SHALL NOT carry Profile state across. Manage Categories SHALL keep pushing from Profile on the same tab path, and the category editor SHALL remain a sheet. The profile destination SHALL be signed-in-only: it SHALL NOT present an Enable Sync row or auth-flow sheet, and the auth flow SHALL NOT be presented from Profile as a sheet. Because the launch auth gate guarantees a signed-in user, the account and sync state shown in Profile SHALL reflect the active signed-in account at all times. The profile destination SHALL NOT expose integrations, export, appearance, or data-and-privacy placeholder rows, and no activity catalog exists. Destructive rows in Profile (Sign Out, Erase local data) SHALL share one list-row visual contract: the shared list row geometry with a leading icon and the danger tint.
@@ -182,18 +190,3 @@ The app SHALL hide the tab bar on every destination pushed past a tab root (Prof
 #### Scenario: Tab switch mid-push does not leak bar state
 - **WHEN** a pushed destination is visible on one tab and the user returns to the tab bar path only via Back (no tab switch is reachable while pushed), then opens a destination on another tab
 - **THEN** each tab's bar visibility follows only its own push depth: roots show the bar, pushed destinations hide it, independently per tab
-
-### Requirement: Restoring splash shows the Lifio brand mark
-The restoring splash SHALL render the Lifio product glyph (`^▬` brand mark, `BrandMark` asset) above the app name, in place of the generic timer symbol — the same mark, tint, and size as the Welcome screen, so the restore→auth transition keeps one continuous brand. The mark SHALL be hidden from VoiceOver as decorative. Background continuity with the OS launch screen (plain background color, no image) is unchanged.
-
-#### Scenario: Restoring session shows brand mark, not login
-- **WHEN** the app launches with a cached session whose server validation is still in flight
-- **THEN** the gate renders the restoring splash with the product glyph above the app name and a spinner, never the auth flow
-
-#### Scenario: Splash mark matches Welcome mark
-- **WHEN** the restore resolves to signed-out and the auth flow replaces the splash
-- **THEN** the Welcome screen shows the same glyph at the same size and tint, with no visible mark switch beyond the screen transition
-
-#### Scenario: Splash mark is decorative for assistive technology
-- **WHEN** VoiceOver focuses the restoring splash
-- **THEN** the mark itself is skipped and the existing `RestoringSplash` identifier keeps working

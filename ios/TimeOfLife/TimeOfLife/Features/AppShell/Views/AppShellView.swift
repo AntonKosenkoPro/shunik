@@ -28,12 +28,21 @@ struct AppShellView: View {
     /// refresh.
     @State private var isHistoryLogTimeActive = false
 
-    init(vm: AppShellViewModel, container: AppContainer) {
+    init(vm: AppShellViewModel, container: AppContainer, trackSnapshot: TrackSnapshot? = nil) {
         _vm = StateObject(wrappedValue: vm)
-        _trackVM = StateObject(wrappedValue: TrackViewModel(
-            service: container.timerService,
-            connectivity: container.connectivity
-        ))
+        _trackVM = StateObject(wrappedValue: {
+            let trackVM = TrackViewModel(
+                service: container.timerService,
+                connectivity: container.connectivity
+            )
+            // A gate-preloaded snapshot paints complete on the first commit
+            // instead of re-querying (steady-track-launch). Previews and
+            // hosts without one load on appear as before.
+            if let trackSnapshot {
+                trackVM.adopt(trackSnapshot)
+            }
+            return trackVM
+        }())
     }
 
     var body: some View {

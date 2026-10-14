@@ -58,6 +58,26 @@ final class TimerService: ObservableObject {
         try await store.timerDraft()
     }
 
+    /// Resolves everything Track's first paint needs in one query batch
+    /// (steady-track-launch): recents, the full name list, the category
+    /// map, and the persisted running draft. The launch gate preloads it
+    /// before mounting the shell; `TrackViewModel.load()` consumes the
+    /// same snapshot. Pure reads — no writes, no side effects.
+    func loadSnapshot(recentsLimit: Int) async throws -> TrackSnapshot {
+        let recents = try await store.recents(limit: recentsLimit).map(ExactName.init(storeRecent:))
+        let allNames = try await store.allActivityNames().map(ExactName.init(storeRecent:))
+        let categories = Dictionary(uniqueKeysWithValues: try await store.categories().map { ($0.id, $0) })
+        let draft = try await store.timerDraft()
+        let restoredName = draft.flatMap { $0.activityText.isEmpty ? nil : $0.activityText }
+        return TrackSnapshot(
+            recents: recents,
+            allNames: allNames,
+            categories: categories,
+            draft: draft,
+            restoredName: restoredName
+        )
+    }
+
     /// Stops the running timer: saves the completed entry (with
     /// `source='manual'` and the draft's final notes) in one transaction
     /// with its single outbox row and clears the persisted running draft.

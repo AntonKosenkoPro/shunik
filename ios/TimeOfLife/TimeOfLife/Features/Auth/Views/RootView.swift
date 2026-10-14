@@ -27,11 +27,23 @@ struct RootView: View {
     /// late sign-out close can never unbind a newer sign-in's file
     /// (open-after-close).
     @State private var lifecycleTask: Task<Void, Never>?
+    /// The gate-preloaded first-paint snapshot (steady-track-launch): set
+    /// alongside `boundUserID` once bind, seed, and the snapshot load all
+    /// succeed, so the shell mounts with complete data and the first Track
+    /// paint never shows an empty store. Nil when no snapshot was resolved
+    /// (preload failure) — the shell still mounts and `TrackViewModel`
+    /// loads on appear with the recoverable error path.
+    @State private var launchSnapshot: TrackSnapshot?
 
     var body: some View {
         Group {
             if session.isRestoring {
-                restoringSplash
+                // Unresolved restore: blank background, never the auth flow
+                // — a restorable session must not flash the login screen
+                // while `/me` is in flight. The color matches the OS launch
+                // screen, so the handoff is invisible (steady-track-launch:
+                // no splash, skeleton, spinner, or fade anywhere).
+                launchBlank
             } else {
                 gatedContent
             }
@@ -40,8 +52,13 @@ struct RootView: View {
             .task {
                 // Restores a cached session (signed-in → the binding
                 // placeholder above mounts and runs the startup) or leaves
-                // the gate up.
+                // the gate up. Restore already signs in optimistically from
+                // cache before `/me` returns; the post-resolve trigger below
+                // converges sync on verified credentials.
                 await container.authService.restoreSession()
+                if case .signedIn = session.state {
+                    container.syncController.trigger(userID: sessionUserID())
+                }
             }
             .onChange(of: session.state) { _, newState in
                 switch newState {
@@ -69,32 +86,21 @@ struct RootView: View {
             }
     }
 
-    /// Launch restore unresolved (cold start always restores): the app
-    /// brand (same mark + name as the welcome screen) over a spinner, never
-    /// the auth flow — a restorable session must not flash the login screen
-    /// while `/me` is in flight.
-    private var restoringSplash: some View {
-        VStack(spacing: Theme.spacingMedium) {
-            Image("BrandMark")
-                .renderingMode(.template)
-                .resizable()
-                .scaledToFit()
-                .frame(height: 68)
-                .foregroundStyle(Theme.accentPrimary)
-                .accessibilityHidden(true)
-            Text(L10n.appName.text)
-                .font(.largeTitle.bold())
-                .foregroundStyle(Theme.textPrimary)
-            ProgressView()
-                .padding(.top, Theme.spacingSmall)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityIdentifier("RestoringSplash")
+    /// The pre-mount hold: full-bleed background only, matching the OS
+    /// launch screen color — the handoff from the system launch image is
+    /// invisible, and there is deliberately no brand, text, spinner, or
+    /// skeleton here (steady-track-launch: nothing says "wait").
+    private var launchBlank: some View {
+        Theme.backgroundPrimary
+            .ignoresSafeArea()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityHidden(true)
     }
 
     /// The signed-in/signed-out gate (restoring resolved): the auth flow
     /// full-screen while signed out, the shell once the account's store is
-    /// bound and seeded, a spinner in between.
+    /// bound, seeded, and snapshot-loaded — the first paint is complete
+    /// (steady-track-launch).
     private var gatedContent: some View {
         Group {
             switch session.state {
@@ -102,12 +108,13 @@ struct RootView: View {
             if boundUserID == current.id {
                 AppShellView(
                     vm: AppShellViewModel(service: container.timerService),
-                    container: container
+                    container: container,
+                    trackSnapshot: launchSnapshot
                 )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                // Bind-then-reveal: the gate stays up (a spinner, never
-                // the shell) until the account's file is bound. The
+                // Bind-then-reveal: the gate holds a blank background (never
+                // a spinner or splash) until the account's file is bound. The
                 // startup runs here — not in `onChange` — so it fires on
                 // every shell mount, including the restore-driven one.
                 // A failed bind keeps the gate up with the error surfaced
@@ -116,7 +123,7 @@ struct RootView: View {
                 if container.localStoreOpenError != nil {
                     // Bind failure dead-ends here without an escape hatch:
                     // beginSignIn (the only site that clears the error via
-                    // openLocalStore) runs solely in the spinner branch,
+                    // openLocalStore) runs solely in the blank hold below,
                     // and the shell with Profile's sign-out is unreachable
                     // while this gate is up. So offer sign-out right here
                     // (same L10n key + logout shape as ProfileView) — the
@@ -135,8 +142,7 @@ struct RootView: View {
                     .padding()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    ProgressView()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    launchBlank
                         .task { beginSignIn(userID: current.id) }
                 }
             }
@@ -154,6 +160,8 @@ struct RootView: View {
     /// a restart finalizes deletions buffered by the previous process, and
     /// starter categories seed idempotently (per-file marker) — all BEFORE
     /// the shell mounts, so the first Track paint already carries the seed.
+    /// The first Track snapshot resolves in the same step (steady-track-launch),
+    /// so the first paint carries local recents and the running draft too.
     /// Sync activation (pull-first first-sync, sync-client spec) runs after
     /// the reveal, in the background; Track converges on pulled data via its
     /// sync-exit reload.
@@ -174,6 +182,14 @@ struct RootView: View {
             // `boundUserID` is never set — no tracker read may mount. The
             // next sign-in (or relaunch restore) retries the prepare.
             guard ready else { return }
+            // Best-effort snapshot: the shell mounts with it and paints
+            // complete; on failure the snapshot stays nil and TrackViewModel
+            // loads on appear with the recoverable error path. Either way
+            // `boundUserID` is set in the same MainActor turn, so the mount
+            // never observes a half-prepared gate.
+            launchSnapshot = try? await container.timerService.loadSnapshot(recentsLimit: TrackViewModel.recentsLimit)
+            if Task.isCancelled { return }
+            guard case let .signedIn(current) = session.state, current.id == userID else { return }
             boundUserID = userID
             // Crash-reporting identity (observability Stage 0): opaque
             // account id only, never email.
@@ -199,6 +215,7 @@ struct RootView: View {
         container.navigation.path = []
         container.navigation.resetTapRequests()
         boundUserID = nil
+        launchSnapshot = nil
         // A stale bind error must never leak into a later sign-in: the error
         // branch's sign-out is the only escape from a failed bind, and the
         // next beginSignIn clears on entry anyway — belt and braces.

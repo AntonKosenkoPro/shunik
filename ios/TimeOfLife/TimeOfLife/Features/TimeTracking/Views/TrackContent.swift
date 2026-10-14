@@ -226,6 +226,10 @@ struct TrackContent: View {
         .accessibilityIdentifier("TimerNameRow")
         .accessibilityLabel(L10n.timerNamePlaceholder.text)
         .accessibilityValue(vm.nameDraft)
+        // The row resolves against the full name list, so it stays shut
+        // until the first snapshot lands (steady-track-launch): a tap in
+        // the pre-load window would open the picker on an empty list.
+        .disabled(!vm.firstLoadSettled)
     }
 
     /// Running/error: the locked name card plus the standalone notes

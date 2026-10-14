@@ -65,9 +65,10 @@ final class AuthService: ObservableObject {
     /// On transient non-auth failures (offline, 5xx, transport) keeps the
     /// cached session. Only `unauthorized` after a failed refresh clears local state.
     func restoreSession() async {
-        // The gate renders a splash (not the auth flow) while this is
-        // unresolved — set on entry (re-entrant safe) and always cleared,
-        // so a slow/offline restore can never stick the splash.
+        // The gate holds a blank background (not the auth flow) while this
+        // is unresolved — set on entry (re-entrant safe) and always cleared,
+        // so a slow/offline restore can never stick the gate. Cached
+        // sessions clear it early (optimistic launch above).
         sessionStore.setRestoring(true)
         defer { sessionStore.setRestoring(false) }
         let cached = cache.load()
@@ -80,6 +81,13 @@ final class AuthService: ObservableObject {
             // from the first cold start after upgrade, not just fresh sign-in.
             cache.save(cached)
             sessionStore.setSignedIn(cached)
+            // Optimistic launch (steady-track-launch): the gate proceeds on
+            // the cached session without waiting for `/me` — validation
+            // continues below while the shell prepares underneath. The entry
+            // `setRestoring(true)` + trailing `defer` stay as backstop.
+            // No-cache launches keep holding until `/me` resolves, so a
+            // slow first resolve never flashes the auth flow.
+            sessionStore.setRestoring(false)
         }
 
         guard refreshToken != nil else { return }
