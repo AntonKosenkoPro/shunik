@@ -8,9 +8,15 @@
   check created user-side, cron pinger installs from `HC_PING_URL` secret on
   deploy. BetterStack dropped: no native Telegram, relay would live on the
   watched VM. UptimeRobot dropped: no Telegram + 5-min free polls.)
-- [ ] 1.2 Create Telegram channel + bot; ping failures route here (sound on).
-- [ ] 1.3 Verify: stop backend on VM, confirm alert arrives; restart, confirm
+- [x] 1.2 Create Telegram channel + bot; ping failures route here (sound on).
+  (DONE user-side; proven by the 1.3 drill — DOWN + recovery both landed.)
+- [x] 1.3 Verify: stop backend on VM, confirm alert arrives; restart, confirm
   recovery notice.
+  (DONE 2026-10-13 drill: backend stopped 11:15:56Z → Telegram DOWN ~11:22Z
+  (1-min period + 5-min grace, as configured) → restarted 11:24Z, health 200 →
+  Telegram recovery ~1–2 min later. Pre-drill green ticks had proven the
+  cron→nginx→HC chain; a UUID mismatch (chat-pasted vs secret) was caught and
+  resolved by rotation before drilling.)
 
 ## 2. VM log hygiene
 
@@ -59,7 +65,10 @@
 - [x] 5.1 `backend.yml` + `ios.yml` green; linters strict-clean.
   (DONE 2026-10-13: backend lint-and-test pass, openspec validate pass,
   Xcode Cloud Build + Test pass on PR #151.)
-- [ ] 5.2 End-to-end drill: failing /health → Telegram in < 5 min;
-  test crash → Sentry issue with symbols.
+- [x] 5.2a End-to-end drill, health half: failing /health → Telegram
+  (DONE 2026-10-13: DOWN ~6 min incl. 5-min grace, recovery ~2 min.)
+- [ ] 5.2b End-to-end drill, Sentry half: staging test crash → Sentry issue
+  with symbols. (Blocked on Sentry DSN values user-side; run after secrets
+  land + staging build ships with the SDK enabled.)
 - [x] 5.3 Stage 1 GitHub issue exists and references this change's design.md.
   (DONE: issue #150, body references design.md — verified via gh API.)

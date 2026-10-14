@@ -18,6 +18,7 @@ case "${RETENTION_DAYS:-30}" in
   *[!0-9]*) echo "ERROR: RETENTION_DAYS must be a non-negative integer, got '${RETENTION_DAYS:-}'" >&2; exit 2 ;;
 esac
 [ "${RETENTION_DAYS:-30}" -ge 30 ] || echo "WARNING: RETENTION_DAYS=${RETENTION_DAYS:-30} is below the spec's 30-day retention floor" >&2
+RETENTION_DAYS="${RETENTION_DAYS:-30}" # assign once: later bare uses run under `set -u`
 # Never prints connection strings or secrets: no `set -x`, errors are redacted to host/port only.
 set -eu
 umask 077 # never leave partial dumps world-readable if a run aborts before chmod
