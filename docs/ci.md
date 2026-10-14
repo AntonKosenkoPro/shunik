@@ -22,7 +22,17 @@ GitHub workflows and their scope:
 | Scheme / config | `TimeOfLife`, Debug, iOS Simulator destination, `OS=latest` (never Release signing on PR builds) |
 | Post-clone | `ios/TimeOfLife/ci_scripts/ci_post_clone.sh` — brew-install `xcodegen`, fail-closed `XCODEGEN_PIN` assert, `xcodegen generate` (fires `postGenCommand normalize-system-capabilities.py`), `.xcodeproj` existence check |
 | Pre-build | `ios/TimeOfLife/ci_scripts/ci_pre_xcodebuild.sh` — brew-install `swiftlint`, fail-closed `SWIFTLINT_PIN` assert, `swiftlint lint --strict` (also gates tag archives; no-op there since tags build from lint-green `main`). Resolves the project dir via the `.swiftlint.yml` marker (Test VMs replay the script from clone-root, not its repo location) and skips cleanly when no iOS sources are present — the Build action already gated lint |
+| Post-build | `ios/TimeOfLife/ci_scripts/ci_post_xcodebuild.sh` — Sentry dSYM upload for Cloud-built archives (App Store Connect offers no downloadable dSYMs since Xcode 14, so the builder pushes). Skips quietly without an archive (PR checks) or without secrets; upload failures warn but never fail the archive (the GitHub `sentry-dsym` job stays the loud gate for local archives) |
 | Logs | App Store Connect build page (replaces `xcpretty` GH logs); link the build in the PR when reporting iOS failures |
+
+### Xcode Cloud workflow env vars (Sentry; Archiving workflow only)
+
+| Variable | Value | Secret? |
+|---|---|---|
+| `SENTRY_DSN` | iOS DSN (same value as the `SENTRY_IOS_DSN` GitHub secret) | yes — flows into the built Info.plist via the `SENTRY_DSN = $(SENTRY_DSN)` xcconfig self-reference |
+| `SENTRY_AUTH_TOKEN` | token with Project write (debug files) | yes — consumed by `ci_post_xcodebuild.sh` |
+| `SENTRY_ORG` | org slug | no |
+| `SENTRY_PROJECT` | project slug for this workflow's builds (staging) | no |
 
 Toolchain pins (bump together with the local toolchain; version-skew failures are fixed by pinning, never by relaxing `--strict` or per-target warnings-as-errors):
 

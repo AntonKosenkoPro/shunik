@@ -8,7 +8,7 @@ EMPTY =
 API_BASE_URL = https:/$(EMPTY)/timeoflife-api.antonkosenko.pro
 
 // Sentry DSN (observability Stage 0): empty = crash reporting disabled.
-// CI overrides this on the xcodebuild command line from the SENTRY_IOS_DSN
-// secret (`xcodebuild ... SENTRY_DSN="$SENTRY_IOS_DSN"`); a build with an
-// empty DSN ships with the SDK disabled.
-SENTRY_DSN =
+// Self-reference resolves from the environment, so Xcode Cloud workflow env
+// vars flow in; unset expands to empty (a build with an empty DSN ships
+// with the SDK disabled). CI also overrides on the xcodebuild command line.
+SENTRY_DSN = $(SENTRY_DSN)
