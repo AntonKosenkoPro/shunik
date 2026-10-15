@@ -82,3 +82,5 @@ from conversation context. If vague or ambiguous you MUST prompt (show
 - Prove before fixing; bound the loop at 3 rounds.
 - Template honesty; diff > ~400 lines → propose stacked PRs in the handoff.
 - No passwords/plaintext tokens anywhere; `otp/request` stays 202-always.
+- Agent attribution (§Agent attribution in the `process-pr` skill): trailer
+  on every commit, footer on every authored PR/comment, `/review` first line.

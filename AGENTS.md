@@ -27,6 +27,12 @@ The repo is spec-driven (`openspec/config.yaml`, `schema: spec-driven`). See `op
 - **Signing is per-config**: Debug unsigned (simulator/CI), Release signed with team `7923U48U87` (SIWA entitlement live; backend needs `APPLE_CLIENT_ID`). Manual smoke checklist: `README.md`.
 - **SwiftUI views use `Theme` semantic colors only**; no raw `Color` literals.
 
+## Agent attribution (issue #161, forward-only from 2026-10-15)
+
+Every agent commit and every agent-authored GitHub entity (PR, issue, comment, review reply) carries the marker `opencode/<role> (<model>, ses_<id>)`. Role from `opencode.json` agent names else `main`; model short id when known else omitted; session short id else `YYYY-MM-DD`.
+- **Commits**: human stays Author/Committer; append a `Co-Authored-By: opencode/<role> (<model>, ses_<id>) <opencode@local>` footer. Visible in `log`/`show`/commit page, never in `blame` — query via `git log --grep`.
+- **PRs/issues/comments**: append `> Agent: opencode/<role> · <model> · ses_<id>` plus `<!-- lifio-agent: <role>/<model>/ses_<id> -->`. `/review` triggers keep `/review` on the first line (the workflow matches `contains`). No second GitHub identity, no branch-namespace change, no history rewrite. Rationale: `openspec/changes/agent-attribution/`.
+
 ## Repo layout (short)
 
 ```

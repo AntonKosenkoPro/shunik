@@ -185,6 +185,26 @@ Run ONLY as a follow-up when the human replies that everything is OK
    `Archived <change> to <path>. Green + approved — please merge when ready: <url>.`
 3. Stop. The human presses merge.
 
+### Agent attribution (issue #161, forward-only from 2026-10-15)
+
+Every commit you make and every GitHub entity you author (PR body, issue,
+comment, review reply) carries the marker
+`opencode/<role> (<model>, ses_<id>)` (role from `opencode.json` agent names
+else `main`; model short id when known else omitted; session short id else
+`YYYY-MM-DD`). Human stays commit Author/Committer throughout.
+
+- **Commits** (steps 3, 5, 6): append a
+  `Co-Authored-By: opencode/<role> (<model>, ses_<id>) <opencode@local>`
+  footer to every commit message. Never override `user.name`/`user.email`.
+- **PR create/fill** (step 1): append to the body (after the filled template):
+  `> Agent: opencode/<role> · <model> · ses_<id>` plus
+  `<!-- lifio-agent: <role>/<model>/ses_<id> -->`.
+- **`/review` trigger** (steps 4, 6): first line stays exactly `/review`
+  (the workflow matches `contains`, so the footer below it is safe); footer
+  block after a blank line.
+- **Waive replies + handoff + closing comments** (steps 5, 7, 8): same
+  footer block. The stage-2 highlights comment carries it too.
+
 ## Output formats
 
 - After step 1: `PR: <url> (draft) | change: <name|none> | base: main`
@@ -214,3 +234,5 @@ Run ONLY as a follow-up when the human replies that everything is OK
   propose stacked PRs in the handoff instead of silently proceeding.
 - **Secrets.** No passwords/plaintext tokens in code, logs, or PR body;
   `otp/request` stays 202-always.
+- **Attribution.** Trailer on every commit, footer on every authored
+  PR/comment (see §Agent attribution above); `/review` stays first line.
