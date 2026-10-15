@@ -77,6 +77,9 @@ xcodebuild -scheme TimeOfLife -destination 'generic/platform=iOS Simulator' buil
 ## Flow recommendations
 
 - Plan every not obvious task (that will consume over 100k tokens per session)
+- Isolate code work in a separated git worktree (`timeOfLife.wt/<change-name>`, one branch per worktree, created from fresh `origin/main`); the main checkout stays clean — move the session into the worktree (`session_move`) and remove it after archive. Read-only explore stays worktree-free. Worktrees do not lift the serialization rules below.
+- Rebase twice on `origin/main`: `git fetch origin` + rebase before implementing and again before opening the PR; re-run affected linters/tests after each rebase; pushed branches move via `push --force-with-lease`; never `merge main` into a feature/bugfix branch.
+- Research bundle first for every feature/bugfix (topic + applicable HIG + Apple API + best practice via ctx7, max 5, cites or waiver reasons) — rule: `docs/project-context.md` → "External docs first (ctx7)".
 - Parallelism budget (OpenCode Zen Muse Spark 1.3 Free: ~9–10 concurrent slots measured; local work overlaps the queue): default fan-out **6 agents**, hard ceiling **9**; explore-only work stays at **3**
 - Delegate FIRST via the Task tool — no sequential fallback: any task touching 2+ of backend (`backend/`) / iOS (`ios/TimeOfLife/`) / specs-docs (`openspec/`, `docs/`, `Requirements/`, `Design/`) MUST fan out with one Task call per area in a single message before doing the work yourself; merge results yourself
 - Subagent depth is **3** (`subagent_depth` in `opencode.json`): subagents may spawn nested subagents when needed — use nesting for fan-out inside an area (e.g., area worker splits per-file/per-item), but prefer flat fan-out, stay within the parallelism budget, and never nest to re-delegate a single unit of work

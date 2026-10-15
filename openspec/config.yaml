@@ -38,24 +38,26 @@ context: |
 rules:
   proposal:
     - Identify affected baseline capabilities and authoritative documentation; include explicit non-goals.
-    - When the change depends on external library/framework/SDK/API/CLI/cloud behavior, resolve + fetch current docs via `npx ctx7@latest library` → `docs` (one concept per query, max 3) and cite library ID + query; state the version pin used.
+    - 'Research bundle (mandatory for every feature/bugfix): resolve + fetch current docs via `npx ctx7@latest library` → `docs` (one concept per query, max 5: topic + applicable HIG guideline + Apple API + best practice) and cite library IDs + queries; state the version pin used. Waive an inapplicable bundle item only with a one-line reason + evidence (e.g. "HIG N/A — backend-only diff"), never by silence. Known IDs: HIG `/websites/developer_apple_design_human-interface-guidelines`, SwiftUI `/websites/developer_apple_swiftui`, ActivityKit `/websites/developer_apple_activitykit`; pin pattern "iOS 18 SDK via Xcode 16+".'
   design:
     - Preserve the invariants in `docs/project-context.md` and cite decisions that constrain implementation.
-    - Cite the ctx7 library IDs + queries that constrain the design; do not rely on training-data API shapes.
+    - Cite the ctx7 library IDs + queries that constrain the design (or the waiver reasons for inapplicable bundle items); do not rely on training-data API shapes.
   specs:
     - Write change-scoped deltas only; never edit baseline specs directly while proposing a change.
   tasks:
     - Include relevant tests, linters, requirements checks, and documentation updates.
-    - For bugfix changes, the first task reproduces the bug on the current tree (recorded steps + evidence); implementation tasks come after the repro, and a final task re-runs the identical repro to verify the fix.
-    - When an external dependency is involved, include the ctx7 fetch as the first task; implementation tasks depend on it.
+    - For bugfix changes, the first tasks reproduce the bug on the current tree (recorded steps + evidence) AND complete the ctx7 research bundle; implementation tasks come after both the repro and the research, and a final task re-runs the identical repro to verify the fix.
+    - For every feature/bugfix change, include the ctx7 research bundle as the first task(s) (topic + applicable HIG + Apple API + best practice, max 5 queries); implementation tasks depend on it. For bugfix changes the repro and research tasks jointly gate implementation.
 
 operations:
   apply:
     guidance:
       - Read `docs/project-context.md` first (canonical context; `AGENTS.md` is the short entrypoint).
       - Check the selected change's `tasks.md` before implementing and mark tasks `[x]` as you complete them; reconcile with the relevant `Requirements/FURPS/*.md` rows.
-      - Bugfix rule: reproduce the bug first (recorded evidence), implement only after confirming the repro, and re-verify with the identical repro afterwards; if it cannot be reproduced, stop and report instead of guessing (see `docs/project-context.md` → "Per-iteration revising process").
-      - External docs first: if the work touches an external dependency, run the ctx7 `library` → `docs` fetch before coding and cite it; on quota error ask for `npx ctx7@latest login` / `CONTEXT7_API_KEY`, never silently fall back.
+      - Bugfix rule: reproduce the bug first (recorded evidence), implement only after confirming the repro, and re-verify with the identical repro afterwards; if it cannot be reproduced, stop and report instead of guessing (see `docs/project-context.md` → "Per-iteration revising process"). Research and repro jointly gate implementation (both live in `tasks.md` section 1).
+      - 'External docs first: for every feature/bugfix, run the ctx7 research bundle (`library` → `docs`, one concept per query, max 5: topic + applicable HIG + Apple API + best practice) before coding and cite IDs + queries + pins; waive an inapplicable item only with reason + evidence; on quota error ask for `npx ctx7@latest login` / `CONTEXT7_API_KEY`, never silently fall back.'
+      - Worktree isolation: do all code work in a separated git worktree (`timeOfLife.wt/<change-name>`, one branch per worktree, created from fresh `origin/main`); the main checkout stays clean. Read-only explore stays worktree-free. Worktrees do not lift the one-`xcodebuild` / one-simulator / single-writer-file serialization.
+      - 'Double rebase on `origin/main`: `git fetch origin` + rebase before implementing (fresh base) and again before opening the PR (mergeable head); re-run affected linters/tests after each rebase; pushed branches move via `push --force-with-lease`; never `merge main` into the branch.'
       - Deferred local-first UI surfaces (UndoToast/shake-to-undo, "via <Source>" labels, lock-screen ControlWidget) must not be claimed done; update `docs/project-context.md` → "Incomplete / deferred" and any owning change artifacts accordingly.
       - If the OpenAPI contract changes, update `backend/api/openapi.yaml` and both client/server sides (S10); run the backend contract gate (`go test ./...` includes `internal/contract`).
       - Run linters + warning-as-error build + both test suites per `docs/project-context.md` → "Per-iteration revising process (S5)".

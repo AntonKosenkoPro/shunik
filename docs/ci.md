@@ -108,3 +108,7 @@ Non-secret variables: `EMAIL_BACKEND`, `AWS_REGION`, `SES_FROM` (set as reposito
 - **Cloud build fails on version assert** (`expected XCODEGEN_PIN/SWIFTLINT_PIN`) — Homebrew drifted: confirm the new version locally (`xcodegen generate` diff clean + `swiftlint lint --strict` green), then bump the pin in `ci_scripts/` and the pin table above in the same PR.
 - **Cloud status check missing on a PR** — the App Store Connect ↔ GitHub connection needs Checks/Statuses write permission; verify the workflow's start conditions still target `main` and the PR's base is `main`.
 - **AI review missing after /review** — check the `OLLAMA_API_KEY` secret exists (Ollama Cloud key from ollama.com → Settings → Keys) and the job didn't skip (the comment must be on a PR, contain `/review`, and not come from a bot). Rules/tuning per `docs/review-process.md` and `.opencodereview/rule.json`.
+
+## Worktrees and rebase discipline
+
+Code work runs in an isolated worktree (`timeOfLife.wt/<change-name>`, one branch per worktree); the main checkout stays clean. Worktrees change where you run CI-local checks, not what runs: `make lint` / `make test:race` (backend) and `xcodegen` / `swiftlint` / `xcodebuild` (iOS) execute inside the worktree. `git fetch origin` + rebase onto `origin/main` happens before implementing and again before opening the PR — re-run the affected subsystem's checks after each rebase (a rebase can silently invalidate a green run).

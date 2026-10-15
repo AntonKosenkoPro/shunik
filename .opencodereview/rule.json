@@ -44,6 +44,16 @@
       "path": ".github/workflows/**",
       "rule": "CI changes: permissions must be least-privileged; secrets must come from GitHub secrets, never hardcoded; timeout-minutes must be set on every job.",
       "merge_system_rule": true
+    },
+    {
+      "path": "openspec/changes/**/proposal.md",
+      "rule": "Process hint (advisory, never blocking): every feature/bugfix change must record its ctx7 research bundle (library IDs + queries + pins) or one-line waiver reasons in proposal/design/tasks. Flag a proposal that cites neither and waives nothing.",
+      "merge_system_rule": true
+    },
+    {
+      "path": "openspec/changes/**/tasks.md",
+      "rule": "Process hint (advisory, never blocking): the first tasks must hold the ctx7 research bundle (and, for bugfixes, the recorded repro on the current tree); implementation tasks depend on both. Flag implementation tasks that precede research/repro.",
+      "merge_system_rule": true
     }
   ],
   "exclude": [

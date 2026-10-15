@@ -156,30 +156,34 @@ Keep code **minimal and standardized**, following modern best practices.
 
 ### External docs first (ctx7)
 
-Mandatory before implementing any functionality that depends on **external version-specific behavior**: library, framework, SDK, API, CLI tool, or cloud service (new dependency, version bump, unfamiliar API, setup/configuration, migration, library-specific debugging). Training data is stale by default — fetch, don't guess.
+Mandatory before implementing every feature/bugfix: research the topic, applicable HIG guidelines, Apple documentation, and best practices. Training data is stale by default — fetch, don't guess.
 
-- **Trigger:** external-dep behavior involved → fetch first. **Do not fetch for:** pure business logic, repo-internal refactoring, stdlib-only scripts, code review, or general programming concepts.
-- **Procedure (max 3 commands, no secrets in queries):**
+- **Bundle (max 5 commands, no secrets in queries):** 1× topic/problem-space query always; + 1× HIG query when UI is involved (known ID `/websites/developer_apple_design_human-interface-guidelines`); + 1× Apple API query with SDK pin when an Apple SDK is involved (known IDs `/websites/developer_apple_swiftui`, `/websites/developer_apple_activitykit`; pin pattern "iOS 18 SDK via Xcode 16+"); + 1× best-practice/setup query when an external lib/service is involved.
+- **Waiver (not silence):** waive an inapplicable bundle item only with a one-line reason + evidence (e.g. "HIG N/A — `backend/`-only diff, no UI"). Pure business logic or repo-internal refactoring waives the external/API items but keeps the topic query when one applies.
+- **Procedure:**
   1. `npx ctx7@latest library <name> "<what to look up>"` — use the official name ("Next.js", not "nextjs"); pick the ID (`/org/project`) by exact name match, description relevance, snippet count, source reputation, benchmark score.
-  2. `npx ctx7@latest docs <libraryId> "<single concept>"` — one concept per query; separate `docs` call per distinct concept. For version-specific work use `/org/project/version` from the `library` output.
+  2. `npx ctx7@latest docs <libraryId> "<single concept>"` — one concept per query; separate `docs` call per distinct concept. For version-specific work use `/org/project/version` from the `library` output. Re-confirm at apply time ("nothing changed since explore").
   3. Design/implement from the fetched docs only.
-- **Cite:** proposal/design/tasks state the ctx7 library ID + query used (e.g. "GRDB `/groue/GRDB.swift` — `transaction observation`").
+- **Cite:** proposal/design/tasks state the ctx7 library IDs + queries + pins used (e.g. "GRDB `/groue/GRDB.swift` — `transaction observation`"; "HIG `/websites/developer_apple_design_human-interface-guidelines` — `tab bar navigation guidance`") or the waiver reasons.
 - **Quota failure:** if a command fails with a quota error, tell the user to run `npx ctx7@latest login` or set `CONTEXT7_API_KEY` — never silently fall back to training data.
 
 ## Per-iteration revising process (Requirements S5)
 
 On every iteration (feature/fix PR) the author MUST:
-1. Run both linters and fix every finding: `golangci-lint run` (backend), `swiftlint lint --strict` (iOS); run the iOS build and inspect/fix every `xcodebuild` warning (app/test warnings are errors through `project.yml`); `gofmt -l .` must be empty.
-2. Run both test suites green (`go test ./...`; `xcodebuild test -scheme TimeOfLife -destination '<available simulator>'`).
-3. Re-read the relevant `Requirements/FURPS/*.md` rows and confirm the change aligns; correct the requirements doc if rows conflict (see the passwordless correction as precedent).
-4. Update `AGENTS.md`, `README.md`, `docs/project-context.md`, the relevant `Design/*.md` files, and [`backend/api/openapi.yaml`](../backend/api/openapi.yaml) if architecture/contract/run steps or visual design changed. The OpenAPI spec is the authoritative API contract — keep it in sync with the handlers. Advance or archive the active OpenSpec change as appropriate.
-5. Prefer reusing existing utilities/patterns over new code; remove dead code.
+1. Start from a fresh base and stay isolated: work in a separated git worktree (`timeOfLife.wt/<change-name>`, one branch per worktree; main checkout stays clean); `git fetch origin` + rebase onto `origin/main` before implementing and again before opening the PR (re-run affected linters/tests after each rebase; `push --force-with-lease`; never `merge main`). Worktrees do not lift the one-`xcodebuild` / one-simulator / single-writer-file serialization.
+2. Complete the ctx7 research bundle before coding (topic + applicable HIG + Apple API + best practice, max 5 — see "External docs first (ctx7)"), with cites or waiver reasons recorded; re-confirm at apply time.
+3. Run both linters and fix every finding: `golangci-lint run` (backend), `swiftlint lint --strict` (iOS); run the iOS build and inspect/fix every `xcodebuild` warning (app/test warnings are errors through `project.yml`); `gofmt -l .` must be empty.
+4. Run both test suites green (`go test ./...`; `xcodebuild test -scheme TimeOfLife -destination '<available simulator>'`).
+5. Re-read the relevant `Requirements/FURPS/*.md` rows and confirm the change aligns; correct the requirements doc if rows conflict (see the passwordless correction as precedent).
+6. Update `AGENTS.md`, `README.md`, `docs/project-context.md`, the relevant `Design/*.md` files, and [`backend/api/openapi.yaml`](../backend/api/openapi.yaml) if architecture/contract/run steps or visual design changed. The OpenAPI spec is the authoritative API contract — keep it in sync with the handlers. Advance or archive the active OpenSpec change as appropriate.
+7. Prefer reusing existing utilities/patterns over new code; remove dead code.
 
 ### Reproduce before fixing, verify after (bugfix rule)
 
 No bugfix implementation without a recorded reproduction on the current tree:
 1. **Reproduce first** — re-run the issue's repro steps (or write your own) and record the evidence (screen recording, log excerpt, or failing test). Precedent: the repros in issues #101/#67 outlived their merged fixes — merged code is not proof.
-2. **Implement only after the repro confirms the bug.** If it cannot be reproduced, stop and report instead of guessing.
+2. **Research in parallel** — complete the ctx7 research bundle (see "External docs first (ctx7)") with cites or waiver reasons. Repro and research jointly gate implementation: an unreproducible bug stops the change even with perfect research, and a reproduced bug without research may not implement.
+3. **Implement only after the repro confirms the bug.** If it cannot be reproduced, stop and report instead of guessing.
 3. **Verify after** — re-run the identical repro on the fixed tree and record the evidence with the change/PR. Where automatable, encode the repro as a regression test (fails before, passes after).
 4. Merges with "Fixes #" auto-close issues — reopen the issue if the bug survives the fix.
 

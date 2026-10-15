@@ -33,6 +33,15 @@ matching the branch, link it; otherwise ask (show `gh pr list --author @me`
   (commit or stash first — never open a PR with a dirty tree).
 - Current branch is NOT `main` (`git branch --show-current`).
   Base is `main` unless the user names another.
+- Work happens in an isolated worktree (`timeOfLife.wt/<change-name>`,
+  one branch per worktree; main checkout stays clean). Never share one
+  branch between two agents/worktrees.
+- Freshness: `git fetch origin` + rebase onto `origin/main` before opening
+  (and before implementing — see step 1); re-run the affected subsystem's
+  linters/tests after each rebase. Pushed branches move via
+  `push --force-with-lease`; never `merge main` into the branch.
+- Research bundle recorded in the change (ctx7 IDs + queries + pins, or
+  waiver reasons per `docs/project-context.md` → "External docs first").
 - Linked OpenSpec change resolved (explicit arg > branch-name match >
   single active change > ask). Announce: `Using change: <name|none>`
   and `Using PR: <#|none yet>` and how to override (e.g., `/opsx-pr <other>`).
@@ -44,7 +53,9 @@ Verify base is correct; update title/body if the template sections are empty.
 
 **Otherwise create it:**
 
-1. Push: `git push -u origin <branch>`
+1. Final freshness: `git fetch origin` + rebase onto `origin/main`, re-run
+   affected linters/tests, then push: `git push -u origin <branch>`
+   (`--force-with-lease` if the rebase rewrote a previously pushed head).
 2. Read `.github/pull_request_template.md` — it IS the body skeleton.
    Fill every section truthfully from the actual diff + change:
    - `What & why`: one paragraph + linked OpenSpec change (or state

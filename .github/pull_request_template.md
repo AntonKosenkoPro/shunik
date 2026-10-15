@@ -15,6 +15,8 @@ Stage 1 (AI review) runs automatically on this PR. Stage 2 is your self-review b
 
 ## Required on every iteration (S5)
 
+- [ ] Research bundle recorded (ctx7 IDs + queries + pins, or waiver reasons) — `docs/project-context.md` → "External docs first (ctx7)"
+- [ ] Work done in an isolated worktree (`timeOfLife.wt/<change>`, one branch per worktree); rebased on `origin/main` before implementing AND before opening this PR, affected suites re-run after each rebase
 - [ ] Both linters green (`golangci-lint run`, `swiftlint lint --strict`), `gofmt -l .` empty, no build warnings
 - [ ] Both test suites green (`go test ./...`, `xcodebuild test`)
 - [ ] Relevant `Requirements/FURPS/*.md` rows re-checked

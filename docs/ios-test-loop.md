@@ -34,6 +34,7 @@ Full suite only at milestones (same commands minus `-only-testing`). Run `xcodeg
 4. **Do not use `-parallel-testing-enabled`** for this suite: measured 39s vs 7s for the filtered pair, and it powers down the shared booted simulator as a side effect.
 5. **Keep DerivedData warm; never `clean`.** Warm cache is the entire reason runs take seconds (cold GRDB.swift builds take minutes). `test-without-building` only wins when the sim is already booted — otherwise boot time erases the saving (measured 26s vs 7s).
 6. **Warnings-as-errors live in `project.yml` (target-scoped).** Do not pass them as CLI flags — they conflict with the `-suppress-warnings` flag Xcode adds to the GRDB SPM target.
+7. **Worktrees isolate trees, not devices.** Running from `timeOfLife.wt/<change>` does not lift rules 1–2: still one `xcodebuild` at a time across all worktrees/agents, still the same booted sim by ID. After a rebase onto `origin/main`, re-run the affected suites — the base moved under you.
 
 ## If a run stalls (>120s warm)
 
