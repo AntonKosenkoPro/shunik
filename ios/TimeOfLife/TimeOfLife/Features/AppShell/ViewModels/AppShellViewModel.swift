@@ -127,7 +127,16 @@ final class AppShellViewModel: ObservableObject {
             .sink { [weak self] _ in
                 Task { @MainActor in
                     guard let self else { return }
-                    self.runningTimer = try? await self.service.runningTimerDraft()
+                    let draft = try? await self.service.runningTimerDraft()
+                    // Publish on real change only: @Published fires on every
+                    // set, and a 1 Hz whole-shell re-render resets the
+                    // entry-form calendar's browsed month back to the
+                    // selection (month steppers snap back within a second).
+                    // The compact timer ticks via its own TimelineView, so
+                    // it never depended on this republish.
+                    if draft != self.runningTimer {
+                        self.runningTimer = draft
+                    }
                 }
             }
     }

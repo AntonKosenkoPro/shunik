@@ -3,13 +3,20 @@ import SwiftUI
 /// Shared card chrome for the entry-form cards (entry-editor spec): rounded
 /// secondary-background card with tap-away keyboard dismissal.
 ///
-/// The tap-away is a *plain* tap — never a blocking gesture: it fires only
-/// for taps no child consumes (labels, padding, background). Taps on child
-/// `Button`s (TagSelector chips, date/time pills, the name-row link) are
-/// consumed by those controls and never reach this handler, so every control
-/// that must dismiss the keyboard resigns explicitly in its own action
-/// (issue #67: the Notes `×` deliberately does NOT resign — it clears only,
-/// so no flicker and no race is possible).
+/// The tap-away lives on the card's *background layer*, never on the card
+/// itself: hit-testing gives interactive children first claim, so taps on
+/// `Button`s (TagSelector chips, date/time pills, the name-row link) and on
+/// UIKit-backed controls like the graphical calendar grid always reach
+/// those controls. A card-wide `.onTapGesture` recognizer sits above the
+/// calendar in the responder chain and swallows its day-cell touches
+/// (fix-entry-date-picker-taps) — the background placement is what keeps
+/// that from happening. Only taps landing on genuinely empty card area
+/// (labels, padding, background — none of which claim hits) fall through
+/// to the background and resign focus, which is exactly the spec'd
+/// tap-away contract. Every control that must dismiss the keyboard still
+/// resigns explicitly in its own action (issue #67: the Notes `×`
+/// deliberately does NOT resign — it clears only, so no flicker and no
+/// race is possible).
 ///
 /// The notes editor uses this too: tapping the `TextEditor` itself
 /// keeps working — the editor's focus claim is applied after the tap
@@ -42,15 +49,17 @@ struct FormCard<Content: View>: View {
                 chrome
             }
         }
-        .onTapGesture {
-            resignFocus()
-        }
     }
 
     private var chrome: some View {
         content()
             .padding(Theme.spacingMedium)
-            .background(Theme.backgroundSecondary)
+            .background(
+                Theme.backgroundSecondary
+                    .onTapGesture {
+                        resignFocus()
+                    }
+            )
             .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadius))
     }
 }

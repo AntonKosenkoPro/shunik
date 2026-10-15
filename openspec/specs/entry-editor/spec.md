@@ -147,7 +147,7 @@ The entry-form Notes row SHALL present a read-only multiline presenter instead o
 - **THEN** the counter subtitle shakes, the error haptic plays, the page stays open with the draft intact, and nothing is written back
 
 ### Requirement: Notes clear never dismisses the keyboard
-Tapping the Notes-row clear (`×`) SHALL clear the field and keep the keyboard open with no dismiss/reappear transition. Taps on the card's labels, padding, and background SHALL still resign focus, and taps on the name row, category chips, and start/end pills SHALL still resign focus.
+Tapping the Notes-row clear (`×`) SHALL clear the field and keep the keyboard open with no dismiss/reappear transition. Taps on the card's labels, padding, and background SHALL still resign focus, and taps on the name row, category chips, and start/end pills SHALL still resign focus. Taps on the expanded graphical calendar's day cells SHALL select that date: the card's tap-away dismissal SHALL NOT swallow them.
 
 #### Scenario: Clear notes with keyboard open
 - **WHEN** the Notes field is focused with non-empty text and the user taps `×`
@@ -160,6 +160,10 @@ Tapping the Notes-row clear (`×`) SHALL clear the field and keep the keyboard o
 #### Scenario: Control taps still dismiss
 - **WHEN** the user taps the name row, a category chip, or a start/end pill
 - **THEN** the tapped control acts and the keyboard dismisses as before
+
+#### Scenario: Calendar day taps select the date
+- **WHEN** a Start or End date picker is expanded and the user taps a visible day cell
+- **THEN** the draft date updates to that day (date pill text, duration subtitle, and validity gate re-evaluate; moving Start at/past End auto-pushes End per the Calendar-style duration rule) and the picker stays expanded
 
 ### Requirement: Unified entry form field order
 The unified entry form SHALL lay out its input cards in exactly this order in every mode (CREATE, EDIT, LOCKED): Activity name → Start time → End time → Categories → Notes. Start and Ends SHALL be separate cards (one `timeRow` each with its own date + time pills and inline single-open picker), not one combined Starts/Ends card. The validity gate, picker behavior (single-open, device locale/calendar), mode chrome (titles/actions/LOCKED dimming + provenance note), and bottom destructive Delete are unchanged.

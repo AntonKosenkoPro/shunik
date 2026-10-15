@@ -460,39 +460,52 @@ struct LogTimeView: View {
             // Pills must switch highlight instantly — otherwise the capsule
             // background lags behind the text when the picker change animates.
             .animation(.none, value: expandedPicker)
+            // Both pickers stay mounted and collapse to zero height instead of
+            // conditional insertion: the graphical calendar renders
+            // asynchronously on first layout, and mounting it on expand
+            // flashes an empty card before the month grid pops in
+            // (size-jump). Pre-mounted pickers grow smoothly with the height
+            // animation, and the fixed container height keeps every month
+            // (4-6 weeks) the same size. Collapsed pickers are disabled,
+            // hidden from accessibility, and clipped to zero height so they
+            // take no space and intercept no touches.
             VStack(spacing: 0) {
-                if expandedPicker == datePicker {
-                    GeometryReader { proxy in
-                        DatePicker(
-                            "",
-                            selection: dateBinding(for: datePicker),
-                            displayedComponents: .date
-                        )
-                        .datePickerStyle(.graphical)
-                        .labelsHidden()
-                        .frame(width: proxy.size.width)
-                    }
-                    .frame(height: Self.graphicalPickerHeight)
-                    .transition(.opacity)
-                }
-                if expandedPicker == timePicker {
-                    GeometryReader { proxy in
-                        DatePicker(
-                            "",
-                            selection: dateBinding(for: timePicker),
-                            displayedComponents: .hourAndMinute
-                        )
-                        .datePickerStyle(.wheel)
-                        .labelsHidden()
-                        .frame(width: proxy.size.width)
-                    }
-                    .frame(height: Self.wheelPickerHeight)
-                    .transition(.opacity)
-                }
+                DatePicker(
+                    "",
+                    selection: dateBinding(for: datePicker),
+                    displayedComponents: .date
+                )
+                .datePickerStyle(.graphical)
+                .labelsHidden()
+                // FB9614392 workaround: a parent TapGesture (the FormCard
+                // background tap-away) steals the calendar's header-button
+                // touches (month steppers) even from the background layer.
+                // An unfulfillable tap count on the picker itself restores
+                // the calendar's internal gesture precedence without ever
+                // firing; day cells already win without it, steppers need it.
+                .onTapGesture(count: 99) {}
+                .frame(maxWidth: .infinity)
+                .frame(height: expandedPicker == datePicker ? Self.graphicalPickerHeight : 0)
+                .opacity(expandedPicker == datePicker ? 1 : 0)
+                .disabled(expandedPicker != datePicker)
+                .accessibilityHidden(expandedPicker != datePicker)
+                .clipped()
+                DatePicker(
+                    "",
+                    selection: dateBinding(for: timePicker),
+                    displayedComponents: .hourAndMinute
+                )
+                .datePickerStyle(.wheel)
+                .labelsHidden()
+                .frame(maxWidth: .infinity)
+                .frame(height: expandedPicker == timePicker ? Self.wheelPickerHeight : 0)
+                .opacity(expandedPicker == timePicker ? 1 : 0)
+                .disabled(expandedPicker != timePicker)
+                .accessibilityHidden(expandedPicker != timePicker)
+                .clipped()
             }
             // Only the picker container animates; pills above stay instant.
             .animation(.easeInOut(duration: 0.2), value: expandedPicker)
-            .clipped()
         }
         // Full card width (fix-51-picker-width): without this the collapsed
         // card hugs its pills — the outer form stack is center-aligned, so
