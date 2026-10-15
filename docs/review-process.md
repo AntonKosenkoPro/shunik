@@ -46,7 +46,7 @@ Draft PRs are the sequencing mechanism; `/review` is the switch — AI sweeps th
 
 - **`openspec.yml`** — spec-integrity gate: `openspec validate --all --strict` (CLI pinned `@1.8.0`) on every PR and push to `main`. Fails broken OpenSpec structure; protects the spec-driven contract.
 - **PR template** — OpenSpec linkage + S5 + non-negotiables + stage-2 checklist checkboxes.
-- **Existing mandatory checks** — `backend.yml` (gofmt/vet/golangci-lint/race tests/coverage floor 45%/OpenAPI contract gate) and `ios.yml` (xcodegen/swiftlint --strict/warnings-as-errors build/tests). See `docs/ci.md`.
+- **Existing mandatory checks** — `backend.yml` (gofmt/vet/golangci-lint/race tests/coverage floor 45%/OpenAPI contract gate) and the Xcode Cloud `iOS PR Checks` workflow (xcodegen/swiftlint --strict/warnings-as-errors build/tests). See `docs/ci.md`.
 
 ## Metrics (lightweight, optional)
 

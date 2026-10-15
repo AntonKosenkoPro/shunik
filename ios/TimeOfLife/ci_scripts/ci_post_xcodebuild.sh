@@ -1,44 +1,63 @@
 #!/bin/sh
 # Xcode Cloud post-xcodebuild script: upload dSYMs to Sentry.
 #
-# Why this exists (observability Stage 0, 5.2b): App Store Connect has not
-# offered downloadable dSYMs since Xcode 14, so no Sentry integration can
-# pull them — the archive's own builder must push them. The GitHub
-# `sentry-dsym` job covers locally-archived binaries only (different UUIDs);
-# Cloud-built TestFlight binaries are covered here.
+# Runs after every Cloud xcodebuild action. Uploads only when an archive
+# exists ($CI_ARCHIVE_PATH/dSYMs) — PR Test-only builds produce no archive
+# and skip quietly here. Per project (staging, release) the upload runs only
+# when SENTRY_AUTH_TOKEN + SENTRY_ORG + the project var are all present;
+# otherwise it skips with a reason (secret values are never echoed — Cloud
+# redacts secret env vars in logs regardless).
 #
-# Runs after EVERY Cloud xcodebuild (PR checks included): PR builds produce
-# no archive, so the script exits quietly when $CI_ARCHIVE_PATH is absent.
-# Upload failures warn loudly but never fail the build — a missing symbol
-# set degrades crash reports; a failed archive blocks TestFlight entirely.
-# (The GitHub sentry-dsym job stays the loud gate for local archives.)
+# sentry-cli is intentionally NOT fail-closed pinned (migrate-ios-ci-to-
+# xcode-cloud D3): a leaf uploader's version skew cannot change pass/fail
+# correctness, so only the version is echoed. Follows the sibling install-
+# when-missing pattern from ci_post_clone.sh / ci_pre_xcodebuild.sh.
 #
-# Required Xcode Cloud workflow env vars (all three, or the upload skips):
-#   SENTRY_AUTH_TOKEN — personal/org token with Project write (debug files)
-#   SENTRY_ORG        — org slug
-#   SENTRY_PROJECT    — project slug for this workflow's builds (staging)
-# SENTRY_DSN is NOT needed here (reporting uses the app's own plist value).
+# Upload failures warn loudly but never fail the build (observability
+# Stage 0 invariant, kept from the #156 version): a missing symbol set
+# degrades crash reports; a failed archive would block TestFlight entirely.
 set -e
 
-if [ -z "${CI_ARCHIVE_PATH:-}" ] || [ ! -d "$CI_ARCHIVE_PATH" ]; then
-  echo "sentry-dsym: no archive produced by this build (PR check?) — skipping."
+if [ -z "$CI_ARCHIVE_PATH" ]; then
+  echo "No archive produced by this build (Test-only) — skipping Sentry upload."
   exit 0
 fi
-
-if [ -z "${SENTRY_AUTH_TOKEN:-}" ] || [ -z "${SENTRY_ORG:-}" ] || [ -z "${SENTRY_PROJECT:-}" ]; then
-  echo "sentry-dsym: WARNING — SENTRY_AUTH_TOKEN/SENTRY_ORG/SENTRY_PROJECT not all set; skipping dSYM upload (crashes from this build will be unsymbolicated)."
+if [ ! -d "$CI_ARCHIVE_PATH/dSYMs" ]; then
+  echo "WARNING — no dSYMs at $CI_ARCHIVE_PATH/dSYMs; skipping Sentry upload (crashes from this build may be unsymbolicated)."
   exit 0
 fi
 
 if ! command -v sentry-cli >/dev/null 2>&1; then
   echo "sentry-cli not found — installing via Homebrew..."
-  brew install getsentry/tools/sentry-cli
+  if ! brew install getsentry/tools/sentry-cli; then
+    echo "WARNING — sentry-cli install failed; skipping dSYM uploads (crashes from this build will be unsymbolicated). Not failing the archive."
+    exit 0
+  fi
+  if ! command -v sentry-cli >/dev/null 2>&1; then
+    echo "WARNING — sentry-cli unavailable after install (not on PATH); skipping dSYM uploads (crashes from this build will be unsymbolicated). Not failing the archive."
+    exit 0
+  fi
 fi
+
 echo "sentry-cli $(sentry-cli --version)"
 
-if sentry-cli debug-files upload --org "$SENTRY_ORG" --project "$SENTRY_PROJECT" "$CI_ARCHIVE_PATH/dSYMs"; then
-  echo "sentry-dsym: upload complete."
-else
-  echo "sentry-dsym: WARNING — upload failed (exit $?). This build's crashes will be unsymbolicated; the GitHub sentry-dsym job remains the loud gate. Not failing the archive."
-  exit 0
-fi
+upload_project() {
+  name="$1"; project="$2"; secret_name="$3"
+  missing=""
+  [ -n "$SENTRY_AUTH_TOKEN" ] || missing="SENTRY_AUTH_TOKEN"
+  [ -n "$SENTRY_ORG" ] || missing="${missing:+$missing, }SENTRY_ORG"
+  [ -n "$project" ] || missing="${missing:+$missing, }$secret_name"
+  if [ -n "$missing" ]; then
+    echo "Sentry secrets absent — skipping dSYM upload ($name). Missing: $missing."
+    return 0
+  fi
+  if sentry-cli debug-files upload --org "$SENTRY_ORG" --project "$project" \
+    "$CI_ARCHIVE_PATH/dSYMs"; then
+    echo "Uploaded dSYMs ($name)."
+  else
+    echo "WARNING — dSYM upload failed ($name, exit $?). Crashes from this build will be unsymbolicated. Not failing the archive."
+  fi
+}
+
+upload_project staging "$SENTRY_PROJECT_STAGING" SENTRY_PROJECT_STAGING
+upload_project release "$SENTRY_PROJECT_RELEASE" SENTRY_PROJECT_RELEASE

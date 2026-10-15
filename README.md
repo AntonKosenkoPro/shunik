@@ -61,7 +61,7 @@ open TimeOfLife.xcodeproj
 
 - `API_BASE_URL` is injected per build configuration: Debug → `http://127.0.0.1:8080` (local backend; ATS allows plain HTTP only to `127.0.0.1`), Release → `https://timeoflife-api.antonkosenko.pro`. On a physical device, use your LAN IP instead.
 - Code signing is split per configuration: **Debug stays unsigned** (simulator/CI need no Apple Developer account); **Release signs** with team `7923U48U87` (development identity; archives sign distribution automatically) and carries the Sign in with Apple entitlement (App ID `com.antonkosenko.timeoflifeapp` must have the SIWA capability enabled in the Apple Developer portal). The backend needs `APPLE_CLIENT_ID=com.antonkosenko.timeoflifeapp` set or `/auth/apple` returns 503.
-- Releases (TestFlight): cut via the manual **release** workflow (Actions → `release` → Run workflow, `version` = `X.Y.Z`, e.g. `1.0.0`) — it validates the version is strictly greater than current on `main`, bumps `project.yml` (marketing version, build auto-+1, `Info.plist` mirrored), commits, and pushes annotated tag `vX.Y.Z`. Pushing the tag triggers the **Xcode Cloud** workflow (tag pattern `v*`), which runs `ci_post_clone.sh` (`xcodegen generate`, since the `.xcodeproj` is gitignored), archives the Release configuration, and uploads to TestFlight automatically. Profile shows the built commit in a trailing row (`1.0.0 (a1b2c3d)`; `1.0.0 (a1b2c3d) • Debug` on Debug builds) so testers can report the exact commit. The integer build (auto-+1) survives solely as the App Store Connect upload identifier and is no longer displayed. The release run chains `ios.yml` verification on the pushed head automatically — do not distribute the TestFlight build until it is green.
+- Releases (TestFlight): cut via the manual **release** workflow (Actions → `release` → Run workflow, `version` = `X.Y.Z`, e.g. `1.0.0`) — it validates the version is strictly greater than current on `main`, bumps `project.yml` (marketing version, build auto-+1, `Info.plist` mirrored), commits, and pushes annotated tag `vX.Y.Z`. Pushing the tag triggers the **Xcode Cloud** workflow (tag pattern `v*`), which runs `ci_post_clone.sh` (`xcodegen generate`, since the `.xcodeproj` is gitignored), archives the Release configuration, and uploads to TestFlight automatically. Symbolication rides the same signed archive: `ci_post_xcodebuild.sh` uploads its dSYMs (`$CI_ARCHIVE_PATH/dSYMs`) to the Sentry staging + release projects, skipping gracefully when secrets are absent. Profile shows the built commit in a trailing row (`1.0.0 (a1b2c3d)`; `1.0.0 (a1b2c3d) • Debug` on Debug builds) so testers can report the exact commit. The integer build (auto-+1) survives solely as the App Store Connect upload identifier and is no longer displayed. The tag-triggered Cloud Test→Archive run is the post-bump verification — do not distribute the TestFlight build until it is green.
 - Tests & lint:
 
 ```bash
@@ -105,7 +105,7 @@ Live Activities need a real device with Dynamic Island (the simulator shows the 
 
 ## CI (S6)
 
-`.github/workflows/backend.yml` (gofmt, go vet, golangci-lint, test + coverage) and `ios.yml` (xcodegen, swiftlint, warning-as-error build, test) are **mandatory PR checks**. See [`docs/ci.md`](docs/ci.md) for the full pipeline guide.
+`.github/workflows/backend.yml` (gofmt, go vet, golangci-lint, test + coverage) and the Xcode Cloud `iOS PR Checks` workflow (xcodegen, SwiftLint, warning-as-error build, test) are **mandatory PR checks**. See [`docs/ci.md`](docs/ci.md) for the full pipeline guide.
 
 ## Deployment (S4)
 

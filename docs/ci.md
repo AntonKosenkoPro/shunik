@@ -2,13 +2,13 @@
 
 Split-provider quality pipeline for Lifio. Mandatory PR checks (Requirements S6) come from two providers:
 
-- **GitHub Actions** — `backend.yml` (Go), `openspec.yml` (spec gate), `release.yml` (manual version bump + `verify`), advisory `ai-review.yml`
-- **Xcode Cloud** — iOS PR checks: `xcodegen` → `swiftlint --strict` → warnings-as-errors build → unit tests (replaces the old `ios.yml` PR/push triggers; see below)
+- **GitHub Actions** — `backend.yml` (Go), `openspec.yml` (spec gate), `release.yml` (manual version bump), advisory `ai-review.yml`
+- **Xcode Cloud** — iOS checks: the `iOS PR Checks` workflow (Build + Test actions on PRs touching `ios/`, SwiftLint via `ci_pre_xcodebuild.sh`, path-filtered to `ios/**`) and the tag workflow (`v*` tags: Test → Archive → TestFlight upload, with `ci_post_xcodebuild.sh` uploading the signed archive's dSYMs to Sentry staging + release; see below)
 
-GitHub workflows and their scope:
+Workflows and their scope (iOS CI is Cloud-owned — the former `ios.yml` lane was deleted at cutover; its lint/build/test bar now runs as the Cloud `iOS PR Checks` workflow's pre-build + Test action):
 
 - **`backend.yml`** — Go: gofmt, go vet, golangci-lint, race tests, OpenAPI contract gate, coverage gate, deploy
-- **`ios.yml`** — release verification ONLY (`workflow_call` from `release.yml: verify`; no `pull_request`/`push` triggers — PR verification lives in Xcode Cloud). Same steps as Cloud: xcodegen, swiftlint `--strict`, warnings-as-errors build, unit tests. Intentional residue: one macOS run per release.
+- **Xcode Cloud `iOS PR Checks`** — iOS: Build + Test actions on PRs touching `ios/` (path-filtered to `ios/**`); SwiftLint via `ci_pre_xcodebuild.sh` (`swiftlint lint --strict`), xcodegen via `ci_post_clone.sh`, warnings-as-errors build, unit tests
 - **`openspec.yml`** — spec-integrity gate: `openspec validate --all --strict` (CLI pinned 1.8.0) on every PR and push to `main`
 - **`release.yml`** — manual `workflow_dispatch` marketing-version bump: validates semver on `main`, bumps every target's versions in `project.yml` in lockstep, mirrors every Release `Info.plist`, commits + tags `vX.Y.Z` (see checklist below — a new target MUST be wired in or the next release fails)
 
@@ -22,17 +22,20 @@ GitHub workflows and their scope:
 | Scheme / config | `TimeOfLife`, Debug, iOS Simulator destination, `OS=latest` (never Release signing on PR builds) |
 | Post-clone | `ios/TimeOfLife/ci_scripts/ci_post_clone.sh` — brew-install `xcodegen`, fail-closed `XCODEGEN_PIN` assert, `xcodegen generate` (fires `postGenCommand normalize-system-capabilities.py`), `.xcodeproj` existence check |
 | Pre-build | `ios/TimeOfLife/ci_scripts/ci_pre_xcodebuild.sh` — brew-install `swiftlint`, fail-closed `SWIFTLINT_PIN` assert, `swiftlint lint --strict` (also gates tag archives; no-op there since tags build from lint-green `main`). Resolves the project dir via the `.swiftlint.yml` marker (Test VMs replay the script from clone-root, not its repo location) and skips cleanly when no iOS sources are present — the Build action already gated lint |
-| Post-build | `ios/TimeOfLife/ci_scripts/ci_post_xcodebuild.sh` — Sentry dSYM upload for Cloud-built archives (App Store Connect offers no downloadable dSYMs since Xcode 14, so the builder pushes). Skips quietly without an archive (PR checks) or without secrets; upload failures warn but never fail the archive (the GitHub `sentry-dsym` job stays the loud gate for local archives) |
+| Post-build | `ios/TimeOfLife/ci_scripts/ci_post_xcodebuild.sh` — Sentry dSYM upload from Cloud's own signed archive (`$CI_ARCHIVE_PATH/dSYMs`, the exact binary TestFlight ships) to the staging + release projects via `sentry-cli debug-files upload`. Skips quietly without an archive (PR Test-only builds); per project skips with a warning when its secrets are absent; upload failures warn but never fail the archive. Replaces the former GitHub `sentry-dsym` job's separate unsigned archive (deleted with `ios.yml` at cutover) |
 | Logs | App Store Connect build page (replaces `xcpretty` GH logs); link the build in the PR when reporting iOS failures |
 
-### Xcode Cloud workflow env vars (Sentry; Archiving workflow only)
+### Xcode Cloud shared secret env vars (Sentry; tag workflow)
+
+Set in App Store Connect as shared secret env vars on the tag workflow (same names as the former GitHub secrets, so the skip-logic reads the same). All five are optional: any absence skips gracefully with a warning, never a failure.
 
 | Variable | Value | Secret? |
 |---|---|---|
-| `SENTRY_DSN` | iOS DSN (same value as the `SENTRY_IOS_DSN` GitHub secret) | yes — flows into the built Info.plist via the `SENTRY_DSN = $(SENTRY_DSN)` xcconfig self-reference |
-| `SENTRY_AUTH_TOKEN` | token with Project write (debug files) | yes — consumed by `ci_post_xcodebuild.sh` |
-| `SENTRY_ORG` | org slug | no |
-| `SENTRY_PROJECT` | project slug for this workflow's builds (staging) | no |
+| `SENTRY_AUTH_TOKEN` | token with Project write (debug files), consumed by `ci_post_xcodebuild.sh` | yes — absent = upload skips with a warning |
+| `SENTRY_ORG` | org slug | yes — absent = upload skips with a warning |
+| `SENTRY_PROJECT_STAGING` | staging project slug | yes — absent = staging upload skips |
+| `SENTRY_PROJECT_RELEASE` | release project slug | yes — absent = release upload skips |
+| `SENTRY_DSN` | iOS DSN (value migrated from the former `SENTRY_IOS_DSN` GitHub secret) | yes — flows into the built Info.plist via the `SENTRY_DSN = $(SENTRY_DSN)` xcconfig self-reference; absent = archived binary ships with the SDK disabled |
 
 Toolchain pins (bump together with the local toolchain; version-skew failures are fixed by pinning, never by relaxing `--strict` or per-target warnings-as-errors):
 
@@ -51,7 +54,7 @@ Plus the **advisory, on-demand** stage-1 AI review (`ai-review.yml`, OpenCodeRev
 Adding an Xcode target with its own `info.properties` versions or `Info.plist` (e.g. the `LifioLiveActivities` widget extension, which broke the `0.2.1` release with a duplicate-key guard failure) MUST update the pipelines in the same PR:
 
 1. **`release.yml`** — add the target's Release `Info.plist` to `RELEASE_PLISTS` in the Bump step (the single source of truth — "Commit and push" consumes it via step outputs); keep its `CFBundleShortVersionString`/`CFBundleVersion` in `project.yml` equal to the app's (App Store rejects skewed bundles). A target with a *generated* plist (`GENERATE_INFOPLIST_FILE: YES`, e.g. the `LifioLiveActivityCore` framework) has no plist to mirror — wire `MARKETING_VERSION`/`CURRENT_PROJECT_VERSION` build settings instead (missing keys fail App Store validation with ITMS-90057); the workflow bumps them in lockstep. Debug (`Info-Debug.plist`, unmanaged) stays pinned — release bumps never touch it.
-2. **`ios.yml` / Cloud scheme** — confirm the `TimeOfLife` scheme builds/tests cover the new target (the `verify` job in `release.yml` reuses `ios.yml` via `workflow_call`, and the Cloud PR-checks workflow builds the same scheme, so gaps weaken both release verification and every PR).
+2. **Cloud scheme** — confirm the `TimeOfLife` scheme builds/tests cover the new target (the Cloud `iOS PR Checks` workflow's Test action builds the same scheme — gaps weaken every PR and the tag-triggered Test→Archive that verifies releases; the `RELEASE_PLISTS` wiring in item 1 stays GitHub-side). No per-target dSYM wiring is needed — `ci_post_xcodebuild.sh` uploads the whole archive's dSYMs.
 3. **Path filters** — if the target introduces a new top-level directory, extend the `on:` path filters of every affected GitHub workflow AND the Cloud workflow's file filters so PRs touching it still trigger CI.
 
 ## Stages (`backend.yml`)
@@ -77,7 +80,7 @@ make test:cover    # coverage + per-function report
 
 ## Secrets checklist
 
-Required GitHub Actions secrets (configured in repo Settings → Secrets and variables → Actions):
+Required secrets — GitHub Actions secrets (repo Settings → Secrets and variables → Actions) plus Xcode Cloud shared secret env vars (App Store Connect; the Sentry rows below):
 
 | Secret | Used by | Required |
 |---|---|---|
@@ -90,12 +93,11 @@ Required GitHub Actions secrets (configured in repo Settings → Secrets and var
 | `AWS_ACCESS_KEY_ID` | deploy (EMAIL_BACKEND=ses) | only when SES |
 | `AWS_SECRET_ACCESS_KEY` | deploy (EMAIL_BACKEND=ses) | only when SES |
 | `APPLE_CLIENT_ID` | deploy (optional feature) | only when Apple enabled |
-| `SENTRY_AUTH_TOKEN` | ios.yml sentry-dsym (dSYM upload auth) | only when Sentry wired; absent = upload skips with a warning |
-| `SENTRY_ORG` | ios.yml sentry-dsym (Sentry org slug) | only when Sentry wired; absent = upload skips with a warning |
-| `SENTRY_PROJECT_STAGING` | ios.yml sentry-dsym (staging project slug) | only when Sentry wired; absent = staging upload skips |
-| `SENTRY_PROJECT_RELEASE` | ios.yml sentry-dsym (release project slug) | only when Sentry wired; absent = release upload skips |
-| `SENTRY_IOS_DSN` | ios.yml sentry-dsym (threaded into the archive as `SENTRY_DSN`) | only when Sentry wired; absent = archived binary ships with the SDK disabled |
-| `SENTRY_DSN` | backend deploy (rendered into VM `.env`; empty = SDK disabled) | only when Sentry wired; absent = backend ships with reporting off |
+| `SENTRY_AUTH_TOKEN` | Xcode Cloud shared secret env (`ci_post_xcodebuild.sh` dSYM upload auth) | only when Sentry wired; absent = upload skips with a warning |
+| `SENTRY_ORG` | Xcode Cloud shared secret env (Sentry org slug) | only when Sentry wired; absent = upload skips with a warning |
+| `SENTRY_PROJECT_STAGING` | Xcode Cloud shared secret env (staging project slug) | only when Sentry wired; absent = staging upload skips |
+| `SENTRY_PROJECT_RELEASE` | Xcode Cloud shared secret env (release project slug) | only when Sentry wired; absent = release upload skips |
+| `SENTRY_DSN` | Xcode Cloud shared secret env, threaded into the Cloud archive (value migrated from the former `SENTRY_IOS_DSN` GitHub secret, deleted with `ios.yml`) + backend deploy (rendered into VM `.env`) | only when Sentry wired; absent = shipped binary ships with reporting off |
 | `HC_PING_URL` | backend deploy (installs the every-minute dead-man's-switch cron pinger) | only when Healthchecks wired; absent = install skips with a warning |
 
 Non-secret variables: `EMAIL_BACKEND`, `AWS_REGION`, `SES_FROM` (set as repository variables).
