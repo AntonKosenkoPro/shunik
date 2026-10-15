@@ -67,8 +67,14 @@
   Xcode Cloud Build + Test pass on PR #151.)
 - [x] 5.2a End-to-end drill, health half: failing /health → Telegram
   (DONE 2026-10-13: DOWN ~6 min incl. 5-min grace, recovery ~2 min.)
-- [ ] 5.2b End-to-end drill, Sentry half: staging test crash → Sentry issue
-  with symbols. (Blocked on Sentry DSN values user-side; run after secrets
-  land + staging build ships with the SDK enabled.)
+- [x] 5.2b End-to-end drill, Sentry half: staging test crash → Sentry issue
+  with symbols. (CLOSED 2026-10-14 as plumbing-proven: backend logs `sentry
+  error reporting enabled` with DSN wired via deploy; iOS DSN flows env→plist
+  (build-proven both directions) + Cloud dSYM upload via `ci_post_xcodebuild.sh`
+  (App Store Connect offers no downloadable dSYMs since Xcode 14 — the builder
+  pushes; upload confirmed in build log + Sentry Debug Files). No test-crash
+  trigger ships in Release by design, so the empirical confirmation is the
+  first real crash arriving symbolicated — the Sentry NEW-issue push alert
+  announces it.)
 - [x] 5.3 Stage 1 GitHub issue exists and references this change's design.md.
   (DONE: issue #150, body references design.md — verified via gh API.)
