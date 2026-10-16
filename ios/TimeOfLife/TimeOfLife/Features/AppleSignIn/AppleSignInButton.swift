@@ -2,21 +2,9 @@ import AuthenticationServices
 import SwiftUI
 import UIKit
 
-/// "Sign in with Apple" button.
-///
-/// Renders Apple's official `ASAuthorizationAppleIDButton` (a UIControl) and
-/// forwards taps to `action`, which drives the authorization flow through
-/// `AppleSignInService`. A transparent overlay `Button` captures the tap so the
-/// underlying control never fires its own (unconfigured) target-action — the
-/// service's `ASAuthorizationController` is the single presenter.
-///
-/// The button style tracks the current color scheme: `.white` in dark mode and
-/// `.black` in light mode, matching Apple's guidance. The resolved style is
-/// computed in `body` and passed into the `UIViewRepresentable` because
-/// `makeUIView` cannot read SwiftUI `@Environment` directly.
-///
-/// The button renders without the Sign in with Apple capability; only the
-/// actual authorization requires it.
+/// Wraps Apple's `ASAuthorizationAppleIDButton`; a transparent overlay `Button`
+/// forwards taps to `action`, so the underlying control never fires its own
+/// (unconfigured) target-action.
 struct AppleSignInButton: View {
     let action: () -> Void
 

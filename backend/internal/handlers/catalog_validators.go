@@ -162,8 +162,6 @@ func (h *Handler) requireUserID(w http.ResponseWriter, r *http.Request) (string,
 	return userID, ok
 }
 
-// ---------- request structs ----------
-
 type categoryCreateReq struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -195,8 +193,6 @@ type entryUpdateReq struct {
 	EndedAt      optTime   `json:"ended_at"`
 	UpdatedAt    string    `json:"updated_at"`
 }
-
-// ---------- field validators ----------
 
 func validateName(field, name string, errs validationErrs) {
 	n := strings.TrimSpace(name)

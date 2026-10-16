@@ -1,5 +1,5 @@
 # Lifio backend — common commands
-.PHONY: build test lint run deploy help
+.PHONY: build test test:race test:cover test:pg lint run docker-build docker-run deploy prod-up prod-down prod-logs prod-ps help
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -22,7 +22,7 @@ test:pg: ## Run PostgreSQL parity tests (needs `docker compose up -d postgres`)
 	TEST_PG_DSN="postgres://postgres:postgres@localhost:5432/timeoflife?sslmode=disable" go test ./internal/db -run 'Postgres' -v
 
 lint: ## Run all linters
-	gofmt -l .
+	out="$$(gofmt -l .)"; if [ -n "$$out" ]; then echo "$$out"; exit 1; fi
 	go vet ./...
 	golangci-lint run
 

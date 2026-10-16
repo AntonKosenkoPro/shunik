@@ -1963,8 +1963,6 @@ struct SyncControllerTests {
         #expect(mock.calls.contains { $0.method == "createEntry" && $0.id == "e1" })
     }
 
-    // MARK: - Helpers
-
     @Test("sign-out then rapid sign-in of the SAME account leaves one live cycle that drains")
     func rapidReactivationSameAccountDrainsOnce() async throws {
         let (store, mock, controller) = makeContext()
@@ -2039,8 +2037,6 @@ struct SyncControllerTests {
         // unchanged — no push ever ran without a matching session user.
         #expect(mock.calls.contains { $0.method == "createEntry" && $0.id == "e1" })
     }
-
-    // MARK: - Helpers
 
     /// Mutable session-user holder for the guard tests (the sync controller's
     /// `sessionUserIDProvider` reads it live to simulate an account swap).

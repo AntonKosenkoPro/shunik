@@ -327,7 +327,6 @@ final class AppContainer: ObservableObject {
                 await deviceIdentity.current()
             }
         )
-        clientHolder.client = client
         return (client, clientHolder)
     }
 }
@@ -337,7 +336,6 @@ final class AppContainer: ObservableObject {
 @MainActor
 final class APIClientHolder {
     weak var service: AuthService?
-    var client: APIClient?
     init() {}
 }
 

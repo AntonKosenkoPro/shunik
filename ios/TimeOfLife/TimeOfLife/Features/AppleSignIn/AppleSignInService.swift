@@ -4,11 +4,8 @@ import UIKit
 
 /// Errors surfaced by the Apple sign-in flow.
 enum AppleSignInError: Error, Equatable {
-    /// The user dismissed the Apple sheet.
     case canceled
-    /// Apple returned a credential without an identity token.
     case missingIdentityToken
-    /// The authorization failed for any other reason.
     case failed(String)
 
     static func == (lhs: AppleSignInError, rhs: AppleSignInError) -> Bool {
@@ -45,11 +42,7 @@ protocol AppleAuthorizationProviding {
     func performAppleIDRequest() async throws -> AppleCredential
 }
 
-/// Real `ASAuthorizationAppleIDProvider`-backed authorization. `@MainActor`
-/// throughout: `ASAuthorizationController`'s delegate callbacks are delivered
-/// on the main thread, so the conformance is main-actor-isolated (matching how
-/// `UIViewController`-based samples conform). Held by `AppleSignInService` so
-/// the provider survives for the duration of the request.
+/// Real provider-backed authorization (`@MainActor` for the delegate callbacks; held by the service for the request).
 @MainActor
 final class AppleIDAuthorizationProvider: NSObject, AppleAuthorizationProviding {
     private var continuation: CheckedContinuation<AppleCredential, Error>?

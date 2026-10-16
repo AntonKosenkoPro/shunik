@@ -453,14 +453,12 @@ func TestSQLiteStore_GetValidOTP_ReturnsLatestOTP(t *testing.T) {
 
 	expiresAt := time.Now().Add(10 * time.Minute)
 
-	// Save first OTP
 	if err := store.SaveOTP(ctx, user.ID, "first-hash", expiresAt, 5); err != nil {
 		t.Fatalf("SaveOTP first failed: %v", err)
 	}
 
 	time.Sleep(10 * time.Millisecond)
 
-	// Save second OTP (should be returned as latest)
 	if err := store.SaveOTP(ctx, user.ID, "second-hash", expiresAt, 5); err != nil {
 		t.Fatalf("SaveOTP second failed: %v", err)
 	}

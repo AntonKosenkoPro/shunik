@@ -23,12 +23,10 @@ func main() {
 }
 
 func run() int {
-	// Set up structured logging
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	})))
 
-	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("failed to load configuration", "error", err)
@@ -52,7 +50,6 @@ func run() int {
 		slog.Info("sentry error reporting enabled")
 	}
 
-	// Create database store
 	ctx := context.Background()
 
 	store, err := db.NewPostgresStore(ctx, cfg.DatabaseURL)
@@ -68,7 +65,6 @@ func run() int {
 
 	slog.Info("connected to database")
 
-	// Run migrations
 	if err := migrations.RunPostgres(ctx, store.DB()); err != nil {
 		slog.Error("failed to run migrations", "error", err)
 		return 1
@@ -76,11 +72,9 @@ func run() int {
 
 	slog.Info("migrations applied successfully")
 
-	// Create dependencies and server
 	deps := server.NewDefaultDependencies(cfg, store)
 	srv := server.New(deps)
 
-	// Create HTTP server
 	httpServer := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),
 		Handler:      srv,
@@ -89,7 +83,6 @@ func run() int {
 		IdleTimeout:  cfg.IdleTimeout,
 	}
 
-	// Start server in a goroutine
 	go func() {
 		slog.Info("starting server", "addr", httpServer.Addr)
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

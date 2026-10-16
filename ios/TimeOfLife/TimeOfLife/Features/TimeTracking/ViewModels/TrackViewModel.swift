@@ -5,13 +5,7 @@ import Combine
 import Foundation
 import SwiftUI
 
-/// View model for the Track capture screen (timer-capture-experience spec).
-///
-/// Owns the `TrackState` state machine and the elapsed-time ticker. Capture
-/// is plain text: no catalog, no search sheet, no quick-create — the name
-/// field is the only input, and the recents chips are exact-text shortcuts.
-/// Persistence is delegated to `TimerService`, which writes only to the
-/// local database (local-first-store spec).
+/// View model for the Track capture screen: owns the `TrackState` machine and ticker; persistence via `TimerService`.
 @MainActor
 final class TrackViewModel: ObservableObject {
     /// Settable (not `private(set)`) so tests can seed exact `.ready`/`.error`

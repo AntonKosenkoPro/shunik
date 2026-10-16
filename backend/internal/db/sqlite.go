@@ -73,7 +73,6 @@ func (s *SQLiteStore) UpsertUser(ctx context.Context, email string) (User, error
 		return User{}, fmt.Errorf("upsert user insert: %w", err)
 	}
 
-	// Fetch the user (either newly created or existing)
 	var u User
 	var createdAt string
 	err = s.db.QueryRowContext(ctx, `

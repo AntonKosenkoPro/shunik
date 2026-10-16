@@ -85,7 +85,7 @@ Resolved design precedents for Lifio. Add a new entry here when a visual or inte
 
 ## D16 — On-device recency from committed entries
 
-- Timer Recents are up-to-6 exact entry texts computed on-device from committed entries (`GROUP BY activity_text`, newest `started_at` wins per group); there is no suggestions endpoint. Works fully offline.
+- Timer Recents are up-to-12 exact entry texts computed on-device from committed entries (`GROUP BY activity_text`, newest `started_at` wins per group); there is no suggestions endpoint. Works fully offline.
 - Capture shows exact texts only; the Recents chip flow is the single exception — each chip shows the icon of the first-position Category (icon-only, never names), and categoryless texts render name-only chips. The running tag selector stays category-name-free.
 - Reason: F5/P1 — the client already holds the synced store, so a server round-trip would buy nothing and break offline; the text IS the identity (exact, case-sensitive).
 
@@ -104,7 +104,7 @@ Resolved design precedents for Lifio. Add a new entry here when a visual or inte
 
 - Manage Activities and timer suggestions are ordered by `last_used_at` (most-recent first). No drag-to-reorder at MVP.
 - Reason: F8 — manual reorder adds complexity for little value now; recency is the cheapest useful default.
-- **Superseded by `remove-activities-layer`**: there is no Manage Activities screen. Recents are up-to-6 exact texts computed on-device from entries (`GROUP BY activity_text`, newest `started_at` wins); categories are name-ordered.
+- **Superseded by `remove-activities-layer`**: there is no Manage Activities screen. Recents are up-to-12 exact texts computed on-device from entries (`GROUP BY activity_text`, newest `started_at` wins); categories are name-ordered.
 
 ## D20 — Free-text start stays first-class
 
@@ -148,7 +148,7 @@ Resolved design precedents for Lifio. Add a new entry here when a visual or inte
 
 - Tapping the selected Activity affordance opens a searchable sheet: recent names before search, case-insensitive matches while typing, `Create "Name"` for valid unmatched input, and Manage Activities as a secondary destination. Category names and icons are not shown. Selecting or creating prepares the Activity and dismisses the sheet.
 - Reason: the main screen stays calm and numeric while the sheet handles a potentially large catalog with familiar search and keyboard behavior; Categories are optional analytics metadata and must not compete with the concrete task being selected.
-- **Superseded by `remove-activities-layer`**: the search sheet is deleted. Capture is a plain-text field plus up-to-6 Recents chips (exact texts with first-position category icons); tapping a chip fills the field and inherits that entry's ordered categories.
+- **Superseded by `remove-activities-layer`**: the search sheet is deleted. Capture is a plain-text field plus up-to-12 Recents chips (exact texts with first-position category icons); tapping a chip fills the field and inherits that entry's ordered categories.
 
 ## D28 — Start is explicit and Stop is spatially stable
 

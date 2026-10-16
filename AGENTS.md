@@ -10,14 +10,14 @@ Agent entrypoint for this repo. **Read [`docs/project-context.md`](docs/project-
 
 The repo is spec-driven (`openspec/config.yaml`, `schema: spec-driven`). See `openspec/README.md` for the workflow; the essentials:
 
-- **Baseline specs** (`openspec/specs/<capability>/spec.md`): current contract (20 baselines incl. `app-shell`, `timer-capture-experience`, `apple-signin`, `live-activities`). Never edit directly — behavior changes go through a change.
-- **Active deltas**: none — umbrella archive of 8 changes (`separate-notes-editor`, `extend-notes-limit`, `fix-sync-entry-truncation`, `fix-track-empty-after-reinstall`, `fix-track-visual-glitches`, `fix-tab-bar-return-jump`, `category-chip-order-numbers`, `live-activities`) landed 2026-10-10 and folded into the baselines. Check `openspec list` before starting new behavior work.
-- **Archives** (`openspec/changes/archive/`): history (e.g. `redesign-track-experience`); their deltas are already folded into the baselines.
+- **Baseline specs** (`openspec/specs/<capability>/spec.md`): current contract (24 baselines incl. `app-shell`, `timer-capture-experience`, `apple-signin`, `live-activities`). Never edit directly — behavior changes go through a change.
+- **Active deltas**: active changes live under `openspec/changes/` — check `openspec list` before starting new behavior work.
+- **Archives** (`openspec/changes/archive/`): history; their deltas are already folded into the baselines.
 
 ## Non-negotiables
 
 - **LocalStore is the single mutation chokepoint** (GRDB in App Group `group.com.antonkosenko.timeoflifeapp`) — no raw GRDB writes outside it.
-- **Incomplete UI surfaces — do not claim they are done**: UndoToast/shake-to-undo, "via <Source>" labels, and the iOS 18 lock-screen ControlWidget itself (a widget extension target exists for Live Activities; the Control toggle is still deferred). Device quota + picker (#46) is a pre-release blocker. Full list: `docs/project-context.md` → "Incomplete / deferred".
+- **Incomplete UI surfaces — do not claim they are done**: shake-to-undo polish + bulk-delete cap, and the iOS 18 lock-screen ControlWidget itself (a widget extension target exists for Live Activities; the Control toggle is still deferred). Device quota + picker (#46) is a pre-release blocker. Full list: `docs/project-context.md` → "Incomplete / deferred".
 - **OpenAPI is the authoritative API contract** (`backend/api/openapi.yaml`, S10). Endpoint changes update both sides + the spec.
 - **External docs first (ctx7)**: before implementing anything that depends on external library/framework/SDK/API/CLI/cloud-service behavior, fetch current docs via `npx ctx7@latest library` → `docs` and cite library ID + query in proposal/design; never rely on training data alone. Procedure: `docs/project-context.md` → "External docs first (ctx7)".
 - **No backward compat for on-disk formats** (pre-release): edit `Codable` shapes in place, no legacy branches.

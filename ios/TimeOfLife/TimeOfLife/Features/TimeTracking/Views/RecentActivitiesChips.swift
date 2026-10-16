@@ -65,8 +65,6 @@ struct RecentActivitiesChips: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: - Sizing
-
     /// A trait collection matching the SwiftUI environment's effective
     /// Dynamic Type size, so the icon glyph scales with rendering
     /// (also under a `.dynamicTypeSize` environment override,
@@ -93,8 +91,6 @@ struct RecentActivitiesChips: View {
             dynamicTypeSize: dynamicTypeSize
         )
     }
-
-    // MARK: - Chip
 
     @ViewBuilder
     private func chip(_ recent: ExactName) -> some View {

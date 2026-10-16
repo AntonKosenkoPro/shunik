@@ -5,7 +5,7 @@ Split-provider quality pipeline for Lifio. Mandatory PR checks (Requirements S6)
 - **GitHub Actions** — `backend.yml` (Go), `openspec.yml` (spec gate), `release.yml` (manual version bump), advisory `ai-review.yml`
 - **Xcode Cloud** — iOS checks: the `iOS PR Checks` workflow (Build + Test actions on PRs touching `ios/`, SwiftLint via `ci_pre_xcodebuild.sh`, path-filtered to `ios/**`) and the tag workflow (`v*` tags: Test → Archive → TestFlight upload, with `ci_post_xcodebuild.sh` uploading the signed archive's dSYMs to Sentry staging + release; see below)
 
-Workflows and their scope (iOS CI is Cloud-owned — the former `ios.yml` lane was deleted at cutover; its lint/build/test bar now runs as the Cloud `iOS PR Checks` workflow's pre-build + Test action):
+Workflows and their scope (PR/push iOS verification is Cloud-owned — `.github/workflows/ios.yml` keeps no automatic triggers and runs only as release verification via `workflow_call` from `release.yml`; the Cloud `iOS PR Checks` workflow's pre-build + Test action carries the PR lint/build/test bar):
 
 - **`backend.yml`** — Go: gofmt, go vet, golangci-lint, race tests, OpenAPI contract gate, coverage gate, deploy
 - **Xcode Cloud `iOS PR Checks`** — iOS: Build + Test actions on PRs touching `ios/` (path-filtered to `ios/**`); SwiftLint via `ci_pre_xcodebuild.sh` (`swiftlint lint --strict`), xcodegen via `ci_post_clone.sh`, warnings-as-errors build, unit tests
@@ -22,7 +22,7 @@ Workflows and their scope (iOS CI is Cloud-owned — the former `ios.yml` lane w
 | Scheme / config | `TimeOfLife`, Debug, iOS Simulator destination, `OS=latest` (never Release signing on PR builds) |
 | Post-clone | `ios/TimeOfLife/ci_scripts/ci_post_clone.sh` — brew-install `xcodegen`, fail-closed `XCODEGEN_PIN` assert, `xcodegen generate` (fires `postGenCommand normalize-system-capabilities.py`), `.xcodeproj` existence check |
 | Pre-build | `ios/TimeOfLife/ci_scripts/ci_pre_xcodebuild.sh` — brew-install `swiftlint`, fail-closed `SWIFTLINT_PIN` assert, `swiftlint lint --strict` (also gates tag archives; no-op there since tags build from lint-green `main`). Resolves the project dir via the `.swiftlint.yml` marker (Test VMs replay the script from clone-root, not its repo location) and skips cleanly when no iOS sources are present — the Build action already gated lint |
-| Post-build | `ios/TimeOfLife/ci_scripts/ci_post_xcodebuild.sh` — Sentry dSYM upload from Cloud's own signed archive (`$CI_ARCHIVE_PATH/dSYMs`, the exact binary TestFlight ships) to the staging + release projects via `sentry-cli debug-files upload`. Skips quietly without an archive (PR Test-only builds); per project skips with a warning when its secrets are absent; upload failures warn but never fail the archive. Replaces the former GitHub `sentry-dsym` job's separate unsigned archive (deleted with `ios.yml` at cutover) |
+| Post-build | `ios/TimeOfLife/ci_scripts/ci_post_xcodebuild.sh` — Sentry dSYM upload from Cloud's own signed archive (`$CI_ARCHIVE_PATH/dSYMs`, the exact binary TestFlight ships) to the staging + release projects via `sentry-cli debug-files upload`. Skips quietly without an archive (PR Test-only builds); per project skips with a warning when its secrets are absent; upload failures warn but never fail the archive. Replaces the former GitHub `sentry-dsym` job's separate unsigned archive (that job still runs inside `ios.yml`, now release-verification-only) |
 | Logs | App Store Connect build page (replaces `xcpretty` GH logs); link the build in the PR when reporting iOS failures |
 
 ### Xcode Cloud shared secret env vars (Sentry; tag workflow)
@@ -97,7 +97,7 @@ Required secrets — GitHub Actions secrets (repo Settings → Secrets and varia
 | `SENTRY_ORG` | Xcode Cloud shared secret env (Sentry org slug) | only when Sentry wired; absent = upload skips with a warning |
 | `SENTRY_PROJECT_STAGING` | Xcode Cloud shared secret env (staging project slug) | only when Sentry wired; absent = staging upload skips |
 | `SENTRY_PROJECT_RELEASE` | Xcode Cloud shared secret env (release project slug) | only when Sentry wired; absent = release upload skips |
-| `SENTRY_DSN` | Xcode Cloud shared secret env, threaded into the Cloud archive (value migrated from the former `SENTRY_IOS_DSN` GitHub secret, deleted with `ios.yml`) + backend deploy (rendered into VM `.env`) | only when Sentry wired; absent = shipped binary ships with reporting off |
+| `SENTRY_DSN` | Xcode Cloud shared secret env, threaded into the Cloud archive (value migrated from the `SENTRY_IOS_DSN` key still declared in `ios.yml`'s `workflow_call` secrets) + backend deploy (rendered into VM `.env`) | only when Sentry wired; absent = shipped binary ships with reporting off |
 | `HC_PING_URL` | backend deploy (installs the every-minute dead-man's-switch cron pinger) | only when Healthchecks wired; absent = install skips with a warning |
 
 Non-secret variables: `EMAIL_BACKEND`, `AWS_REGION`, `SES_FROM` (set as repository variables).

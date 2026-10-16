@@ -181,8 +181,6 @@ struct TrackContent: View {
         }
     }
 
-    // MARK: - Name capture (plain text, remove-activities-layer 4.1/4.2)
-
     /// Idle/ready/saved: the name push row opening the shared picker.
     /// Running/error: the locked name plus the standalone notes button.
     /// Saving: the plain locked name label (mid-flight, no editing).
@@ -297,8 +295,6 @@ struct TrackContent: View {
         .accessibilityLabel(vm.state.draft?.text ?? "")
     }
 
-    // MARK: - Running TagSelector (remove-activities-layer 4.2)
-
     /// The shared ordered TagSelector (select-only from existing categories,
     /// zero allowed, order preserved). Toggles rewrite only the running
     /// draft snapshot. Always mounted — even when idle with an empty
@@ -334,8 +330,6 @@ struct TrackContent: View {
             []
         }
     }
-
-    // MARK: - Primary action
 
     private var primaryAction: some View {
         PrimaryButton(
@@ -422,8 +416,6 @@ struct TrackContent: View {
         default: ""
         }
     }
-
-    // MARK: - Recent activities
 
     /// Recents while idle (the running tag selector takes this slot while
     /// running, see `belowActionSlot`).

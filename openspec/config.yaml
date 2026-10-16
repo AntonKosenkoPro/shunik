@@ -15,20 +15,18 @@ context: |
   activity entity — entries own their text, ordered categories, and notes.
 
   OpenSpec routing: baseline specs (`openspec/specs/<capability>/spec.md`) are the merged
-  contract and are NEVER edited directly (20 baselines incl. `account-bound-store`,
-  `device-sessions`, `apple-signin`, and `live-activities`). Behavior changes go through a change: delta specs
+  contract and are NEVER edited directly (24 baselines incl. `account-bound-store`,
+  `device-sessions`, `apple-signin`, `live-activities`, `backend-database`,
+  `email-otp-auth`, `observability`, and `relay-cors`). Behavior changes go through a change: delta specs
   under `openspec/changes/<change>/specs/`. The local-first architecture now lives in the
   `local-first-store`, `sync-client`, `entry-provenance`, and `lock-screen-controls` baselines.
-  Archives (`openspec/changes/archive/`) are history already folded into the baselines. No
-  active change right now (umbrella archive of 8 changes landed 2026-10-10:
-  `separate-notes-editor`, `extend-notes-limit`, `fix-sync-entry-truncation`,
-  `fix-track-empty-after-reinstall`, `fix-track-visual-glitches`,
-  `fix-tab-bar-return-jump`, `category-chip-order-numbers`, `live-activities`).
+  Archives (`openspec/changes/archive/`) are history already folded into the baselines. Active
+  changes live under `openspec/changes/` — check `openspec list` before starting new behavior work.
 
   Non-negotiables: LocalStore is the single mutation chokepoint (GRDB, App Group
   `group.com.antonkosenko.timeoflifeapp`) — no raw GRDB writes outside it. Several local-first UI
-  surfaces are INCOMPLETE (see docs/project-context.md → "Incomplete / deferred"): UndoToast /
-  shake-to-undo, "via <Source>" labels, and the iOS 18 lock-screen ControlWidget itself (a
+  surfaces are INCOMPLETE (see docs/project-context.md → "Incomplete / deferred"): shake-to-undo
+  polish + bulk-delete cap, and the iOS 18 lock-screen ControlWidget itself (a
   widget extension target exists for Live Activities; the Control toggle is still deferred). OpenAPI (`backend/api/openapi.yaml`) is the authoritative API
   contract (S10). No backward compat for on-disk formats (pre-release). No passwords, no
   plaintext secrets (R1). iOS strings go to both `en.lproj` and `ru.lproj` + `L10n` (U4).
@@ -58,7 +56,7 @@ operations:
       - 'External docs first: for every feature/bugfix, run the ctx7 research bundle (`library` → `docs`, one concept per query, max 5: topic + applicable HIG + Apple API + best practice) before coding and cite IDs + queries + pins; waive an inapplicable item only with reason + evidence; on quota error ask for `npx ctx7@latest login` / `CONTEXT7_API_KEY`, never silently fall back.'
       - Worktree isolation: do all code work in a separated git worktree (`timeOfLife.wt/<change-name>`, one branch per worktree, created from fresh `origin/main`); the main checkout stays clean. Read-only explore stays worktree-free. Worktrees do not lift the one-`xcodebuild` / one-simulator / single-writer-file serialization.
       - 'Double rebase on `origin/main`: `git fetch origin` + rebase before implementing (fresh base) and again before opening the PR (mergeable head); re-run affected linters/tests after each rebase; pushed branches move via `push --force-with-lease`; never `merge main` into the branch.'
-      - Deferred local-first UI surfaces (UndoToast/shake-to-undo, "via <Source>" labels, lock-screen ControlWidget) must not be claimed done; update `docs/project-context.md` → "Incomplete / deferred" and any owning change artifacts accordingly.
+      - Deferred local-first UI surfaces (shake-to-undo polish + bulk-delete cap, lock-screen ControlWidget) must not be claimed done; update `docs/project-context.md` → "Incomplete / deferred" and any owning change artifacts accordingly.
       - If the OpenAPI contract changes, update `backend/api/openapi.yaml` and both client/server sides (S10); run the backend contract gate (`go test ./...` includes `internal/contract`).
       - Run linters + warning-as-error build + both test suites per `docs/project-context.md` → "Per-iteration revising process (S5)".
   archive:

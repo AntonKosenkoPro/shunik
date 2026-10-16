@@ -56,10 +56,8 @@ type Config struct {
 	SentryDSN string
 }
 
-// Load reads configuration from environment variables.
-// It attempts to load .env first (non-fatal if missing).
+// Load reads configuration from the environment (.env first, non-fatal if missing).
 func Load() (*Config, error) {
-	// Best-effort load of .env file
 	_ = godotenv.Load()
 
 	cfg := &Config{}

@@ -172,8 +172,6 @@ type Store interface {
 	// follow-up).
 	UpsertUserByAppleSubject(ctx context.Context, appleSubject, email string) (User, error)
 
-	// --- Categories ---
-
 	// ListCategories returns the user's categories ordered by name.
 	ListCategories(ctx context.Context, userID string) ([]Category, error)
 
@@ -193,8 +191,6 @@ type Store interface {
 	// DeleteCategory hard-deletes a category and its join rows (entries are
 	// unaffected). Returns ErrNotFound if missing.
 	DeleteCategory(ctx context.Context, userID, id string) error
-
-	// --- Entries ---
 
 	// ListEntries returns one page of the user's entries ordered by started_at
 	// DESC, filtered by EntryFilter, each with its own ordered category tags.
@@ -228,8 +224,6 @@ type Store interface {
 
 	// DeleteEntry hard-deletes an entry. Returns ErrNotFound if missing.
 	DeleteEntry(ctx context.Context, userID, id string) error
-
-	// --- Deletion tombstones ---
 
 	// ListDeletions returns the user's tombstones with deleted_at > since
 	// (nil/zero = all), ordered by deleted_at ASC.

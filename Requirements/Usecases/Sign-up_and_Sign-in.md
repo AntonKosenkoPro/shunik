@@ -1,6 +1,6 @@
 ## User registration and sign-in
 
-1. The app launches into the Track shell without requiring sign-in. To enable sync, the user opens Profile (person control, top-trailing on every tab) and taps **Enable Sync**, which presents the welcome screen showing the app name, tagline, **Sign in with Apple** button, and **Continue with Email** button.
+1. The app launches into the auth flow (mandatory sign-in gate — there is no signed-out use): the welcome screen shows the app name, tagline, **Sign in with Apple** button, and **Continue with Email** button.
 2. If the user taps **Continue with Email**, they navigate to the email entry screen.
 3. User types their email address into the email field.
 4. User submits the email by tapping the **Continue** button or pressing the keyboard Return key.

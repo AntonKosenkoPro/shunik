@@ -213,8 +213,6 @@ func (d Dependencies) requestTimeout() time.Duration {
 	return d.RequestTimeout
 }
 
-// --- Middleware ---
-
 // healthCheckCount counts /health requests served since process start.
 // Uptime pings hit /health every minute, so they increment this counter
 // instead of emitting per-request access log lines (observability Stage 0).
@@ -291,8 +289,6 @@ func corsMiddlewareWithAllowlist(allowedOrigins []string) func(http.Handler) htt
 		})
 	}
 }
-
-// --- Health ---
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")

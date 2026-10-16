@@ -64,14 +64,16 @@ jobs:
         working-directory: backend
         run: go test ./... -race -coverprofile=coverage.out
 
-      - name: coverage summary
-        working-directory: backend
-        run: go tool cover -func=coverage.out | tail -1
-
-      - name: coverage gate
+      - name: coverage summary and gate
         working-directory: backend
         run: |
-          cov="$(go tool cover -func=coverage.out | tail -1 | grep -oE '[0-9.]+%' | tr -d '%')"
+          total="$(go tool cover -func=coverage.out | tail -1)"
+          echo "$total"
+          cov="$(printf '%s' "$total" | grep -oE '[0-9.]+%' | tr -d '%')"
+          if [ -z "$cov" ]; then
+            echo "::error::could not parse total coverage from: $total"
+            exit 1
+          fi
           echo "total coverage: ${cov}%"
           # No-regression floor. Ratchets up as the catalog feature closes gaps; the exact
           # hard floor awaits team approval (test design Quality Gate Criteria).

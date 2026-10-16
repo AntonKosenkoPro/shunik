@@ -11,7 +11,7 @@ Narrative flows for **entry-owned text and category tags**. Each flow maps to ro
 
 ## 2. Start a timer from a Recents chip
 
-1. On the Track screen, the user sees up to 6 most-recently-used exact entry texts as tappable chips, ranked on-device from committed entries (newest `started_at` wins per exact text) — no server round-trip, works offline. Chips show the exact text plus the first-position category icon only; category names never appear on capture.
+1. On the Track screen, the user sees up to 12 most-recently-used exact entry texts as tappable chips, ranked on-device from committed entries (newest `started_at` wins per exact text) — no server round-trip, works offline. Chips show the exact text plus the first-position category icon only; category names never appear on capture.
 2. The user taps a chip; the text field fills with that exact text and inherits the entry's full ordered category set (ready state). No timer starts and no entry is created.
 3. The user taps **Start**; the timer runs with the name locked and the tag selector live.
 

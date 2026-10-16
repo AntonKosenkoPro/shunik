@@ -820,7 +820,7 @@ List {
 
 ## `SectionHeader`
 
-Simple section title used in editor screens to label input sections, and in History as the day-group header.
+Day-group header in History — its only production caller. `CategoryEditorView` renders a plain `Text` label for its icon section instead of this component.
 
 ### Signature
 
@@ -835,31 +835,27 @@ struct SectionHeader: View {
 
 ### Visual
 
-- `Text(title).font(.title2.bold()).foregroundStyle(Theme.textPrimary)` in both editor and History day-group usage.
-- Optional subline `Text(subtitle).font(.caption).foregroundStyle(Theme.textSecondary).monospacedDigit()` under the title (History day total; nil in editors).
-- Optional trailing view (right-aligned) for editor usage.
-- Padded with `Theme.spacingMedium` leading / `Theme.spacingSmall` vertical (editors), or the History day-group paddings (see `SCREENS/History.md`).
+- `Text(title).font(.title2.bold()).foregroundStyle(Theme.textPrimary)` in both the single-line and History day-group usage.
+- Optional subline `Text(subtitle).font(.caption).foregroundStyle(Theme.textSecondary).monospacedDigit()` under the title (History day total; nil renders the single-line presentation).
+- No padding or trailing view of its own — History day-group paddings live at the call site (see `SCREENS/History.md`).
 - History day-group usage (D8): static two-line block (day label + total subline, Calendar-Agenda-like), identical in-list and pinned — no scroll-state gating, zero top padding. Bare `List(.plain)` section headers: no background fill, no `.bar` material, no hairline — the user rejected the boxed slab look, and the pinned bleed (row text crossing beneath headers) is accepted on every OS.
 
 ### States
 
 | State | Visual |
 |---|---|
-| Default (editor) | `.title2.bold()` title in `Theme.textPrimary` |
+| Default (single-line) | `.title2.bold()` title in `Theme.textPrimary` |
 | Day-group (in-list and pinned) | Day label + total subline ("2h 35m tracked"), no gating |
 
 ### Requirements
 
 - Pure presentational — no state, no action.
-- Editor usage: labels the icon section in `CategoryEditor`.
+- No production editor caller exists — `CategoryEditorView` renders a plain `Text` label for its icon section.
 - History usage: day-group header with always-visible total subline. The component itself has no notion of scrolling.
 
 ### Usage
 
 ```swift
-SectionHeader(title: L10n.categoryEditorIconLabel)
-IconPickerGrid(options: CatalogIcon.renderableSymbols, selection: $vm.icon, accessibilityId: "CategoryEditorIcon")
-
 // History day group (D8/D10):
 SectionHeader(
     title: dayGroup.label,

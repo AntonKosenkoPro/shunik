@@ -1,11 +1,7 @@
 import Foundation
 
-/// Resolves the ACTIVE account's database file for cross-process surfaces —
-/// lock-screen Control intents, widgets, and any future extension (lock-
-/// screen-controls delta, account-bound-local-data 4.2). These surfaces hold
-/// no session of their own: device unlock is the authorization, and the
-/// shared-session user id (the same `SessionCache` UserDefaults the app
-/// persists on sign-in) selects which `lifio_<userId>.db` is active.
+/// Resolves the ACTIVE account's database file for extension surfaces —
+/// no session of their own, so the shared-session user id selects the file.
 ///
 /// The user id is read FILE-FIRST (`active-session-user-id` in the
 /// container, mirrored by `SessionCache` on every sign-in/out): suite

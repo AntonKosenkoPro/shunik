@@ -233,8 +233,6 @@ struct TrackSyncReloadTests {
         #expect(entries.map(\.activityText) == ["Gym"])
     }
 
-    // MARK: - Helpers
-
     /// Holds a `stop()` inside its save window: the test resumes it with
     /// `go()` after interleaving the racy call.
     actor Gate {
@@ -282,6 +280,4 @@ struct TrackSyncReloadTests {
             categoryIDs: categoryIDs
         )
     }
-
-    // MARK: - Helpers
 }

@@ -23,8 +23,6 @@ import (
 	"github.com/antonkosenko/time-of-life/backend/internal/ratelimit"
 )
 
-// ---------- Handler ----------
-
 // HandlerConfig holds configuration for the auth handler.
 type HandlerConfig struct {
 	TrustedProxies []*net.IPNet // CIDRs of trusted reverse proxies allowed to set forwarded IP headers
@@ -254,8 +252,6 @@ func decodeJSON(r *http.Request, v any) error {
 	return nil
 }
 
-// ---------- Handlers ----------
-
 // RequestOTP handles POST /api/v1/auth/otp/request.
 // It validates the email, rate-limits per IP+email, upserts the user,
 // generates an OTP, and sends it via email. Always returns 202.
@@ -362,14 +358,12 @@ func (h *Handler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check expiry.
 	if time.Now().After(otp.ExpiresAt) {
 		h.logger.Warn("OTP expired", "userID", user.ID)
 		writeError(w, http.StatusUnauthorized, "otp_expired", "Code has expired. Request a new one.", nil)
 		return
 	}
 
-	// Check max attempts.
 	if otp.Attempts >= otp.MaxAttempts {
 		h.logger.Warn("OTP attempts exhausted", "userID", user.ID)
 		writeError(w, http.StatusUnauthorized, "otp_attempts_exceeded", "Too many incorrect attempts. Request a new code.", nil)
@@ -379,11 +373,9 @@ func (h *Handler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 	// Verify code using constant-time comparison.
 	if !h.otpService.VerifyCode(req.Code, otp.CodeHash) {
 		h.logger.Warn("invalid OTP code", "userID", user.ID)
-		// Increment attempts.
 		if err := h.store.IncrementOTPAttempts(ctx, otp.ID); err != nil {
 			h.logger.Error("failed to increment OTP attempts", "error", err)
 		}
-		// Check if we've now reached max attempts.
 		if otp.Attempts+1 >= otp.MaxAttempts {
 			if err := h.store.MarkOTPExhausted(ctx, otp.ID); err != nil {
 				h.logger.Error("failed to mark OTP exhausted", "error", err)
@@ -393,7 +385,6 @@ func (h *Handler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Mark user as verified.
 	if err := h.store.SetUserVerified(ctx, user.ID); err != nil {
 		h.logger.Error("failed to mark user verified", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "An internal error occurred", nil)
@@ -601,8 +592,6 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 }
-
-// ---------- Utility ----------
 
 // extractIP returns the direct TCP peer address from r.RemoteAddr, stripping
 // the port. It does NOT consult forwarded headers — see Handler.clientIP for

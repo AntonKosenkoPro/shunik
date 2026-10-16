@@ -58,8 +58,6 @@ struct TagSelector: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: - Sizing
-
     /// Icon and checkmark glyph size: 30% larger than the caption1 standard
     /// size (12 pt), scaled with Dynamic Type via `UIFontMetrics`.
     private var symbolFontSize: CGFloat {
@@ -79,8 +77,6 @@ struct TagSelector: View {
     private var symbolSlotSize: CGFloat {
         ceil(symbolFontSize * 1.5)
     }
-
-    // MARK: - Chip
 
     @ViewBuilder
     private func chip(_ category: Category) -> some View {
