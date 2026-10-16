@@ -825,36 +825,34 @@ Simple section title used in editor screens to label input sections, and in Hist
 ### Signature
 
 ```swift
-struct SectionHeader<Trailing: View>: View {
+struct SectionHeader: View {
     let title: String
-    /// Leading inset that visually aligns the title with a row's text column
-    /// (e.g. flush with `EntryRow`'s content past its icon column). When nil,
-    /// the title sits at the container's default leading inset.
-    let contentLeadingInset: CGFloat?
-    @ViewBuilder let trailing: () -> Trailing
+    /// Optional second line under the title (History day total). Nil renders
+    /// the single-line editor presentation.
+    let subtitle: String?
 }
 ```
 
 ### Visual
 
 - `Text(title).font(.title2.bold()).foregroundStyle(Theme.textPrimary)` in both editor and History day-group usage.
-- Optional trailing view (right-aligned), e.g. the History day total.
+- Optional subline `Text(subtitle).font(.caption).foregroundStyle(Theme.textSecondary).monospacedDigit()` under the title (History day total; nil in editors).
+- Optional trailing view (right-aligned) for editor usage.
 - Padded with `Theme.spacingMedium` leading / `Theme.spacingSmall` vertical (editors), or the History day-group paddings (see `SCREENS/History.md`).
-- History day-group usage (D8/D10): day label left-aligned to the `EntryRow` icon column's leading edge via `contentLeadingInset`; when the header is elevated (pinned at the top of the list), the trailing view shows the day's total tracked time, right-aligned to the `EntryRow` duration/timeframe trailing edge. In-list (not elevated), the header shows only the day label.
+- History day-group usage (D8): static two-line block (day label + total subline, Calendar-Agenda-like), identical in-list and pinned — no scroll-state gating, zero top padding. Bare `List(.plain)` section headers: no background fill, no `.bar` material, no hairline — the user rejected the boxed slab look, and the pinned bleed (row text crossing beneath headers) is accepted on every OS.
 
 ### States
 
 | State | Visual |
 |---|---|
 | Default (editor) | `.title2.bold()` title in `Theme.textPrimary` |
-| Day-group in-list | Day label only |
-| Day-group elevated (pinned) | Day label + right-aligned total ("2h 35m tracked") |
+| Day-group (in-list and pinned) | Day label + total subline ("2h 35m tracked"), no gating |
 
 ### Requirements
 
 - Pure presentational — no state, no action.
 - Editor usage: labels the icon section in `CategoryEditor`.
-- History usage: day-group header. The parent gates the trailing total on the header's elevation state — the component itself has no notion of scrolling.
+- History usage: day-group header with always-visible total subline. The component itself has no notion of scrolling.
 
 ### Usage
 
@@ -863,14 +861,10 @@ SectionHeader(title: L10n.categoryEditorIconLabel)
 IconPickerGrid(options: CatalogIcon.renderableSymbols, selection: $vm.icon, accessibilityId: "CategoryEditorIcon")
 
 // History day group (D8/D10):
-SectionHeader(title: dayGroup.label, contentLeadingInset: EntryRow.iconColumnWidth + Theme.spacingMedium) {
-    if isElevated {
-        Text("\(dayGroup.total) \(L10n.historyTracked.text)")
-            .font(.caption)
-            .foregroundStyle(Theme.textSecondary)
-            .monospacedDigit()
-    }
-}
+SectionHeader(
+    title: dayGroup.label,
+    subtitle: "\(dayGroup.total) \(L10n.historyTracked.text)"
+)
 ```
 
 ### Accessibility

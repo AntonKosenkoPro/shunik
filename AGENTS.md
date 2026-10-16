@@ -26,6 +26,7 @@ The repo is spec-driven (`openspec/config.yaml`, `schema: spec-driven`). See `op
 - **XcodeGen-managed** — edit `project.yml`, run `xcodegen generate`; never hand-edit the `.pbxproj`.
 - **Signing is per-config**: Debug unsigned (simulator/CI), Release signed with team `7923U48U87` (SIWA entitlement live; backend needs `APPLE_CLIENT_ID`). Manual smoke checklist: `README.md`.
 - **SwiftUI views use `Theme` semantic colors only**; no raw `Color` literals.
+- **No binaries in git without explicit user permission** — never commit screenshots, videos, IPAs, xcresults, or other binaries (including OpenSpec evidence); keep captures in `/tmp` or attach them directly.
 
 ## Agent attribution (issue #161, forward-only from 2026-10-15)
 

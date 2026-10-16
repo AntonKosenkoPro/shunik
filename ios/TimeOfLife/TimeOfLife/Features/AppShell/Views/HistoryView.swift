@@ -1,17 +1,13 @@
 import SwiftUI
 
 /// Read-only, day-grouped list of committed time entries (history-entry-list
-/// spec). Owns the elevation-gated day-header total (D8); `HistoryViewModel`
-/// owns data only. The navigation bar stays visible at every scroll position
-/// (the scroll-driven collapse from the original change was reverted — see
-/// the `revert-history-nav-collapse` change).
-///
-/// Uses `ScrollView` + `LazyVStack(pinnedViews:)` rather than `List`:
-/// pinned section headers in a SwiftUI `List` are re-hosted in a separate
-/// UIKit layer, so GeometryReader preferences attached to them never reach
-/// the scroll-tracking modifiers — the elevation-gated total depends on that
-/// scroll tracking. The list is read-only (no swipe actions), so `List`'s
-/// editing machinery is not needed.
+/// spec). Day headers are static two-line blocks (label + total subline,
+/// Calendar-Agenda-like) that pin under the navigation bar;
+/// `HistoryViewModel` owns data only. Pinned bleed (row text crossing
+/// beneath pinned headers) is accepted on every OS (design.md D8). The
+/// navigation bar stays visible at every scroll position (the scroll-driven
+/// collapse from the original change was reverted — see the
+/// `revert-history-nav-collapse` change).
 ///
 /// Tapping an entry row pushes the unified entry form onto this tab's
 /// NavigationStack (remove-activities-layer D6 as amended by
@@ -39,7 +35,6 @@ struct HistoryView: View {
     @StateObject private var vm: HistoryViewModel
     /// Owns the pull-to-refresh verdict flow (history-pull-to-sync spec).
     @StateObject private var pull: HistoryPullModel
-    @State private var elevatedGroupID: String?
     /// Presents the Log Time sheet (manual-entry spec). Owned by the shell
     /// so the [+] shares the nav-bar toolbar scope; the sheet and its
     /// refresh stay here.
@@ -98,6 +93,9 @@ struct HistoryView: View {
                 }
             }
         }
+        // Opaque tab bar on iOS 18, glass on iOS 26+ (D8): the bar itself
+        // is the only thing gated — list content always flows under it.
+        .toolbarBackground(usesGlassTabBar ? .automatic : .visible, for: .tabBar)
         .background(Theme.backgroundPrimary.ignoresSafeArea())
         // System shake-to-undo for entry deletions (history-entry-list,
         // fix-87): the passive host returns this surface's undo manager so
@@ -219,104 +217,62 @@ struct HistoryView: View {
         await reloadAndRegister()
     }
 
-    /// Pull-to-refresh lives on the populated list branch only: the empty
-    /// state offers no pull gesture (history-pull-to-sync spec). The closure
-    /// runs the sync verdict flow only — never an explicit local reload
-    /// (the `sync.status` cycle-exit observer above stays the sole reload
-    /// path). The native spinner ticks exactly as long as the awaited
-    /// cycle (fresh or joined) lasts.
+    /// Native day-grouped list (D8): bare two-line headers pin under the
+    /// navigation bar; pinned bleed (row text crossing beneath headers) is
+    /// accepted on every OS. Chrome stripped to the page; the pull verdict
+    /// flow, tap parity, and identifiers are unchanged from the bridge.
     private var historyList: some View {
-        ScrollView {
-            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                ForEach(vm.dayGroups) { group in
-                    Section {
-                        ForEach(group.entries) { entry in
-                            EntryRow(
-                                entry: entry,
-                                icon: vm.icon(for: entry),
-                                categoryNames: vm.categoryNames(for: entry),
-                                timeframeText: vm.timeframeText(for: entry),
-                                durationText: vm.durationText(for: entry),
-                                isInProgress: vm.isInProgress(entry),
-                                viaText: vm.viaText(for: entry),
-                                hasNotes: vm.hasNotes(for: entry)
-                            )
-                            .padding(.horizontal, Theme.spacingMedium)
-                            // Tap → pushed unified entry form on this tab's path
-                            // (history D6 as amended). No swipe/long-press actions.
-                            .contentShape(Rectangle())
-                            .onTapGesture { shell.historyPath.append(.entry(entry)) }
-                            .accessibilityAddTraits(.isButton)
-                        }
-                    } header: {
-                        dayGroupHeader(group)
+        List {
+            ForEach(vm.dayGroups) { group in
+                Section {
+                    ForEach(group.entries) { entry in
+                        EntryRow(
+                            entry: entry,
+                            icon: vm.icon(for: entry),
+                            categoryNames: vm.categoryNames(for: entry),
+                            timeframeText: vm.timeframeText(for: entry),
+                            durationText: vm.durationText(for: entry),
+                            isInProgress: vm.isInProgress(entry),
+                            viaText: vm.viaText(for: entry),
+                            hasNotes: vm.hasNotes(for: entry)
+                        )
+                        .listRowInsets(EdgeInsets(
+                            top: 0,
+                            leading: Theme.spacingMedium,
+                            bottom: 0,
+                            trailing: Theme.spacingMedium
+                        ))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        // Tap → pushed unified entry form on this tab's path
+                        // (history D6 as amended). No swipe/long-press actions.
+                        .contentShape(Rectangle())
+                        .onTapGesture { shell.historyPath.append(.entry(entry)) }
+                        .accessibilityAddTraits(.isButton)
                     }
+                } header: {
+                    SectionHeader(
+                        title: group.label,
+                        subtitle: "\(group.total) \(L10n.historyTracked.text)"
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
         .refreshable {
             await pull.refresh()
         }
-        .coordinateSpace(name: Self.scrollSpace)
         .accessibilityIdentifier("HistoryList")
-        .onPreferenceChange(HeaderFramePreferenceKey.self) { frames in
-            updateElevatedGroup(with: frames)
-        }
     }
 
-    // MARK: - Day-group header (D8/D10)
-
-    /// The total renders only when the header is elevated (pinned at the top
-    /// while the list is scrolled); in-list headers show only the day label.
-    @ViewBuilder
-    private func dayGroupHeader(_ group: DayGroup) -> some View {
-        SectionHeader(title: group.label) {
-            if isElevated(group) {
-                Text("\(group.total) \(L10n.historyTracked.text)")
-                    .font(.caption)
-                    .foregroundStyle(Theme.textSecondary)
-                    .monospacedDigit()
-            }
-        }
-        .padding(.horizontal, Theme.spacingMedium)
-        .background(Theme.backgroundPrimary)
-        .background(
-            GeometryReader { geo in
-                Color.clear.preference(
-                    key: HeaderFramePreferenceKey.self,
-                    value: [HeaderFrame(groupID: group.id, minY: geo.frame(in: .named(Self.scrollSpace)).minY)]
-                )
-            }
-        )
+    /// Glass tab bar on iOS 26+; opaque bar on iOS 18 so no scrolled
+    /// content shows through it (D8).
+    private var usesGlassTabBar: Bool {
+        if #available(iOS 26, *) { return true }
+        return false
     }
-
-    private func isElevated(_ group: DayGroup) -> Bool {
-        elevatedGroupID == group.id
-    }
-
-    /// Derives the elevated header (D8) from the day-header frames: a pinned
-    /// header clamps at `minY ≈ 0`. Uses hysteresis-friendly semantics (only
-    /// set on a clamp, never cleared transiently) and no explicit animation —
-    /// a hair-trigger threshold makes layout effects feed back into the
-    /// measurement and oscillate.
-    private func updateElevatedGroup(with frames: [HeaderFrame]) {
-        // Elevated header (D8): the pinned one — the last header whose frame
-        // clamps at the top of the visible area. Only ever set on a clamp;
-        // never clear on an empty/transient report, so animation frames that
-        // briefly move every header off zero cannot flap the total (a stale
-        // id simply matches no header once the groups change).
-        if let pinned = frames.last(where: { abs($0.minY) <= Self.headerEpsilon }) {
-            if pinned.groupID != elevatedGroupID {
-                elevatedGroupID = pinned.groupID
-            }
-        }
-    }
-
-    // MARK: - Layout constants
-
-    private static let scrollSpace = "HistoryScroll"
-    /// Pinned headers clamp at `minY ≈ 0`.
-    private static let headerEpsilon: CGFloat = 1
 }
 
 // MARK: - Pull notice (history-pull-to-sync)
@@ -335,23 +291,6 @@ private struct PullNoticeBanner: View {
             .frame(maxWidth: .infinity)
             .background(Theme.backgroundSecondary)
             .accessibilityIdentifier("HistoryOfflineNotice")
-    }
-}
-
-// MARK: - Scroll preferences
-
-private struct HeaderFrame: Equatable {
-    let groupID: String
-    let minY: CGFloat
-}
-
-/// Preference values are read and written only on the main actor (SwiftUI
-/// layout passes); `nonisolated(unsafe)` satisfies the strict-concurrency
-/// check for the required mutable `defaultValue`.
-private struct HeaderFramePreferenceKey: PreferenceKey {
-    nonisolated(unsafe) static var defaultValue: [HeaderFrame] = []
-    static func reduce(value: inout [HeaderFrame], nextValue: () -> [HeaderFrame]) {
-        value += nextValue()
     }
 }
 

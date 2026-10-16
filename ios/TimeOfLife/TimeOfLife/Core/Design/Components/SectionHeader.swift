@@ -2,36 +2,32 @@ import SwiftUI
 
 /// Section title used in editor screens to label input sections, and in
 /// History as the day-group header (Design/COMPONENTS.md). Purely
-/// presentational — no state, no action. In History the parent gates the
-/// trailing total on the header's elevation state; this component has no
-/// notion of scrolling.
-struct SectionHeader<Trailing: View>: View {
+/// presentational — no state, no action. In History the header is a static
+/// two-line block (day label + total subline, Calendar-Agenda-like); it has
+/// no notion of scrolling or pinning.
+struct SectionHeader: View {
     let title: String
-    /// Leading inset aligning the title with a row's text column (e.g. flush
-    /// with `EntryRow`'s content past its icon column). Nil = default inset.
-    let contentLeadingInset: CGFloat?
-    @ViewBuilder let trailing: () -> Trailing
+    /// Optional second line under the title (History day total). Nil renders
+    /// the single-line editor presentation exactly as before.
+    let subtitle: String?
 
-    init(
-        title: String,
-        contentLeadingInset: CGFloat? = nil,
-        @ViewBuilder trailing: @escaping () -> Trailing = { EmptyView() }
-    ) {
+    init(title: String, subtitle: String? = nil) {
         self.title = title
-        self.contentLeadingInset = contentLeadingInset
-        self.trailing = trailing
+        self.subtitle = subtitle
     }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
+        VStack(alignment: .leading, spacing: 0) {
             Text(title)
                 .font(.title2.bold())
                 .foregroundStyle(Theme.textPrimary)
-            Spacer(minLength: Theme.spacingSmall)
-            trailing()
+            if let subtitle {
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(Theme.textSecondary)
+                    .monospacedDigit()
+            }
         }
-        .padding(.leading, contentLeadingInset ?? 0)
-        .padding(.vertical, Theme.spacingSmall)
         .accessibilityAddTraits(.isHeader)
         .accessibilityIdentifier("SectionHeader")
     }
@@ -39,7 +35,13 @@ struct SectionHeader<Trailing: View>: View {
 
 #if DEBUG
 #Preview("Section header") {
-    SectionHeader(title: "Icon") { EmptyView() }
+    SectionHeader(title: "Icon")
+        .padding(.horizontal, Theme.spacingMedium)
+        .background(Theme.backgroundPrimary)
+}
+
+#Preview("Section header with subtitle") {
+    SectionHeader(title: "Today", subtitle: "8h 30m tracked")
         .padding(.horizontal, Theme.spacingMedium)
         .background(Theme.backgroundPrimary)
 }

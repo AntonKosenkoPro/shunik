@@ -72,6 +72,7 @@ extension AppContainer {
         )
 
         seed(screen: screen, sessionStore: sessionStore, navigation: navigation)
+        seedHistoryIfNeeded(screen: screen, localStore: localStore)
         return container
     }
 
@@ -109,10 +110,79 @@ extension AppContainer {
                 id: "ui-test", email: "user@example.com", emailVerified: true
             ))
             navigation.path = []
+        case "history":
+            // History with committed entries across twelve day groups
+            // (repro/spike/scroll harness, 264 entries): the shell opens on
+            // Track and the loop taps the History tab. Entries carry no
+            // categories (fallback icon rows) — the headers, totals, and
+            // scroll behavior are what is inspected.
+            sessionStore.setSignedIn(CachedSession(
+                id: "ui-test", email: "user@example.com", emailVerified: true
+            ))
+            navigation.path = []
         default:
             // "welcome" (and any unknown value) → auth-flow root.
             sessionStore.setSignedOut()
             navigation.path = []
+        }
+    }
+
+    /// Kicks off History entry seeding for the `"history"` screen.
+    /// The seeding task is enqueued at init, ahead of any appear-driven
+    /// read (best-effort ordering, not a runtime guarantee: a read that
+    /// interleaves mid-seed would see a partial list; History's
+    /// appear/disappear reloads cover that).
+    private static func seedHistoryIfNeeded(screen: String, localStore: LocalStore) {
+        guard screen == "history" else { return }
+        Task { await seedHistoryEntries(into: localStore) }
+    }
+
+    /// Seeds committed entries across twelve calendar days (today back
+    /// eleven days) for the History repro/spike/scroll harness: 22 entries
+    /// per day, 264 total. Deterministic relative to `now` so day labels
+    /// always read Today / Yesterday / absolute. A couple of long activity
+    /// texts exercise row wrapping. Failures are ignored: the harness
+    /// degrades to an empty History rather than crashing the loop.
+    /// Re-running against an already-seeded store is a no-op in effect
+    /// (`createEntry` is idempotent on `id`: a replay returns the existing
+    /// record and adds no outbox row). Silently ignored here are its
+    /// non-throwing `.invalid`/`.failure` results, matching the degrade-to-
+    /// empty policy above.
+    private static func seedHistoryEntries(into store: LocalStore) async {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = Date()
+        let todayStart = calendar.startOfDay(for: now)
+        let texts = [
+            "Morning run", "Deep work", "Code review", "Lunch break",
+            "Design sync", "Inbox zero", "Gym session", "Reading",
+            "Side project", "Evening walk",
+            "Quarterly planning workshop with the platform team",
+            "Dentist appointment and pharmacy pickup afterwards",
+        ]
+        let days = 12
+        let perDay = 22
+        for dayIndex in 0..<days {
+            let dayStart = calendar.date(
+                byAdding: .day, value: -dayIndex, to: todayStart
+            )!
+            for i in 0..<perDay {
+                // 00:05 + hourly slots: the last start (21:05) plus the
+                // longest duration (89m) still ends before midnight.
+                let start = calendar.date(
+                    byAdding: .minute,
+                    value: 5 + i * 60,
+                    to: dayStart
+                )!
+                let minutes = 20 + (i * 17 + dayIndex * 7) % 70
+                let entry = TimeEntry(
+                    id: "uitest-h-\(dayIndex)-\(i)",
+                    activityText: texts[(i + dayIndex * 5) % texts.count],
+                    startedAt: start,
+                    endedAt: calendar.date(byAdding: .minute, value: minutes, to: start),
+                    durationSeconds: minutes * 60
+                )
+                _ = try? await store.createEntry(entry)
+            }
         }
     }
 }

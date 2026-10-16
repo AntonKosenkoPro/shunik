@@ -61,32 +61,66 @@ Each History row SHALL show a small blue notes icon when the entry's notes are n
 - **WHEN** VoiceOver reads a History row whose entry has non-empty notes
 - **THEN** the row label includes the localized "has notes" affordance alongside the existing text, duration, categories, and timeframe
 
-### Requirement: Day groups use relative-then-absolute labels; total shown when elevated
-Day group headers SHALL use relative labels ("Today", "Yesterday") for the two most recent days and the regional-standard absolute date for older days. A header SHALL show only the day label while in its in-list scroll position. When the header is elevated (pinned at the top of the list), it SHALL also display the total tracked time for that day, right-aligned, formatted in the device locale's natural language with a localized "tracked" suffix (e.g. English "2h 35m tracked"). The day label SHALL be left-aligned to the `EntryRow` icon column's leading edge, and the total SHALL be right-aligned to the `EntryRow` duration/timeframe trailing edge.
+### Requirement: Day groups use relative-then-absolute labels with static total sublines
+Day group headers SHALL use relative labels ("Today", "Yesterday") for the two most recent days and the regional-standard absolute date for older days. Each header SHALL show the day label on its first line and the day's total tracked time as a subheader second line ("8h 30m tracked": total formatted in the device locale's natural language with a localized "tracked" suffix), following the Calendar Agenda week-number pattern. The total subline SHALL be visible in every header position — in-list and pinned alike, with no scroll-state gating. On compact width, the day label SHALL be left-aligned to the `EntryRow` icon column's leading edge (both at `Theme.spacingMedium`); regular width follows when the iPad reflow lands (deferred: iPhone-first scope). Day group headers SHALL render as bare two-line blocks with no background fill or material. Pinned headers do NOT occlude scrolled rows — row text may visibly cross beneath a pinned header on every OS (accepted bleed); the day label and total subline remain readable. Under Reduce Transparency / Increase Contrast nothing changes (there is no material to fall back from; the page background is opaque).
 
 #### Scenario: Today's entries
 - **WHEN** entries exist for the current calendar day
-- **THEN** their day group header reads "Today" (localized), and shows the total tracked time for that day, right-aligned, when the header is elevated
+- **THEN** their day group header reads "Today" (localized) with the day's total tracked time as its subline
 
 #### Scenario: Yesterday's entries
 - **WHEN** entries exist for the previous calendar day
-- **THEN** their day group header reads "Yesterday" (localized), and shows the total tracked time for that day, right-aligned, when the header is elevated
+- **THEN** their day group header reads "Yesterday" (localized) with the day's total tracked time as its subline
 
 #### Scenario: Older entries
 - **WHEN** entries exist for a day before yesterday
-- **THEN** their day group header reads the absolute date formatted using the device's regional settings, and shows the total tracked time for that day, right-aligned, when the header is elevated
+- **THEN** their day group header reads the absolute date formatted using the device's regional settings, with the day's total tracked time as its subline
 
-#### Scenario: In-list header shows only the day label
-- **WHEN** a day group header is in its in-list scroll position (not pinned at the top)
-- **THEN** the header shows only the day label, without the total tracked time
+#### Scenario: In-list headers show the full two lines
+- **WHEN** a day group header sits in its in-list scroll position (not pinned at the top)
+- **THEN** the header shows the day label on its first line together with the total subline on its second line — in-list and pinned headers render identically
 
 #### Scenario: Day with in-progress entries
 - **WHEN** a day group contains an entry with no end time
 - **THEN** the total counts only entries with a known `durationSeconds`; in-progress entries contribute zero to the total
 
-#### Scenario: Elevated total follows the device locale
-- **WHEN** the device locale is Russian and a header is elevated
+#### Scenario: Total follows the device locale
+- **WHEN** the device locale is Russian
 - **THEN** the day total renders with Russian unit abbreviations followed by the localized "tracked" suffix
+
+#### Scenario: Pinned header bleed is accepted
+- **WHEN** the user scrolls a day group so its header pins at the top of the list
+- **THEN** scrolled row text may remain visible crossing beneath the pinned header, while the day label and total subline stay readable
+
+#### Scenario: Reduce Transparency changes nothing
+- **WHEN** Reduce Transparency (or Increase Contrast requiring opacity) is enabled
+- **THEN** day group headers render exactly as otherwise (bare text over the opaque page; no material involved)
+
+### Requirement: Pinned header stays legible over dense content on iPad
+On regular-width (iPad) panes the pinned day group header SHALL keep the day label and the total subline simultaneously legible over scrolling entry rows in light and dark appearances, with no opaque seam or material against the navigation bar and no label/subline overlap at any supported Dynamic Type size.
+
+#### Scenario: iPad landscape pinned header
+- **WHEN** the user scrolls History on an iPad landscape pane so a day header pins
+- **THEN** the day label and the total subline are both readable with rows visible beneath, and no opaque band separates the header from the navigation bar
+
+#### Scenario: Large Dynamic Type keeps label and subline apart
+- **WHEN** the device uses an accessibility-large Dynamic Type size
+- **THEN** the day label and the total subline do not overlap or clip
+
+### Requirement: List content passes under the glass tab bar
+On iOS 26 and later, the History list SHALL extend its scroll content beneath the bottom tab bar so rows blur behind the glass mid-scroll. On iOS 18 the tab bar SHALL render opaque so no scrolled content shows through it. On every OS the bottom content inset SHALL keep the final row fully reachable above the tab bar and above the compact timer when it is shown.
+
+#### Scenario: Rows blur beneath the tab bar (iOS 26+)
+- **WHEN** the user scrolls History so content crosses the tab-bar line on iOS 26 or later
+- **THEN** rows pass visibly blurred beneath the bar with no hard cut at its top edge
+
+#### Scenario: Default tab bar on iOS 18
+- **WHEN** the user scrolls History on iOS 18
+- **THEN** no scrolled content is visible through the bar (opaque bar)
+
+#### Scenario: Final row reachable with and without the compact timer
+- **WHEN** the compact timer is shown or hidden
+- **THEN** the last entry row scrolls fully above the timer/tab-bar chrome (no row permanently obscured)
 
 ### Requirement: History offers no edit, delete, swipe, or long-press actions
 History rows SHALL NOT offer edit, delete, swipe, or long-press actions. Tapping an entry row opens the unified entry form directly (see "Tapping a History entry row opens the entry form").
