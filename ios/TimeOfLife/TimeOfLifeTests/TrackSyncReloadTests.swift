@@ -233,16 +233,55 @@ struct TrackSyncReloadTests {
         #expect(entries.map(\.activityText) == ["Gym"])
     }
 
+    /// Regression for the sticky release: a `go()` landing before `wait()`
+    /// (slow stop under load) must still release the waiter. Bounded poll —
+    /// without the sticky flag the waiter suspends forever, so an unbounded
+    /// await here would hang the suite instead of failing loudly.
+    @Test("a go before wait still releases the waiter")
+    func goBeforeWaitReleases() async {
+        let gate = Gate()
+        await gate.go()
+
+        let flag = Flag()
+        Task { await gate.wait(); await flag.set() }
+
+        var released = false
+        for _ in 0..<100 {
+            if await flag.value { released = true; break }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        #expect(released, "go() before wait() must still release the waiter")
+    }
+
+    actor Flag {
+        private(set) var value = false
+        func set() { value = true }
+    }
+
     /// Holds a `stop()` inside its save window: the test resumes it with
-    /// `go()` after interleaving the racy call.
+    /// `go()` after interleaving the racy call. The release is sticky:
+    /// `stop()` sets `.saving` (TrackViewModel.stop, state assignment)
+    /// *before* reaching `stopGate`, so `waitUntilSaving` can already see
+    /// `.saving` while the stop task has not yet suspended in `wait()` — a
+    /// `go()` landing in that window missed the continuation and stranded
+    /// the waiter suspended forever, hanging `await stopTask.value` with no
+    /// timeout (the suite's only unbounded suspend; matches the 16m49s wall
+    /// on the zero-Swift-change PR #176 head, where no test could fail fast).
+    /// Local runs stay green (3 full-suite passes, ~12s each) because the
+    /// window is narrow; the `goBeforeWaitReleases` test above proves the
+    /// old gate drops the early `go()` (fails in ~1s) and the sticky gate
+    /// keeps it (passes in ~0.01s).
     actor Gate {
         private var continuation: CheckedContinuation<Void, Never>?
+        private var released = false
 
         func wait() async {
+            if released { return }
             await withCheckedContinuation { self.continuation = $0 }
         }
 
         func go() {
+            released = true
             continuation?.resume()
             continuation = nil
         }
