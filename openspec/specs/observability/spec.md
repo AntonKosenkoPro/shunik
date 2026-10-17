@@ -58,3 +58,45 @@ without PII in tags.
 - WHEN a handler panics
 - THEN Sentry captures it with route template + status class context
 - AND an empty `SENTRY_DSN` disables reporting without breaking the server.
+
+### Requirement: Handled backend 500s carry the underlying error
+
+Every handled `internal_error` 500 MUST report to Sentry (when enabled) with the route template, the operation name, the `5xx` status class, and the underlying error string. The HTTP response MUST stay the generic envelope (no error internals leak to clients).
+
+#### Scenario: store failure on an authed route
+
+- GIVEN `SENTRY_DSN` is set
+- WHEN `GET /api/v1/categories` fails in the store
+- THEN one Sentry event arrives with route template `/api/v1/categories`, the operation name, and that error string
+- AND the client still receives `{error: {code: internal_error}}` with status 500.
+
+### Requirement: Same-operation failures group together
+
+Handled-500 events MUST fingerprint on the operation so repeats of one failing operation group into one issue while different operations stay separate issues.
+
+#### Scenario: shared dependency outage
+
+- GIVEN `SENTRY_DSN` is set
+- WHEN `GET /api/v1/auth/me` and `GET /api/v1/categories` fail together with different errors
+- THEN two issues appear (one per operation), each carrying its own error string.
+
+### Requirement: Client-disconnect 500s stay out of Sentry
+
+A handled 500 whose error (or request context) is `context.Canceled` MUST NOT report to Sentry: the requester went away mid-flight, so there is no server fault. The `slog` line remains the record. `context.DeadlineExceeded` still reports — saturation is actionable.
+
+#### Scenario: app abandons requests mid-flight
+
+- GIVEN `SENTRY_DSN` is set
+- WHEN requests fail only with `context canceled` (client disconnected)
+- THEN no Sentry events arrive for them
+- AND the client responses and server log lines are unchanged.
+
+### Requirement: No PII in enriched error payloads
+
+Sentry tags and error contexts MUST NOT carry user identifiers, emails, entry text, tokens, or request bodies — only route templates, operation names, status class, and bounded store error strings (truncated, valid UTF-8).
+
+#### Scenario: 500 on a user-specific route
+
+- GIVEN `SENTRY_DSN` is set
+- WHEN `GET /api/v1/auth/me` fails for a user
+- THEN the Sentry event contains no user id, no email, and no token material.

@@ -18,6 +18,7 @@ import (
 	"github.com/antonkosenko/time-of-life/backend/internal/db"
 	"github.com/antonkosenko/time-of-life/backend/internal/email"
 	"github.com/antonkosenko/time-of-life/backend/internal/handlers"
+	"github.com/antonkosenko/time-of-life/backend/internal/observe"
 	"github.com/antonkosenko/time-of-life/backend/internal/ratelimit"
 )
 
@@ -153,7 +154,7 @@ func New(deps Dependencies) *Server {
 	r.Use(chimw.Recoverer)
 	// Sentry panic/5xx capture sits inside Recoverer: it re-panics so
 	// Recoverer still renders the 500 (observability Stage 0).
-	r.Use(sentryMiddleware)
+	r.Use(observe.Middleware)
 	r.Use(chimw.RequestID)
 	r.Use(requestLogger)
 	r.Use(chimw.Timeout(deps.requestTimeout()))

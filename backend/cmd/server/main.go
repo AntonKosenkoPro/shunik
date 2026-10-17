@@ -15,6 +15,7 @@ import (
 	"github.com/antonkosenko/time-of-life/backend/internal/config"
 	"github.com/antonkosenko/time-of-life/backend/internal/db"
 	"github.com/antonkosenko/time-of-life/backend/internal/migrations"
+	"github.com/antonkosenko/time-of-life/backend/internal/observe"
 	"github.com/antonkosenko/time-of-life/backend/internal/server"
 )
 
@@ -43,10 +44,10 @@ func run() int {
 	// Sentry error reporting (observability Stage 0): empty SENTRY_DSN =
 	// fully disabled, zero behavior change. Init failure is non-fatal: the
 	// server continues without reporting.
-	if err := server.InitSentry(cfg.SentryDSN); err != nil {
+	if err := observe.InitSentry(cfg.SentryDSN); err != nil {
 		slog.Error("failed to initialize sentry, continuing without error reporting", "error", err)
-	} else if server.SentryEnabled() {
-		defer server.FlushSentry(2 * time.Second)
+	} else if observe.SentryEnabled() {
+		defer observe.FlushSentry(2 * time.Second)
 		slog.Info("sentry error reporting enabled")
 	}
 

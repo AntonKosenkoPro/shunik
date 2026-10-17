@@ -58,8 +58,7 @@ func (h *Handler) ListEntries(w http.ResponseWriter, r *http.Request) {
 
 	items, next, err := h.store.ListEntries(r.Context(), userID, f)
 	if err != nil {
-		h.logger.Error("list entries failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "An internal error occurred", nil)
+		h.writeInternalError(w, r, "list entries failed", err)
 		return
 	}
 	if items == nil {
@@ -93,8 +92,7 @@ func (h *Handler) ListRecents(w http.ResponseWriter, r *http.Request) {
 	}
 	items, err := h.store.ListRecents(r.Context(), userID, limit)
 	if err != nil {
-		h.logger.Error("list recents failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "An internal error occurred", nil)
+		h.writeInternalError(w, r, "list recents failed", err)
 		return
 	}
 	if items == nil {
@@ -184,7 +182,7 @@ func (h *Handler) CreateEntry(w http.ResponseWriter, r *http.Request) {
 	}
 	created, isNew, err := h.store.CreateEntry(r.Context(), e)
 	if err != nil {
-		h.writeCatalogStoreErr(w, err, "create entry", versionDetails(created.UpdatedAt), nil)
+		h.writeCatalogStoreErr(w, r, err, "create entry", versionDetails(created.UpdatedAt), nil)
 		return
 	}
 	status := http.StatusCreated
@@ -203,7 +201,7 @@ func (h *Handler) GetEntry(w http.ResponseWriter, r *http.Request) {
 	}
 	e, err := h.store.GetEntry(r.Context(), userID, chi.URLParam(r, "id"))
 	if err != nil {
-		h.writeCatalogStoreErr(w, err, "get entry", versionDetails(e.UpdatedAt), nil)
+		h.writeCatalogStoreErr(w, r, err, "get entry", versionDetails(e.UpdatedAt), nil)
 		return
 	}
 	writeJSON(w, http.StatusOK, e)
@@ -276,7 +274,7 @@ func (h *Handler) UpdateEntry(w http.ResponseWriter, r *http.Request) {
 	patch.UpdatedAt = updatedAt
 	updated, err := h.store.UpdateEntry(r.Context(), userID, chi.URLParam(r, "id"), patch)
 	if err != nil {
-		h.writeCatalogStoreErr(w, err, "update entry", versionDetails(updated.UpdatedAt), nil)
+		h.writeCatalogStoreErr(w, r, err, "update entry", versionDetails(updated.UpdatedAt), nil)
 		return
 	}
 	writeJSON(w, http.StatusOK, updated)
@@ -289,7 +287,7 @@ func (h *Handler) DeleteEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.store.DeleteEntry(r.Context(), userID, chi.URLParam(r, "id")); err != nil {
-		h.writeCatalogStoreErr(w, err, "delete entry", nil, nil)
+		h.writeCatalogStoreErr(w, r, err, "delete entry", nil, nil)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

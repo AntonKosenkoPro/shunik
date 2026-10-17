@@ -20,6 +20,7 @@ import (
 	"github.com/antonkosenko/time-of-life/backend/internal/auth"
 	"github.com/antonkosenko/time-of-life/backend/internal/db"
 	"github.com/antonkosenko/time-of-life/backend/internal/email"
+	"github.com/antonkosenko/time-of-life/backend/internal/observe"
 	"github.com/antonkosenko/time-of-life/backend/internal/ratelimit"
 )
 
@@ -165,6 +166,17 @@ func writeError(w http.ResponseWriter, status int, code, message string, details
 	})
 }
 
+// writeInternalError handles a handled HTTP 500: it reports the underlying
+// error to Sentry (a no-op unless reporting is enabled), logs it exactly as
+// before, and writes the generic internal_error envelope. The client never
+// sees error internals. msg is the stable log label (also the Sentry
+// fingerprint), so keep it a short constant — never user data.
+func (h *Handler) writeInternalError(w http.ResponseWriter, r *http.Request, msg string, err error) {
+	observe.ReportError(r, msg, err)
+	h.logger.Error(msg, "error", err)
+	writeError(w, http.StatusInternalServerError, "internal_error", "An internal error occurred", nil)
+}
+
 // writeAccepted responds 202 with a uniform "accepted" envelope. Used by the
 // OTP request path to close user enumeration (no per-error status leaks).
 func writeAccepted(w http.ResponseWriter) {
@@ -193,24 +205,21 @@ func requireDeviceID(w http.ResponseWriter, r *http.Request) (string, bool) {
 // refresh token hash bound to deviceID (per-device refresh family), and
 // writes the authResponse envelope. On any failure it writes an
 // internal_error response. It returns nothing; callers return.
-func (h *Handler) issueTokens(ctx context.Context, w http.ResponseWriter, user db.User, emailVerified bool, deviceID string) {
+func (h *Handler) issueTokens(ctx context.Context, w http.ResponseWriter, r *http.Request, user db.User, emailVerified bool, deviceID string) {
 	accessToken, err := h.tokenService.CreateAccessToken(user.ID, user.Email)
 	if err != nil {
-		h.logger.Error("failed to create access token", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "An internal error occurred", nil)
+		h.writeInternalError(w, r, "failed to create access token", err)
 		return
 	}
 
 	rawRefresh, refreshHash, err := h.tokenService.GenerateRefreshToken()
 	if err != nil {
-		h.logger.Error("failed to generate refresh token", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "An internal error occurred", nil)
+		h.writeInternalError(w, r, "failed to generate refresh token", err)
 		return
 	}
 
 	if err := h.store.SaveRefreshToken(ctx, user.ID, refreshHash, deviceID); err != nil {
-		h.logger.Error("failed to save refresh token", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "An internal error occurred", nil)
+		h.writeInternalError(w, r, "failed to save refresh token", err)
 		return
 	}
 
@@ -386,12 +395,11 @@ func (h *Handler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.store.SetUserVerified(ctx, user.ID); err != nil {
-		h.logger.Error("failed to mark user verified", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "An internal error occurred", nil)
+		h.writeInternalError(w, r, "failed to mark user verified", err)
 		return
 	}
 
-	h.issueTokens(ctx, w, user, true, deviceID)
+	h.issueTokens(ctx, w, r, user, true, deviceID)
 }
 
 // AppleSignIn handles POST /api/v1/auth/apple.
@@ -443,14 +451,12 @@ func (h *Handler) AppleSignIn(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.store.UpsertUserByAppleSubject(ctx, claims.Sub, claims.Email)
 	if err != nil {
-		h.logger.Error("failed to upsert apple user", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error",
-			"An internal error occurred", nil)
+		h.writeInternalError(w, r, "failed to upsert apple user", err)
 		return
 	}
 
 	// Issue tokens (same path as VerifyOTP). Apple users are email-verified.
-	h.issueTokens(ctx, w, user, true, deviceID)
+	h.issueTokens(ctx, w, r, user, true, deviceID)
 	h.logger.Info("apple user signed in", "userID", user.ID)
 }
 
@@ -521,21 +527,19 @@ func (h *Handler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 
 	// Revoke the old token.
 	if err := h.store.RevokeRefreshToken(ctx, storedToken.ID); err != nil {
-		h.logger.Error("failed to revoke old refresh token", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "An internal error occurred", nil)
+		h.writeInternalError(w, r, "failed to revoke old refresh token", err)
 		return
 	}
 
 	// Look up user to get email.
 	user, err := h.store.GetUserByID(ctx, storedToken.UserID)
 	if err != nil {
-		h.logger.Error("failed to get user for token refresh", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "An internal error occurred", nil)
+		h.writeInternalError(w, r, "failed to get user for token refresh", err)
 		return
 	}
 
 	// Generate new token pair; rotation stays within the device's family.
-	h.issueTokens(ctx, w, user, user.EmailVerified, storedToken.DeviceID)
+	h.issueTokens(ctx, w, r, user, user.EmailVerified, storedToken.DeviceID)
 }
 
 // Logout handles POST /api/v1/auth/logout.
@@ -557,8 +561,7 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 
 	// Revoke only this device's refresh tokens.
 	if err := h.store.RevokeUserDeviceSessions(ctx, userID, deviceID); err != nil {
-		h.logger.Error("failed to revoke device tokens on logout", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "An internal error occurred", nil)
+		h.writeInternalError(w, r, "failed to revoke device tokens on logout", err)
 		return
 	}
 
@@ -579,8 +582,7 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.store.GetUserByID(ctx, userID)
 	if err != nil {
-		h.logger.Error("failed to get user for /me", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "An internal error occurred", nil)
+		h.writeInternalError(w, r, "failed to get user for /me", err)
 		return
 	}
 

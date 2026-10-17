@@ -15,7 +15,7 @@ import (
 // conflictDetails carries the server's current version (for a 409 conflict)
 // and existsDetails the winning record (for a *_exists 409); both are
 // computed by the caller with versionDetails/identityDetails below.
-func (h *Handler) writeCatalogStoreErr(w http.ResponseWriter, err error, action string, conflictDetails, existsDetails any) {
+func (h *Handler) writeCatalogStoreErr(w http.ResponseWriter, r *http.Request, err error, action string, conflictDetails, existsDetails any) {
 	switch {
 	case errors.Is(err, db.ErrNotFound):
 		writeError(w, http.StatusNotFound, codeNotFound, "Not found", nil)
@@ -33,8 +33,7 @@ func (h *Handler) writeCatalogStoreErr(w http.ResponseWriter, err error, action 
 	case errors.Is(err, db.ErrInvalidCategoryID):
 		writeValidation(w, validationErrs{"category_ids": "One or more categories do not exist"})
 	default:
-		h.logger.Error(action+" failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "An internal error occurred", nil)
+		h.writeInternalError(w, r, action+" failed", err)
 	}
 }
 
@@ -58,8 +57,7 @@ func (h *Handler) ListCategories(w http.ResponseWriter, r *http.Request) {
 	}
 	cats, err := h.store.ListCategories(r.Context(), userID)
 	if err != nil {
-		h.logger.Error("list categories failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "An internal error occurred", nil)
+		h.writeInternalError(w, r, "list categories failed", err)
 		return
 	}
 	if cats == nil {
@@ -94,7 +92,7 @@ func (h *Handler) CreateCategory(w http.ResponseWriter, r *http.Request) {
 	c := db.Category{ID: req.ID, UserID: userID, Name: name, Icon: icon}
 	created, isNew, err := h.store.CreateCategory(r.Context(), c)
 	if err != nil {
-		h.writeCatalogStoreErr(w, err, "create category", versionDetails(created.UpdatedAt), identityDetails(created.ID, created.Name))
+		h.writeCatalogStoreErr(w, r, err, "create category", versionDetails(created.UpdatedAt), identityDetails(created.ID, created.Name))
 		return
 	}
 	status := http.StatusCreated
@@ -113,7 +111,7 @@ func (h *Handler) GetCategory(w http.ResponseWriter, r *http.Request) {
 	}
 	c, err := h.store.GetCategory(r.Context(), userID, chi.URLParam(r, "id"))
 	if err != nil {
-		h.writeCatalogStoreErr(w, err, "get category", versionDetails(c.UpdatedAt), nil)
+		h.writeCatalogStoreErr(w, r, err, "get category", versionDetails(c.UpdatedAt), nil)
 		return
 	}
 	writeJSON(w, http.StatusOK, c)
@@ -152,7 +150,7 @@ func (h *Handler) UpdateCategory(w http.ResponseWriter, r *http.Request) {
 	patch := db.CategoryPatch{Name: req.Name, Icon: req.Icon, UpdatedAt: updatedAt}
 	updated, err := h.store.UpdateCategory(r.Context(), userID, chi.URLParam(r, "id"), patch)
 	if err != nil {
-		h.writeCatalogStoreErr(w, err, "update category", versionDetails(updated.UpdatedAt), identityDetails(updated.ID, updated.Name))
+		h.writeCatalogStoreErr(w, r, err, "update category", versionDetails(updated.UpdatedAt), identityDetails(updated.ID, updated.Name))
 		return
 	}
 	writeJSON(w, http.StatusOK, updated)
@@ -165,7 +163,7 @@ func (h *Handler) DeleteCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.store.DeleteCategory(r.Context(), userID, chi.URLParam(r, "id")); err != nil {
-		h.writeCatalogStoreErr(w, err, "delete category", nil, nil)
+		h.writeCatalogStoreErr(w, r, err, "delete category", nil, nil)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -192,8 +190,7 @@ func (h *Handler) ListDeletions(w http.ResponseWriter, r *http.Request) {
 	}
 	tombstones, err := h.store.ListDeletions(r.Context(), userID, deletedSince)
 	if err != nil {
-		h.logger.Error("list deletions failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "An internal error occurred", nil)
+		h.writeInternalError(w, r, "list deletions failed", err)
 		return
 	}
 	if tombstones == nil {
