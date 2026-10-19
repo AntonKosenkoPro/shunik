@@ -19,8 +19,9 @@ import SwiftUI
 /// error haptic, and saves nothing without popping (shake suppressed under
 /// Reduce Motion; the haptic still fires).
 ///
-/// Placeholder reuses `L10n.entryNotesPlaceholder` (`TextEditor` has no
-/// native placeholder); `Theme` semantic colors only.
+/// Placeholder uses `L10n.notesEditorPlaceholder` ("Dear diary..."),
+/// distinct from the collapsed presenters' `L10n.entryNotesPlaceholder`
+/// (`TextEditor` has no native placeholder); `Theme` semantic colors only.
 struct NotesEditorPage: View {
     /// Entry name shown in the counter subtitle (static open-time snapshot —
     /// neither caller retexts underneath the page).
@@ -58,7 +59,7 @@ struct NotesEditorPage: View {
             .background(Theme.transparent)
             .overlay(alignment: .topLeading) {
                 if draft.isEmpty {
-                    Text(L10n.entryNotesPlaceholder.text)
+                    Text(L10n.notesEditorPlaceholder.text)
                         .font(.body)
                         .foregroundStyle(Theme.textSecondary)
                         .padding(.top, DynamicTypeMetrics.editorTextOriginInsets.top)

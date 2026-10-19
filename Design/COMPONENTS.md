@@ -963,6 +963,22 @@ Shared dedicated name-picking page — full spec lives in `SCREENS/NamePicker.md
 
 ---
 
+## `NotesEditorPage` (page)
+
+Shared dedicated notes-editing page pushed from the entry-form Notes presenter and the running Track notes row. Copy-on-open local draft; X discards, ✓ writes back via `onSave`. No system Back button (swipe-back still pops and discards, like X).
+
+### Copy
+
+- Collapsed presenters (entry-form Notes row, running Track notes row) show `entry.notesPlaceholder`: EN "Optional notes" / RU "Необязательные заметки".
+- The expanded editor empty state shows `notes.editorPlaceholder`: EN "Dear diary..." / RU "Дорогой дневник...". The two keys are intentionally distinct.
+
+### Visual
+
+- Empty-state overlay: `.body`, `Theme.textSecondary`, hit-test-transparent, hidden from VoiceOver (the nav-bar title + live `<name> • <count>/2000` counter subtitle carry the accessible context).
+- Over-limit counter renders `Theme.danger`; ✓ stays enabled and an over-limit save shakes the subtitle with the error haptic instead of saving.
+
+---
+
 ## `UndoToast` (removed)
 
 > **Removed** by `unify-catalog-deletion`: deletions undo through the DEFAULT system Undo confirmation only (see `INTERACTIONS.md` → Undo flow). No component, no `L10n.undo.*` toast keys, no call sites. The undo buffer stays restorable until the app restarts — there is no toast and no 30-second window.

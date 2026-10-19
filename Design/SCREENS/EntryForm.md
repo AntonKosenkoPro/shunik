@@ -17,7 +17,7 @@ Five cards in fixed order: Name, Start, End, Categories, Notes (`FormCard` secti
 - Validity gate: confirm disabled until the trimmed name is non-empty and End is strictly after Start.
 - Name field opens the shared `NamePicker` contract (exact-text identity, ordered-category inheritance).
 - Categories: shared ordered `TagSelector` (select-only, zero allowed).
-- Notes: inline multiline field (tap-away/scroll-away resigns; child buttons consume their taps).
+- Notes: read-only multiline presenter (1–5 line window, collapsed `entry.notesPlaceholder` copy) pushing the shared `NotesEditorPage` (expanded `notes.editorPlaceholder` copy — see `COMPONENTS.md`); LOCKED mode renders read-only with no navigation.
 - LOCKED mode shows values read-only with Back only (no confirm); EDIT and LOCKED both offer bottom destructive Delete (single confirm naming the entry text → durable undo buffer, shake-to-undo, no toast).
 - Save failure surfaces as a non-field error with the draft intact and the form open.
 - No system gesture is ever disabled (pickers keep non-picker grab area so pull-down-to-scroll reaches the outer `ScrollView`).

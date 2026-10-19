@@ -174,6 +174,9 @@ enum L10n: String, CaseIterable {
     // name omitted when empty)
     case notesEditorSubtitle = "notes.editorSubtitle"
     case notesEditorCounter = "notes.editorCounter"
+    // Expanded notes editor empty-state placeholder (change-expanded-notes-placeholder):
+    // warm free-writing prompt, distinct from the collapsed `entry.notesPlaceholder`.
+    case notesEditorPlaceholder = "notes.editorPlaceholder"
 
     // Starter categories (category-management spec, seed requirement)
     case categorySeedWork = "category.seed.work"

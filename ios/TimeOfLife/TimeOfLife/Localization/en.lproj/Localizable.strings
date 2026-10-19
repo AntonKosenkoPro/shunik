@@ -191,6 +191,7 @@
 "name.pickerNoMatchHint" = "No matches — Done will use “%@” as a new name.";
 "notes.editorSubtitle" = "%@ • %d/2000";
 "notes.editorCounter" = "%d/2000";
+"notes.editorPlaceholder" = "Dear diary...";
 
 // Starter categories (category-management spec, seed requirement)
 "category.seed.work" = "Work";

@@ -77,6 +77,24 @@ struct LocalizationTests {
         }
     }
 
+    // MARK: - Notes placeholders
+
+    /// Collapsed presenters keep "Optional notes" while the expanded editor
+    /// page uses its own "Dear diary..." prompt (change-expanded-notes-placeholder).
+    @Test("collapsed and expanded notes placeholders are exact and distinct")
+    func notesPlaceholders() throws {
+        let main = Bundle.main
+        let enPath = try #require(main.path(forResource: "en", ofType: "lproj"))
+        let ruPath = try #require(main.path(forResource: "ru", ofType: "lproj"))
+        let en = try #require(Bundle(path: enPath))
+        let ru = try #require(Bundle(path: ruPath))
+
+        #expect(NSLocalizedString("entry.notesPlaceholder", bundle: en, comment: "") == "Optional notes")
+        #expect(NSLocalizedString("entry.notesPlaceholder", bundle: ru, comment: "") == "Необязательные заметки")
+        #expect(NSLocalizedString("notes.editorPlaceholder", bundle: en, comment: "") == "Dear diary...")
+        #expect(NSLocalizedString("notes.editorPlaceholder", bundle: ru, comment: "") == "Дорогой дневник...")
+    }
+
     // MARK: - Error codes
 
     @Test("known error codes resolve via ErrorLocalization without falling back to unknown")
@@ -234,6 +252,7 @@ struct LocalizationTests {
         "name.pickerNoMatchHint",
         "name.pickerTitle",
         "notes.editorCounter",
+        "notes.editorPlaceholder",
         "notes.editorSubtitle",
         "otp.codeHint",
         "otp.codeLabel",

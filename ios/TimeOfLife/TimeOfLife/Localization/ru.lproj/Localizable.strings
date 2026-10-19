@@ -191,6 +191,7 @@
 "name.pickerNoMatchHint" = "Совпадений нет — «%@» будет использовано как новое название.";
 "notes.editorSubtitle" = "%@ • %d/2000";
 "notes.editorCounter" = "%d/2000";
+"notes.editorPlaceholder" = "Дорогой дневник...";
 
 // Starter categories (category-management spec, seed requirement)
 "category.seed.work" = "Работа";

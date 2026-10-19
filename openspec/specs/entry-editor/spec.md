@@ -96,7 +96,7 @@ The entry-form Name row's trailing clear (`×`) button SHALL be visible only whe
 - **THEN** a trailing `×` is visible, and one tap empties the field while categories, notes, and Start/End stay unchanged
 
 ### Requirement: Entry-form Notes row has a clear button
-The entry-form Notes row SHALL present a read-only multiline presenter instead of an inline editor: a `Text` label with a 1–5 line window that shows the localized notes placeholder when the draft notes are empty and truncates past 5 lines. The presenter SHALL carry the caption row with a trailing chevron in balanced corner margins (the caption row's top inset equals the card's trailing inset; approved spike variant B). Tapping the presenter SHALL push a dedicated Notes editor page carrying X (cancel/discard) and ✓ (save/commit) in the navigation bar with no system Back button (X is the sole cancel path; swipe-back still pops and discards). The editor page SHALL show a live localized subtitle pairing the entry name with the notes counter (`<name> • <count>/2000`, name omitted when empty), counting every rune against the 2000 bound. Past the bound the counter SHALL render red; the confirm action SHALL stay enabled and an over-limit save attempt SHALL shake the counter subtitle and play the error haptic without saving or popping. The 2000-rune notes cap is enforced by the relay; the 60-char name bound is unchanged. In LOCKED mode the presenter SHALL render multiline read-only (disabled and dimmed) with no editing and no navigation. All strings localized (EN + RU), `Theme` semantic colors only.
+The entry-form Notes row SHALL present a read-only multiline presenter instead of an inline editor: a `Text` label with a 1–5 line window that shows the localized notes placeholder when the draft notes are empty and truncates past 5 lines. The presenter SHALL carry the caption row with a trailing chevron in balanced corner margins (the caption row's top inset equals the card's trailing inset; approved spike variant B). Tapping the presenter SHALL push a dedicated Notes editor page carrying X (cancel/discard) and ✓ (save/commit) in the navigation bar with no system Back button (X is the sole cancel path; swipe-back still pops and discards). The editor page SHALL show a live localized subtitle pairing the entry name with the notes counter (`<name> • <count>/2000`, name omitted when empty), counting every rune against the 2000 bound. Past the bound the counter SHALL render red; the confirm action SHALL stay enabled and an over-limit save attempt SHALL shake the counter subtitle and play the error haptic without saving or popping. The 2000-rune notes cap is enforced by the relay; the 60-char name bound is unchanged. In LOCKED mode the presenter SHALL render multiline read-only (disabled and dimmed) with no editing and no navigation. All strings localized (EN + RU), `Theme` semantic colors only. The collapsed presenter placeholder SHALL read "Optional notes" (EN) / "Необязательные заметки" (RU); the expanded editor page empty-state placeholder SHALL read "Dear diary..." (EN) / "Дорогой дневник..." (RU) via a dedicated localization key separate from the collapsed placeholder.
 
 #### Scenario: Return inserts a newline
 - **WHEN** the Notes editor page field is focused and the user presses Return
@@ -112,7 +112,11 @@ The entry-form Notes row SHALL present a read-only multiline presenter instead o
 
 #### Scenario: Placeholder shows only when empty
 - **WHEN** the draft notes are empty
-- **THEN** the presenter shows the localized notes placeholder, and tapping it opens the editor page; the placeholder hides as soon as any text is present
+- **THEN** the presenter shows the localized collapsed notes placeholder ("Optional notes" / "Необязательные заметки"), and tapping it opens the editor page; the placeholder hides as soon as any text is present
+
+#### Scenario: Expanded editor shows its own placeholder
+- **WHEN** the Notes editor page opens with empty notes
+- **THEN** the editor shows the dedicated expanded placeholder ("Dear diary..." / "Дорогой дневник..."), distinct from the collapsed presenter placeholder, and the expanded placeholder hides as soon as any text is present
 
 #### Scenario: Notes clear clears the draft notes
 - **WHEN** the editor page holds text and the user activates X
