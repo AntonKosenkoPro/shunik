@@ -33,7 +33,7 @@ struct TimerLiveActivityWidget: Widget {
             } else {
                 RunningBannerFace(
                     text: context.attributes.entryText,
-                    iconSymbol: context.attributes.iconSymbol,
+                    iconSymbol: context.state.liveIconSymbol,
                     startedAt: context.state.startedAt,
                     trackURL: trackURL,
                     trackStopURL: trackStopURL
@@ -92,7 +92,7 @@ struct TimerLiveActivityWidget: Widget {
                     .widgetURL(trackURL)
                 }
             } compactLeading: {
-                Image(systemName: context.attributes.iconSymbol)
+                Image(systemName: context.state.liveIconSymbol)
                     .widgetURL(trackURL)
             } compactTrailing: {
                 islandElapsed(context: context)
@@ -105,7 +105,7 @@ struct TimerLiveActivityWidget: Widget {
                     .frame(width: 52, alignment: .trailing)
                     .widgetURL(trackURL)
             } minimal: {
-                Image(systemName: context.attributes.iconSymbol)
+                Image(systemName: context.state.liveIconSymbol)
                     .widgetURL(trackURL)
             }
         }

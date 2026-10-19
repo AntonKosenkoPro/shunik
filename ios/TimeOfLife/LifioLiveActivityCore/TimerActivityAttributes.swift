@@ -46,6 +46,17 @@ public struct TimerActivityAttributes: ActivityAttributes, Equatable {
             self.savedDurationSeconds = savedDurationSeconds
             self.categoryChips = categoryChips
         }
+
+        /// Live icon for every running face (fix-live-activity-category-icon):
+        /// the first ordered chip's validated symbol, or `"timer"` when the
+        /// run has no categories. Derived from the mutable state (not the
+        /// immutable attributes) so mid-run retag/reorder/removal refreshes
+        /// the banner and compact/minimal icons via the existing chips-only
+        /// `update()` — no restart, no `startedAt` reset. The Saved end-card
+        /// never reads this (it shows the checkmark face).
+        public var liveIconSymbol: String {
+            categoryChips.first?.iconSymbol ?? "timer"
+        }
     }
 }
 

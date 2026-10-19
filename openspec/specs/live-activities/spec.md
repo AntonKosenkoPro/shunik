@@ -5,7 +5,7 @@
 A Live Activity mirrors the running timer outside the app — in the Dynamic Island, on the Lock Screen, and (via the system) on the user's Mac — with Stop and return-to-Track actions, so a run stays glanceable and stoppable without opening the app.
 ## Requirements
 ### Requirement: Live Activity follows the running timer
-The system SHALL start a Live Activity when a timer starts and end it when the timer stops. The activity SHALL be requested only while the app is in the foreground and only when Live Activities are enabled; at most one activity SHALL exist at a time (the `timer_state` singleton). Starting SHALL NOT create an entry and stopping via the activity SHALL save the entry exactly as an in-app Stop (same `source='manual'` path, same outbox row). The activity content SHALL refresh the visible category chips when the running draft is retagged mid-run (same text keeps the singleton; chips update in place); the first-position icon stays as requested at start.
+The system SHALL start a Live Activity when a timer starts and end it when the timer stops. The activity SHALL be requested only while the app is in the foreground and only when Live Activities are enabled; at most one activity SHALL exist at a time (the `timer_state` singleton). Starting SHALL NOT create an entry and stopping via the activity SHALL save the entry exactly as an in-app Stop (same `source='manual'` path, same outbox row). The activity content SHALL refresh the visible category chips when the running draft is retagged mid-run (same text keeps the singleton; chips update in place); the live icon SHALL follow the draft's first ordered category (timer fallback when the draft has no categories) without restart or time reset.
 
 #### Scenario: Start shows the activity
 - **WHEN** the user starts a timer in the app while Live Activities are enabled
@@ -29,7 +29,15 @@ The system SHALL start a Live Activity when a timer starts and end it when the t
 
 #### Scenario: Mid-run retag refreshes category chips
 - **WHEN** the user changes the running draft's categories while the timer runs
-- **THEN** the Live Activity keeps its singleton identity (same text) and its visible category chips update to the draft's current ordered set; the first-position icon stays as requested at start; identical chips skip the update
+- **THEN** the Live Activity keeps its singleton identity (same text) and its visible category chips update to the draft's current ordered set; the live icon on all running faces (banner, compact, minimal) reflects the draft's first ordered category (timer fallback when empty); identical chips skip the update
+
+#### Scenario: Mid-run reorder moves the live icon without restart
+- **WHEN** the user reorders the running draft's categories while the timer runs
+- **THEN** the live icon follows the new first ordered category with `startedAt` unchanged (no restart, no elapsed reset)
+
+#### Scenario: Mid-run removal falls back to the timer icon
+- **WHEN** the user removes all categories from the running draft while the timer runs
+- **THEN** the live icon falls back to `timer` with `startedAt` unchanged (no restart, no elapsed reset)
 
 ### Requirement: Island and banner presentations
 The activity SHALL provide compact (icon + elapsed), minimal (icon only), expanded (big borderless elapsed top-left + Stop top-right + full-width name with category chips along the bottom), and Lock Screen banner (icon + exact name + elapsed + Stop as transparent content over the system card) presentations. Elapsed time SHALL tick via the system timer view (no per-second updates). The expanded face SHALL show the exact entry text verbatim (`Gym` ≠ `GYM`, one line) and the draft's ordered categories as icon chips (validated SF Symbol + name, cap 2 chips + `+n` overflow, never a half-clipped third chip); the expanded timer readout SHALL NOT truncate at width phase crossings (`9:59`→`10:00`, `59:59`→`1:00:00`). The Lock Screen banner SHALL render no custom container — on iOS 26+ the system Liquid Glass card (via a clear background tint), on older systems the default solid card. The Lock Screen banner content row SHALL be inset 12pt from the leading system-card edge (icon side) and 8pt from the trailing edge and vertically. Faces SHALL show only the exact entry text, the first-position category icon, chips, and the elapsed readout — never provenance labels, notes, or started-at lines. All faces SHALL expose localized accessibility labels naming the text and running state.
