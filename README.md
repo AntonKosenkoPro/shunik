@@ -111,6 +111,8 @@ Live Activities need a real device with Dynamic Island (the simulator shows the 
 
 The backend deploys to a **GCP Compute Engine VM** (`timeoflife-backend`, us-east1-b) via Docker Compose: PostgreSQL 15, the Go backend, and Nginx (Let's Encrypt SSL). Every push to `main` touching `backend/` lints, tests, builds, and deploys automatically. Manual deploys use the `backend` GitHub Actions workflow dispatch. Production URL: `https://timeoflife-api.antonkosenko.pro`.
 
+**Landing + privacy**: `https://lifio.antonkosenko.pro` (static site in `web/`, Cloudflare Pages Git integration on `main`, no build step). Privacy policy: `https://lifio.antonkosenko.pro/privacy` — the support + privacy URLs for external TestFlight review.
+
 ## Deferred / out of scope
 
 - **Sign in with Apple follow-ups** — account-deletion token revocation via Apple `/auth/revoke`, nonce replay defense, credential-state observation, identity merging between email-OTP and Apple accounts (kept separate by design for now).
