@@ -231,63 +231,71 @@ struct LogTimeView: View {
 
     // MARK: - Name row
 
-    private var nameCard: some View {
-        FormCard(accessibilityID: "EntryNameRow", resignFocus: focusedField = nil) {
-            VStack(alignment: .leading, spacing: Theme.spacingExtraSmall) {
-                HStack(spacing: Theme.spacingSmall) {
-                    Text(L10n.entryNameLabel.text)
-                        .font(.caption)
-                        .foregroundStyle(Theme.textSecondary)
-                    Spacer()
-                    // No chevron in LOCKED mode: the row offers no
-                    // navigation there, so the affordance would mislead.
-                    if !vm.isLocked {
-                        Image(systemName: "chevron.right")
-                            .font(.footnote.weight(.semibold))
+    @ViewBuilder private var nameCard: some View {
+        if vm.isLocked {
+            FormCard(accessibilityID: "EntryNameRow", resignFocus: focusedField = nil) {
+                VStack(alignment: .leading, spacing: Theme.spacingExtraSmall) {
+                    HStack(spacing: Theme.spacingSmall) {
+                        Text(L10n.entryNameLabel.text)
+                            .font(.caption)
                             .foregroundStyle(Theme.textSecondary)
-                            .accessibilityHidden(true)
+                        Spacer()
                     }
-                }
-                if vm.isLocked {
                     Text(vm.name)
                         .font(.body)
                         .foregroundStyle(Theme.textPrimary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .frame(minHeight: Theme.minTapArea)
-                } else {
-                    NavigationLink {
-                        NamePicker(
-                            initialText: vm.name,
-                            recents: vm.nameRecents,
-                            categories: Dictionary(uniqueKeysWithValues: vm.availableCategories.map { ($0.id, $0) }),
-                            placeholder: L10n.entryNamePlaceholder.text,
-                            emptyHint: L10n.timerRecentsEmptyHint.text,
-                            onCompleteSuggestion: {
-                                vm.applySuggestion(text: $0.text, categoryIDs: $0.categoryIDs)
-                            },
-                            onCompleteText: { vm.completeTypedName($0) }
-                        )
-                    } label: {
-                        HStack(spacing: Theme.spacingSmall) {
-                            Text(vm.name.isEmpty ? L10n.entryNamePlaceholder.text : vm.name)
-                                .font(.body)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                .foregroundStyle(vm.name.isEmpty ? Theme.textSecondary : Theme.textPrimary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .frame(minHeight: Theme.minTapArea)
-                        .contentShape(Rectangle())
-                    }
-                    // No resign here (issue #67): the pushed NamePicker
-                    // autofocuses its own field, so focus transfers directly
-                    // and the keyboard never drops — resigning first would
-                    // replay the dismiss/reappear flicker this change kills.
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(L10n.entryNameLabel.text)
-                    .accessibilityValue(vm.name)
                 }
             }
+        } else {
+            // Full-card push: the link owns the padded chrome (mirrors
+            // FormCard) so caption, chevron, value, blank, and padding
+            // all push. No tap-away here — it would consume those taps.
+            // No resign (issue #67): focus transfers to the picker with
+            // no keyboard flicker. LOCKED uses the FormCard branch (inert).
+            NavigationLink {
+                NamePicker(
+                    initialText: vm.name,
+                    recents: vm.nameRecents,
+                    categories: Dictionary(uniqueKeysWithValues: vm.availableCategories.map { ($0.id, $0) }),
+                    placeholder: L10n.entryNamePlaceholder.text,
+                    emptyHint: L10n.timerRecentsEmptyHint.text,
+                    onCompleteSuggestion: {
+                        vm.applySuggestion(text: $0.text, categoryIDs: $0.categoryIDs)
+                    },
+                    onCompleteText: { vm.completeTypedName($0) }
+                )
+            } label: {
+                VStack(alignment: .leading, spacing: Theme.spacingExtraSmall) {
+                    HStack(spacing: Theme.spacingSmall) {
+                        Text(L10n.entryNameLabel.text)
+                            .font(.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Theme.textSecondary)
+                            .accessibilityHidden(true)
+                    }
+                    Text(vm.name.isEmpty ? L10n.entryNamePlaceholder.text : vm.name)
+                        .font(.body)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .foregroundStyle(vm.name.isEmpty ? Theme.textSecondary : Theme.textPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(minHeight: Theme.minTapArea)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(Theme.spacingMedium)
+                .background(Theme.backgroundSecondary)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadius))
+                .contentShape(RoundedRectangle(cornerRadius: Theme.cornerRadius))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L10n.entryNameLabel.text)
+            .accessibilityValue(vm.name)
+            .accessibilityIdentifier("EntryNameRow")
         }
     }
 
@@ -323,9 +331,9 @@ struct LogTimeView: View {
     /// shared `NotesEditorPage` (copy-on-open: X discards, ✓ writes
     /// `vm.notes` only and the validity gate re-evaluates). LOCKED mode
     /// renders the same presenter read-only with no navigation.
-    private var notesCard: some View {
-        FormCard(accessibilityID: "EntryNotesRow", resignFocus: focusedField = nil) {
-            if vm.isLocked {
+    @ViewBuilder private var notesCard: some View {
+        if vm.isLocked {
+            FormCard(accessibilityID: "EntryNotesRow", resignFocus: focusedField = nil) {
                 VStack(alignment: .leading, spacing: Theme.spacingExtraSmall) {
                     Text(L10n.entryNotesLabel.text)
                         .font(.caption)
@@ -336,33 +344,42 @@ struct LogTimeView: View {
                         .foregroundStyle(vm.notes.isEmpty ? Theme.textSecondary : Theme.textPrimary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-            } else {
-                NavigationLink {
-                    NotesEditorPage(initialText: vm.notes, entryName: vm.name) { vm.notes = $0 }
-                } label: {
-                    VStack(alignment: .leading, spacing: Theme.spacingExtraSmall) {
-                        HStack(spacing: Theme.spacingSmall) {
-                            Text(L10n.entryNotesLabel.text)
-                                .font(.caption)
-                                .foregroundStyle(Theme.textSecondary)
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.footnote.weight(.semibold))
-                                .foregroundStyle(Theme.textSecondary)
-                                .accessibilityHidden(true)
-                        }
-                        Text(vm.notes.isEmpty ? L10n.entryNotesPlaceholder.text : vm.notes)
-                            .font(.body)
-                            .lineLimit(1...5)
-                            .foregroundStyle(vm.notes.isEmpty ? Theme.textSecondary : Theme.textPrimary)
-                            .frame(maxWidth: .infinity, minHeight: Theme.minTapArea, alignment: .leading)
-                            .contentShape(Rectangle())
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(L10n.entryNotesLabel.text)
-                .accessibilityValue(vm.notes.isEmpty ? L10n.entryNotesPlaceholder.text : vm.notes)
             }
+        } else {
+            // Full-card push, mirrors the Name card: the link owns the
+            // padded chrome so caption, chevron, preview, blank, and
+            // padding all push. No tap-away here — it would consume those
+            // taps. LOCKED uses the FormCard branch (inert).
+            NavigationLink {
+                NotesEditorPage(initialText: vm.notes, entryName: vm.name) { vm.notes = $0 }
+            } label: {
+                VStack(alignment: .leading, spacing: Theme.spacingExtraSmall) {
+                    HStack(spacing: Theme.spacingSmall) {
+                        Text(L10n.entryNotesLabel.text)
+                            .font(.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Theme.textSecondary)
+                            .accessibilityHidden(true)
+                    }
+                    Text(vm.notes.isEmpty ? L10n.entryNotesPlaceholder.text : vm.notes)
+                        .font(.body)
+                        .lineLimit(1...5)
+                        .foregroundStyle(vm.notes.isEmpty ? Theme.textSecondary : Theme.textPrimary)
+                        .frame(maxWidth: .infinity, minHeight: Theme.minTapArea, alignment: .leading)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(Theme.spacingMedium)
+                .background(Theme.backgroundSecondary)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadius))
+                .contentShape(RoundedRectangle(cornerRadius: Theme.cornerRadius))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L10n.entryNotesLabel.text)
+            .accessibilityValue(vm.notes.isEmpty ? L10n.entryNotesPlaceholder.text : vm.notes)
+            .accessibilityIdentifier("EntryNotesRow")
         }
     }
 
