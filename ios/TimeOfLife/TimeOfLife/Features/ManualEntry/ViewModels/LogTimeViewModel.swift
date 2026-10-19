@@ -19,10 +19,13 @@ enum EntryFormMode: Equatable, Sendable {
 /// imported entry read-only in LOCKED mode.
 ///
 /// The draft is fully local: Start defaults to now floored to 5 minutes,
-/// End to Start + 1h. Moving Start at/past End auto-pushes End to preserve
-/// the last valid duration (Calendar behavior); moving End never moves
-/// Start. Add/Save is a validity gate (`isAddEnabled`): the trimmed name
-/// must be non-empty and End must be strictly after Start. There is no
+/// End to Start + 1h. Moving Start shifts End by the same delta so the
+/// duration stays constant, whether Start moves earlier or later; moving
+/// End never moves Start. Add/Save is a validity gate (`isAddEnabled`):
+/// the trimmed name must be non-empty and the interval must satisfy the
+/// floor rule — untouched prefills keep the legacy end-after-start rule
+/// (grandfathered sub-minute drafts stay savable), edited drafts require
+/// end at least one minute after start. There is no
 /// activity re-resolve — entries own their text (remove-activities-layer).
 /// Persistence delegates to `TimerService`'s store (`LocalStore.createEntry`
 /// + transactional outbox for CREATE, LWW `LocalStore.updateEntry` for
@@ -35,6 +38,8 @@ final class LogTimeViewModel: ObservableObject {
     static let defaultDuration: TimeInterval = 3_600
     /// Start-time flooring granularity, in minutes.
     static let startGranularityMinutes = 5
+    /// Minimum allowed duration for a manually edited interval, in seconds.
+    static let minimumDuration: TimeInterval = 60
 
     @Published var name: String
     /// The ordered category selection (TagSelector parent owns order).
@@ -56,9 +61,11 @@ final class LogTimeViewModel: ObservableObject {
     /// (nil in CREATE mode).
     @Published private(set) var editingEntry: TimeEntry?
 
-    /// The last strictly-positive duration, preserved across edits so a
-    /// Start pushed past End keeps a meaningful length.
-    private var lastValidDuration: TimeInterval = LogTimeViewModel.defaultDuration
+    /// True once the user has written through any Start/End picker. Flips
+    /// only in the time-picker setters — name/category/notes edits never
+    /// touch it. Distinguishes fresh picks (floor-enforced) from untouched
+    /// legacy prefills (grandfathered).
+    @Published private(set) var timesTouched = false
 
     let service: TimerService
 
@@ -96,8 +103,6 @@ final class LogTimeViewModel: ObservableObject {
             self.notes = entry.notes
             self.startsAt = entry.startedAt
             self.endsAt = entry.endedAt ?? entry.startedAt.addingTimeInterval(Self.defaultDuration)
-            let duration = endsAt.timeIntervalSince(startsAt)
-            self.lastValidDuration = duration > 0 ? duration : Self.defaultDuration
         } else {
             let start = Self.floored(now)
             self.name = initialText
@@ -113,18 +118,45 @@ final class LogTimeViewModel: ObservableObject {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// True when the trimmed name is non-empty and End is strictly after
-    /// Start.
+    /// True when the trimmed name is non-empty and the interval satisfies
+    /// the floor rule (see `isIntervalValid`).
     var isAddEnabled: Bool {
-        !trimmedName.isEmpty && endsAt > startsAt
+        !trimmedName.isEmpty && isIntervalValid
     }
 
-    /// Rounded Start→End seconds for the nav-bar duration subtitle
-    /// (feat-entry-duration-subtitle): nil when End is at or before Start.
-    /// Pure display helper — the validity gate and save paths are unchanged.
+    /// Interval part of the validity gate: untouched prefills use the
+    /// legacy end-strictly-after-start rule (grandfathered sub-minute
+    /// drafts stay savable); manually edited drafts require the end at
+    /// least one minute after the start.
+    private var isIntervalValid: Bool {
+        let interval = endsAt.timeIntervalSince(startsAt)
+        return timesTouched ? interval >= Self.minimumDuration : interval > 0
+    }
+
+    /// Rounded Start→End seconds for the nav-bar duration subtitle: the
+    /// true draft duration (a grandfathered untouched draft shows its real
+    /// sub-minute value, e.g. 33s). Nil when the interval disables the
+    /// confirm action. Pure display helper — the validity gate and save
+    /// paths are unchanged.
     var durationSubtitleSeconds: Int? {
-        guard endsAt > startsAt else { return nil }
+        guard isIntervalValid else { return nil }
         return max(0, Int(endsAt.timeIntervalSince(startsAt).rounded()))
+    }
+
+    /// Display Start for pills and picker selections: minute-exact. The
+    /// minute wheels cannot show seconds, so untouched drafts render (and
+    /// adopt) the minute floor; touched drafts are minute-exact already,
+    /// making the floor an identity.
+    var displayStartsAt: Date {
+        Self.floored(startsAt, toMinutes: 1)
+    }
+
+    /// Display End for pills and picker selections: floored Start plus one
+    /// minute for untouched sub-minute drafts (flooring both ends there
+    /// would collapse, e.g. 0:00:15–0:00:25 to the invalid 0:00–0:00 pair);
+    /// the minute floor otherwise (identity once minute-exact).
+    var displayEndsAt: Date {
+        isGrandfathered ? displayStartsAt.addingTimeInterval(Self.minimumDuration) : Self.floored(endsAt, toMinutes: 1)
     }
 
     /// Loads the category catalog for the TagSelector (idempotent). Called
@@ -176,22 +208,28 @@ final class LogTimeViewModel: ObservableObject {
         }
     }
 
-    /// Moves Start, auto-pushing End to preserve the last valid duration
-    /// when the new Start lands at or past End.
+    /// Moves Start, shifting End by the same delta so the duration stays
+    /// constant — whether Start moves earlier or later. The first write on
+    /// an untouched draft adopts the minute-normalized display values, then
+    /// the gesture applies on top. The incoming value is minute-floored as
+    /// well (date pickers preserve seconds; wheels are already exact), so a
+    /// touched draft is minute-exact by construction.
     func setStartsAt(_ newStart: Date) {
-        refreshValidDuration()
-        startsAt = newStart
-        if endsAt <= newStart {
-            endsAt = newStart.addingTimeInterval(lastValidDuration)
-        }
-        refreshValidDuration()
+        adoptDisplayValuesIfNeeded()
+        timesTouched = true
+        let flooredNew = Self.floored(newStart, toMinutes: 1)
+        let delta = flooredNew.timeIntervalSince(startsAt)
+        startsAt = flooredNew
+        endsAt = endsAt.addingTimeInterval(delta)
     }
 
-    /// Moves End. Never moves Start; the form may hold end <= start, in
-    /// which case Add stays disabled.
+    /// Moves End. Never moves Start. The first write on an untouched draft
+    /// adopts the minute-normalized display values first; the incoming
+    /// value is minute-floored as well (see `setStartsAt`).
     func setEndsAt(_ newEnd: Date) {
-        endsAt = newEnd
-        refreshValidDuration()
+        adoptDisplayValuesIfNeeded()
+        timesTouched = true
+        endsAt = Self.floored(newEnd, toMinutes: 1)
     }
 
     /// Saves the draft: a committed manual entry in CREATE mode, a
@@ -201,7 +239,7 @@ final class LogTimeViewModel: ObservableObject {
     /// write). LOCKED mode has no confirm path and always returns false.
     func save() async -> Bool {
         guard mode != .locked else { return false }
-        guard !trimmedName.isEmpty, endsAt > startsAt else { return false }
+        guard !trimmedName.isEmpty, isIntervalValid else { return false }
         do {
             if let editing = editingEntry, mode == .edit {
                 let updated = TimeEntry(
@@ -269,11 +307,72 @@ final class LogTimeViewModel: ObservableObject {
 
     // MARK: - Helpers
 
-    private func refreshValidDuration() {
-        let duration = endsAt.timeIntervalSince(startsAt)
-        if duration > 0 {
-            lastValidDuration = duration
+    /// True for an untouched prefill shorter than one minute (but still
+    /// positive): backing times stay original until a picker is touched.
+    /// A prefill with end at or before start keeps the invalid path.
+    private var isGrandfathered: Bool {
+        !timesTouched && endsAt > startsAt
+            && endsAt.timeIntervalSince(startsAt) < Self.minimumDuration
+    }
+
+    /// First write through any time picker minute-normalizes the pair
+    /// (floor both ends — e.g. 23:59:34–00:01:58 becomes 23:59–00:01 — so
+    /// the wheels never hold seconds they cannot display), then the gesture
+    /// applies on top. Snapshot before assigning: both mapped values must
+    /// derive from the same pre-touch state. For drafts of at least one
+    /// minute the floored pair is provably still at least one minute
+    /// (duration ≡ endSecs−startSecs mod 60, so flooring lands on a minute
+    /// multiple ≥ 60s); sub-minute drafts land on exactly one minute.
+    /// No-op once touched — and a no-op by construction for minute-exact
+    /// drafts (CREATE defaults, already-touched drafts).
+    private func adoptDisplayValuesIfNeeded() {
+        guard !timesTouched else { return }
+        let mappedStart = displayStartsAt
+        let mappedEnd = displayEndsAt
+        startsAt = mappedStart
+        endsAt = mappedEnd
+    }
+
+    /// Selectable End-date range: no day before the Start day. Nil when the
+    /// current End selection would fall below the bound (only reachable
+    /// with a corrupt end-before-start prefill) — an unbounded picker plus
+    /// the disabled gate beats a clamped selection there.
+    var endDateRange: ClosedRange<Date>? {
+        let lower = Calendar.current.startOfDay(for: displayStartsAt)
+        guard displayEndsAt >= lower else { return nil }
+        return lower...Date.distantFuture
+    }
+
+    /// Selectable End-time range, derived from the minute-exact display
+    /// Start so the selection (`displayEndsAt`) always lies inside: from
+    /// `displayStartsAt + 60s` when End shares the Start day, the whole End
+    /// day otherwise (any time on a later day already exceeds the floor).
+    /// Same-day degenerate case (no valid same-day End exists, or a
+    /// corrupt end-before-start selection) falls back to the full End day
+    /// with the gate as enforcer, instead of risking an inverted range or
+    /// an out-of-range selection.
+    var endTimeRange: ClosedRange<Date> {
+        let calendar = Calendar.current
+        let endDay = calendar.startOfDay(for: displayEndsAt)
+        let endDayEnd = (calendar.date(byAdding: .day, value: 1, to: endDay) ?? endDay.addingTimeInterval(86_400))
+            .addingTimeInterval(-1)
+        guard calendar.isDate(displayEndsAt, inSameDayAs: displayStartsAt) else {
+            return endDay...endDayEnd
         }
+        let lower = Self.ceiledToMinute(displayStartsAt.addingTimeInterval(Self.minimumDuration))
+        guard lower <= endDayEnd, displayEndsAt >= lower else { return endDay...endDayEnd }
+        return lower...endDayEnd
+    }
+
+    /// Ceils a date up to the minute boundary (minute-exact inputs stay
+    /// exact: Double division of an integral-second interval by 60 is
+    /// exact, so no epsilon is needed). Used for the same-day End time
+    /// picker bound: the smallest minute cell at least one minute after
+    /// Start.
+    static func ceiledToMinute(_ date: Date) -> Date {
+        let step = 60.0
+        let interval = date.timeIntervalSinceReferenceDate
+        return Date(timeIntervalSinceReferenceDate: ceil(interval / step) * step)
     }
 
     /// Floors a date down to the granularity boundary.

@@ -287,11 +287,15 @@ struct HistoryViewModelTests {
     func editedEntryReflectedAfterReload() async throws {
         let store = try makeStore()
         let start = Date(timeIntervalSinceNow: -3600)
-        try await store.createEntry(entry(
-            id: "e1",
-            startedAt: start,
-            durationSeconds: 60,
-            endedAt: start.addingTimeInterval(60)
+        // Fixed timestamps: the LWW gate (`updated_at < ?`) must hold by
+        // construction, never by wall-clock luck (GRDB stores dates at
+        // millisecond precision; two racing `Date()`s can land in one).
+        let createdAt = Date(timeIntervalSinceNow: -7200)
+        try await store.createEntry(TimeEntry(
+            id: "e1", activityText: "Entry e1",
+            startedAt: start, endedAt: start.addingTimeInterval(60),
+            durationSeconds: 60, categoryIDs: [],
+            createdAt: createdAt, updatedAt: createdAt
         ))
 
         let vm = HistoryViewModel(store: store, undoBuffer: UndoBufferStore(store: store))
@@ -302,7 +306,7 @@ struct HistoryViewModelTests {
         var updated = try #require(try await store.entry(id: "e1"))
         updated.endedAt = start.addingTimeInterval(3_700)
         updated.durationSeconds = 3_700
-        updated.updatedAt = Date()
+        updated.updatedAt = createdAt.addingTimeInterval(3_600)
         #expect(try await store.updateEntry(updated))
 
         vm.invalidate()

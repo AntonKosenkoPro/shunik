@@ -92,14 +92,17 @@ struct LogTimeViewModelTests {
         #expect(vm.endsAt == originalEnd.addingTimeInterval(25 * 60).addingTimeInterval(3_600))
     }
 
-    @Test("moving Start earlier keeps End in place")
-    func startEarlierKeepsEnd() {
+    @Test("moving Start earlier shifts End preserving duration")
+    func startEarlierShiftsEnd() {
         let vm = makeViewModel()
+        let originalStart = vm.startsAt
         let originalEnd = vm.endsAt
 
         vm.setStartsAt(vm.startsAt.addingTimeInterval(-95 * 60))
 
-        #expect(vm.endsAt == originalEnd)
+        #expect(vm.startsAt == originalStart.addingTimeInterval(-95 * 60))
+        #expect(vm.endsAt == originalEnd.addingTimeInterval(-95 * 60))
+        #expect(vm.endsAt.timeIntervalSince(vm.startsAt) == 3_600)
     }
 
     @Test("a shortened custom duration is the one preserved on push")
@@ -371,13 +374,25 @@ struct LogTimeViewModelTests {
         #expect(vm.durationSubtitleSeconds == nil)
     }
 
-    @Test("durationSubtitleSeconds agrees with isAddEnabled on sub-second intervals")
-    func durationSubtitleSubSecond() {
+    @Test("touched sub-minute interval disables the gate with no subtitle")
+    func durationSubtitleTouchedSubMinute() {
         let vm = makeViewModel()
         vm.name = "Reading"
         vm.setEndsAt(vm.startsAt.addingTimeInterval(0.4))
+        #expect(!vm.isAddEnabled)
+        #expect(vm.durationSubtitleSeconds == nil)
+    }
+
+    @Test("edited interval boundary: 30s disabled, exactly 60s enabled")
+    func gateFloorBoundary() {
+        let vm = makeViewModel()
+        vm.name = "Reading"
+
+        vm.setEndsAt(vm.startsAt.addingTimeInterval(30))
+        #expect(!vm.isAddEnabled)
+
+        vm.setEndsAt(vm.startsAt.addingTimeInterval(60))
         #expect(vm.isAddEnabled)
-        #expect(vm.durationSubtitleSeconds != nil)
     }
 
     // MARK: - Name suggestions (feat-name-field-affordances)
@@ -485,19 +500,221 @@ struct LogTimeViewModelTests {
         #expect(vm.nameRecents.count == 1)
     }
 
+    // MARK: - Duration floor + grandfathering (time-picker-duration-floor)
+
+    @Test("sub-minute prefill shows mapped pills with the true subtitle, gate enabled")
+    func grandfatheredDisplayMapping() {
+        let day = Calendar.current.startOfDay(for: Date())
+        let start = day.addingTimeInterval(2 * 3_600 + 35 * 60)
+        let vm = makeViewModel(editing: storedEntry(start: start, duration: 33))
+
+        #expect(vm.displayStartsAt == start)
+        #expect(vm.displayEndsAt == start.addingTimeInterval(60))
+        #expect(vm.durationSubtitleSeconds == 33)
+        #expect(vm.isAddEnabled)
+    }
+
+    @Test("display mapping floors, never rounds (0:00:15–0:00:25 stays valid)")
+    func displayMappingFloors() {
+        let day = Calendar.current.startOfDay(for: Date())
+        let start = day.addingTimeInterval(15)
+        let vm = makeViewModel(editing: storedEntry(start: start, duration: 10))
+
+        #expect(vm.displayStartsAt == day)
+        #expect(vm.displayEndsAt == day.addingTimeInterval(60))
+        #expect(vm.isAddEnabled)
+    }
+
+    @Test("untouched save writes back the original sub-minute times")
+    func grandfatheredSavePreservesOriginals() async throws {
+        let store = try await makeStore()
+        let day = Calendar.current.startOfDay(for: Date())
+        let start = day.addingTimeInterval(2 * 3_600 + 35 * 60)
+        let entry = storedEntry(start: start, duration: 33)
+        try await store.createEntry(entry)
+        try? await store.createCategory(Category(id: "c1", name: "Work", icon: CatalogIcon.briefcase.rawValue))
+        let vm = makeViewModel(store: store, editing: entry)
+
+        vm.toggleCategory("c1")
+        #expect(await vm.save())
+
+        let stored = try #require(try await store.entry(id: "e1"))
+        #expect(stored.startedAt == start)
+        #expect(stored.endedAt == start.addingTimeInterval(33))
+        #expect(stored.durationSeconds == 33)
+    }
+
+    @Test("first time touch adopts display values, then the gesture applies")
+    func firstTouchAdoptsDisplayValues() {
+        let day = Calendar.current.startOfDay(for: Date())
+        let start = day.addingTimeInterval(2 * 3_600 + 35 * 60)
+        let vm = makeViewModel(editing: storedEntry(start: start, duration: 33))
+
+        vm.setStartsAt(day.addingTimeInterval(2 * 3_600))
+
+        // Adopted 2:35–2:36, then delta −35m applied on top.
+        #expect(vm.startsAt == day.addingTimeInterval(2 * 3_600))
+        #expect(vm.endsAt == day.addingTimeInterval(2 * 3_600 + 60))
+        #expect(vm.isAddEnabled)
+    }
+
+    @Test("touched draft under one minute in EDIT disables the gate")
+    func editTouchedFloorGate() {
+        let vm = makeViewModel(editing: storedEntry())
+        // 30s past the displayed (floored) start: minute-floored to a 0s draft.
+        vm.setEndsAt(vm.displayStartsAt.addingTimeInterval(30))
+
+        #expect(!vm.isAddEnabled)
+        #expect(vm.durationSubtitleSeconds == nil)
+    }
+
+    @Test("zero-duration prefill keeps the invalid path")
+    func zeroDurationPrefillDisabled() {
+        let vm = makeViewModel(editing: storedEntry(duration: 0))
+
+        #expect(!vm.isAddEnabled)
+        #expect(vm.durationSubtitleSeconds == nil)
+    }
+
+    @Test("untouched draft with seconds displays floored pills with true subtitle")
+    func secondsDraftDisplayMapping() {
+        let day = Calendar.current.startOfDay(for: Date())
+        let start = day.addingTimeInterval(23 * 3_600 + 59 * 60 + 34)
+        let vm = makeViewModel(editing: storedEntry(start: start, duration: 144))
+
+        #expect(vm.displayStartsAt == day.addingTimeInterval(23 * 3_600 + 59 * 60))
+        #expect(vm.displayEndsAt == day.addingTimeInterval(24 * 3_600 + 60))
+        #expect(vm.durationSubtitleSeconds == 144)
+        #expect(vm.isAddEnabled)
+    }
+
+    @Test("first touch drops seconds on both ends (23:59:34–00:01:58 → 23:59–00:01)")
+    func firstTouchDropsSecondsShorter() {
+        let day = Calendar.current.startOfDay(for: Date())
+        let start = day.addingTimeInterval(23 * 3_600 + 59 * 60 + 34)
+        let vm = makeViewModel(editing: storedEntry(start: start, duration: 144))
+
+        // Touch with the displayed value: pure normalization, no move.
+        vm.setStartsAt(vm.displayStartsAt)
+
+        #expect(vm.startsAt == day.addingTimeInterval(23 * 3_600 + 59 * 60))
+        #expect(vm.endsAt == day.addingTimeInterval(24 * 3_600 + 60))
+        #expect(vm.endsAt.timeIntervalSince(vm.startsAt) == 120)
+        #expect(vm.isAddEnabled)
+    }
+
+    @Test("first touch floors both ends even when duration grows (2m29s → 3m)")
+    func firstTouchDropsSecondsLonger() {
+        let day = Calendar.current.startOfDay(for: Date())
+        let start = day.addingTimeInterval(23 * 3_600 + 59 * 60 + 34)
+        let vm = makeViewModel(editing: storedEntry(start: start, duration: 149))
+
+        vm.setStartsAt(vm.displayStartsAt)
+
+        #expect(vm.startsAt == day.addingTimeInterval(23 * 3_600 + 59 * 60))
+        #expect(vm.endsAt == day.addingTimeInterval(24 * 3_600 + 2 * 60))
+        #expect(vm.endsAt.timeIntervalSince(vm.startsAt) == 180)
+        #expect(vm.isAddEnabled)
+    }
+
+    @Test("start move on a seconds draft normalizes first, then shifts by delta")
+    func startMoveOnSecondsDraftNormalizesFirst() {
+        let day = Calendar.current.startOfDay(for: Date())
+        let start = day.addingTimeInterval(23 * 3_600 + 59 * 60 + 34)
+        let vm = makeViewModel(editing: storedEntry(start: start, duration: 144))
+
+        // Adopted 23:59–00:01, then +1h on top.
+        vm.setStartsAt(day.addingTimeInterval(24 * 3_600 + 59 * 60))
+
+        #expect(vm.startsAt == day.addingTimeInterval(24 * 3_600 + 59 * 60))
+        #expect(vm.endsAt == day.addingTimeInterval(25 * 3_600 + 60))
+        #expect(vm.endsAt.timeIntervalSince(vm.startsAt) == 120)
+    }
+
+    // MARK: - End range consistency (selection always inside range)
+
+    @Test("seconds grandfathered selection lies inside the end-time range")
+    func rangeContainsSecondsGrandfatheredSelection() {
+        // The bot's exact example: raw backing would bind 2:37, the
+        // display-derived bound is 2:36 == selection.
+        let day = Calendar.current.startOfDay(for: Date())
+        let start = day.addingTimeInterval(2 * 3_600 + 35 * 60 + 20)
+        let vm = makeViewModel(editing: storedEntry(start: start, duration: 33))
+
+        #expect(vm.endTimeRange.lowerBound == day.addingTimeInterval(2 * 3_600 + 36 * 60))
+        #expect(vm.endTimeRange.contains(vm.displayEndsAt))
+    }
+
+    @Test("normal seconds draft selection lies inside both end ranges")
+    func rangeContainsNormalSecondsSelection() {
+        let day = Calendar.current.startOfDay(for: Date())
+        let start = day.addingTimeInterval(2 * 3_600 + 35 * 60 + 33)
+        let vm = makeViewModel(editing: storedEntry(start: start, duration: 3_600))
+
+        #expect(vm.endTimeRange.contains(vm.displayEndsAt))
+        #expect(vm.endDateRange?.contains(vm.displayEndsAt) == true)
+    }
+
+    @Test("cross-day start move keeps the selection inside the end ranges")
+    func rangeFollowsCrossDayStartMove() {
+        let day = Calendar.current.startOfDay(for: Date())
+        let start = day.addingTimeInterval(10 * 3_600)
+        let vm = makeViewModel(editing: storedEntry(start: start, duration: 3_600))
+
+        vm.setStartsAt(start.addingTimeInterval(2 * 86_400))
+
+        #expect(vm.endTimeRange.contains(vm.displayEndsAt))
+        #expect(vm.endDateRange?.contains(vm.displayEndsAt) == true)
+    }
+
+    @Test("touched minute-exact bound is exactly start plus one minute")
+    func rangeBoundExactForMinuteExactStart() {
+        let day = Calendar.current.startOfDay(for: Date())
+        let start = day.addingTimeInterval(2 * 3_600 + 35 * 60)
+        let vm = makeViewModel(editing: storedEntry(start: start, duration: 3_600))
+
+        #expect(vm.endTimeRange.lowerBound == vm.displayStartsAt.addingTimeInterval(60))
+    }
+
+    @Test("corrupt same-day end-before-start falls back with the gate disabled")
+    func rangeCorruptSameDayFallback() {
+        let day = Calendar.current.startOfDay(for: Date())
+        let start = day.addingTimeInterval(3 * 3_600)
+        // End an hour before Start, same day.
+        let vm = makeViewModel(editing: storedEntry(start: start, duration: -3_600))
+
+        #expect(vm.endTimeRange.contains(vm.displayEndsAt))
+        #expect(!vm.isAddEnabled)
+        #expect(vm.durationSubtitleSeconds == nil)
+    }
+
+    @Test("corrupt cross-day end-before-start leaves the date picker unbounded")
+    func rangeCorruptCrossDayUnboundedDate() {
+        let day = Calendar.current.startOfDay(for: Date())
+        let start = day.addingTimeInterval(86_400 + 10 * 3_600)
+        // End a full day before Start.
+        let vm = makeViewModel(editing: storedEntry(start: start, duration: -86_400))
+
+        #expect(vm.endDateRange == nil)
+        #expect(vm.endTimeRange.contains(vm.displayEndsAt))
+        #expect(!vm.isAddEnabled)
+    }
+
     // MARK: - Helpers
 
     private func storedEntry(
         id: String = "e1",
         source: String = "manual",
         categoryIDs: [String] = [],
-        notes: String = ""
+        notes: String = "",
+        start: Date = Date(timeIntervalSinceReferenceDate: 10_000),
+        duration: TimeInterval = 3_600
     ) -> TimeEntry {
-        let start = Date(timeIntervalSinceReferenceDate: 10_000)
+        let end = start.addingTimeInterval(duration)
         return TimeEntry(
             id: id, activityText: "Reading",
-            startedAt: start, endedAt: start.addingTimeInterval(3_600),
-            durationSeconds: 3_600, source: source,
+            startedAt: start, endedAt: end,
+            durationSeconds: Int(duration), source: source,
             categoryIDs: categoryIDs, notes: notes,
             createdAt: start, updatedAt: start
         )
