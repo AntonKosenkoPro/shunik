@@ -208,6 +208,21 @@ final class LogTimeViewModel: ObservableObject {
         }
     }
 
+    /// Appends the new id once and reloads options in canonical SQLite
+    /// `ORDER BY lower(name)` order (ASCII-only fold; no client collation).
+    /// On storage-read failure, appends to the options as a best-effort
+    /// fallback; order converges on reopen. Draft-only until entry save.
+    func attachCreatedCategory(_ category: Category) async {
+        if !categoryIDs.contains(category.id) {
+            categoryIDs.append(category.id)
+        }
+        if let fresh = try? await service.store.categories() {
+            availableCategories = fresh
+        } else if !availableCategories.contains(where: { $0.id == category.id }) {
+            availableCategories.append(category)
+        }
+    }
+
     /// Moves Start, shifting End by the same delta so the duration stays
     /// constant — whether Start moves earlier or later. The first write on
     /// an untouched draft adopts the minute-normalized display values, then

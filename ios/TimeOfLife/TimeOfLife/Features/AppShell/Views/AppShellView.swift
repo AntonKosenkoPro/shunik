@@ -147,6 +147,8 @@ struct AppShellView: View {
                     initialText: trackVM.state.draft?.notes ?? "",
                     entryName: trackVM.state.draft?.text ?? ""
                 ))
+            } onOpenCategoryEditor: {
+                vm.trackPath.append(.categoryEditor)
             }
                 .navigationTitle(L10n.tabTrack.text)
                 .navigationBarTitleDisplayMode(.inline)
@@ -184,6 +186,24 @@ struct AppShellView: View {
                         }
                     case .entry:
                         EmptyView()
+                    case .categoryEditor:
+                        // Inline category creation from the running-tag row
+                        // (inline-category-creation): create mode only.
+                        // Completions resolve here from the owning tab's view
+                        // model, so the route stays a value (namePicker
+                        // precedent). Saving attaches the new category to
+                        // the held draft (running or recoverable error) or
+                        // freshens the pool outside a draft; duplicates keep
+                        // the editor open with the banner via the shared
+                        // view model. No toolbar X —
+                        // the system Back button cancels.
+                        CategoryEditorForm(
+                            store: container.localStore,
+                            category: nil,
+                            onSaved: { trackVM.attachCreatedCategory($0) },
+                            onDuplicate: { _ in },
+                            showsDismiss: false
+                        )
                     }
                 }
         }

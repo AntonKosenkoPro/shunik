@@ -1,5 +1,6 @@
 #if DEBUG
 import Foundation
+import os
 import SwiftUI
 
 /// DEBUG-only composition root for the UI-feedback loop.
@@ -12,6 +13,10 @@ import SwiftUI
 /// Never ships: the whole file is `#if DEBUG`. Release builds call
 /// `.production()` only.
 extension AppContainer {
+    /// Seed diagnostics (Console): DEBUG-only fixture, never ships with the
+    /// Release graph. Same `os.Logger` pattern as `SyncController`.
+    private static let seedLogger = Logger(subsystem: "com.antonkosenko.timeoflifeapp", category: "uitest")
+
     /// Builds the deterministic UI-testing graph and seeds it to `screen`.
     static func uiTesting(screen: String) -> AppContainer {
         let keychain = InMemoryKeychainStore()
@@ -73,6 +78,7 @@ extension AppContainer {
 
         seed(screen: screen, sessionStore: sessionStore, navigation: navigation)
         seedHistoryIfNeeded(screen: screen, localStore: localStore)
+        seedTrackCategoriesIfNeeded(screen: screen, localStore: localStore)
         return container
     }
 
@@ -110,6 +116,13 @@ extension AppContainer {
                 id: "ui-test", email: "user@example.com", emailVerified: true
             ))
             navigation.path = []
+        case "trackCategories":
+            // Deterministic running-track fixture: the shell opens on Track
+            // with a running draft (see `seedTrackCategoriesIfNeeded`).
+            sessionStore.setSignedIn(CachedSession(
+                id: "ui-test", email: "user@example.com", emailVerified: true
+            ))
+            navigation.path = []
         case "history":
             // History with committed entries across twelve day groups
             // (repro/spike/scroll harness, 264 entries): the shell opens on
@@ -135,6 +148,79 @@ extension AppContainer {
     private static func seedHistoryIfNeeded(screen: String, localStore: LocalStore) {
         guard screen == "history" else { return }
         Task { await seedHistoryEntries(into: localStore) }
+    }
+
+    /// Kicks off the deterministic running-track fixture for the
+    /// `"trackCategories"` screen. Enqueued at init, ahead of Track's first
+    /// snapshot read (best-effort ordering, same caveat as History: Track's
+    /// appear reload converges a mid-seed interleave). Uses `LocalStore`
+    /// APIs exclusively — no raw SQLite writes. The `+Add` chip is rendered
+    /// by the UI itself, so it is not seeded as a category.
+    private static func seedTrackCategoriesIfNeeded(screen: String, localStore: LocalStore) {
+        guard screen == "trackCategories" else { return }
+        Task { await seedTrackCategories(into: localStore) }
+    }
+
+    /// Seeds the eleven fixture categories plus the running draft
+    /// `Работа над приложением` with ordered selection Work-then-Sport.
+    /// Idempotent: `createCategory(_:)` is a no-op replay on `id`, so the
+    /// categories converge to the same set on relaunch. The draft upserts
+    /// the singleton row, but a replay preserves the existing `startedAt`
+    /// (the first seed pins it) so the running timer does not drift.
+    private static func seedTrackCategories(into store: LocalStore) async {
+        let fixtures: [(id: String, name: String, icon: String)] = [
+            ("uitest-cat-work", "Work", "briefcase"),
+            ("uitest-cat-sport", "Sport", "figure.run"),
+            ("uitest-cat-education", "Education", "book"),
+            ("uitest-cat-entertainment", "Entertainment", "tv"),
+            ("uitest-cat-hobby", "Hobby", "paintbrush"),
+            ("uitest-cat-relax", "Relax", "cup.and.saucer"),
+            ("uitest-cat-sleep", "Sleep", "bed.double"),
+            ("uitest-cat-home", "Домашние дела", "house"),
+            ("uitest-cat-food", "Еда и готовка", "fork.knife"),
+            ("uitest-cat-selfcare", "Забота о себе", "brain.head.profile"),
+            ("uitest-cat-zoo", "Зоопарк", "pawprint"),
+        ]
+        for fixture in fixtures {
+            do {
+                try await store.createCategory(Category(
+                    id: fixture.id,
+                    name: fixture.name,
+                    icon: fixture.icon
+                ))
+            } catch {
+                seedLogger.error("UITest seed: createCategory failed id=\(fixture.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        let existingStartedAt: Date?
+        do {
+            existingStartedAt = try await store.timerDraft()?.startedAt ?? nil
+        } catch {
+            seedLogger.error("UITest seed: timerDraft read failed: \(error.localizedDescription, privacy: .public)")
+            existingStartedAt = nil
+        }
+        do {
+            try await store.saveTimerDraft(
+                activityText: "Работа над приложением",
+                categoryIDs: [workID(into: store), sportID(into: store)],
+                startedAt: existingStartedAt ?? Date(),
+                notes: ""
+            )
+        } catch {
+            seedLogger.error("UITest seed: saveTimerDraft failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Resolves the fixture's selected ids by name: the launch gate seeds
+    /// the 7 starter categories before the shell reveals, racing this task
+    /// — whichever side wins a contested name, the lookup lands on the same
+    /// name+icon row either way, so the draft selection always resolves.
+    private static func workID(into store: LocalStore) async -> String {
+        (try? await store.category(named: "Work")?.id) ?? "uitest-cat-work"
+    }
+
+    private static func sportID(into store: LocalStore) async -> String {
+        (try? await store.category(named: "Sport")?.id) ?? "uitest-cat-sport"
     }
 
     /// Seeds committed entries across twelve calendar days (today back

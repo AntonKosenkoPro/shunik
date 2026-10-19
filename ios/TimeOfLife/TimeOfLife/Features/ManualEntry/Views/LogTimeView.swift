@@ -37,6 +37,11 @@ struct LogTimeView: View {
     @State private var expandedPicker: InlinePicker?
     /// Drives the delete confirmation alert (EDIT + LOCKED modes).
     @State private var isShowingDeleteConfirm = false
+    /// Pushes the inline category editor (inline-category-creation): on the
+    /// internal stack for the CREATE sheet, on the owning History stack for
+    /// pushed EDIT forms — the nearest enclosing `NavigationStack` in both
+    /// cases, so no sheet ever stacks over the CREATE sheet.
+    @State private var isShowingCategoryEditor = false
     /// The text field holding focus, if any (tap-away/scroll-away resigns it).
     @FocusState private var focusedField: FormField?
     /// True when pushed onto the presenter's NavigationStack (EDIT/LOCKED
@@ -171,6 +176,22 @@ struct LogTimeView: View {
             .task {
                 await vm.loadCategoriesIfNeeded(store: container.localStore)
                 await vm.loadNameRecentsIfNeeded(store: container.localStore)
+            }
+            // Inline category creation (inline-category-creation): the pushed
+            // editor pops itself on save; `onSaved` only attaches the new
+            // category to this draft, and duplicates keep the editor open
+            // with the banner via the shared view model (no winner-pick).
+            // No toolbar X here — the system Back button cancels.
+            .navigationDestination(isPresented: $isShowingCategoryEditor) {
+                CategoryEditorForm(
+                    store: container.localStore,
+                    category: nil,
+                    onSaved: { category in
+                        Task { await vm.attachCreatedCategory(category) }
+                    },
+                    onDuplicate: { _ in },
+                    showsDismiss: false
+                )
             }
     }
 
@@ -317,7 +338,11 @@ struct LogTimeView: View {
                         // (consumed), so toggles resign explicitly here.
                         focusedField = nil
                     },
-                    accessibilityId: "EntryCategories"
+                    onCreate: { isShowingCategoryEditor = true },
+                    accessibilityId: "EntryCategories",
+                    // Natural height: the outer form scrolls (pre-PR
+                    // behavior), so the selector never scrolls internally.
+                    isScrollable: false
                 )
             }
         }

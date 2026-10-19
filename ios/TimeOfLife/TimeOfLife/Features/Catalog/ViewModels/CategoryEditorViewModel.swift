@@ -119,6 +119,12 @@ final class CategoryEditorViewModel: ObservableObject {
     /// elsewhere); false keeps the editor open with `errorMessage` set.
     func deleteConfirmed() async -> Bool {
         guard let categoryID else { return false }
+        // Shared save/delete gate: the form disables X/Back/swipe/✓ while
+        // `isLoading` is set, so a mid-delete dismiss cannot swallow the
+        // failure banner. Refuses duplicate confirms while busy.
+        guard !isLoading else { return false }
+        isLoading = true
+        defer { isLoading = false }
         do {
             switch try await store.deleteCategoryUndoable(id: categoryID) {
             case .deleted, .missing:

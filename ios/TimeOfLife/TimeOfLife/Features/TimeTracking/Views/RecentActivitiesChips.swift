@@ -3,8 +3,10 @@ import SwiftUI
 /// The Track Recents chip flow (timer-capture-experience spec,
 /// design D5). Presents up to twelve most-recently-used exact entry texts as
 /// a wrapping flow of chips with 44 pt tap targets; the flow hugs its rows
-/// up to a three-row budget and overflow scrolls internally on the chip
-/// axis, so the Track page footprint never grows for Recents overflow.
+/// up to a four-row budget measured against the host, and overflow scrolls
+/// internally on the chip axis, so the Track page footprint never grows for
+/// Recents overflow and compact phones shrink the viewport instead of
+/// sliding under the tab bar.
 ///
 /// Each chip shows the icon of the first category of that exact text's
 /// newest committed entry (first by stored position, resolved through the
@@ -19,9 +21,32 @@ struct RecentActivitiesChips: View {
     let categories: [String: Category]
     let selectedText: String?
     let onSelect: (ExactName) -> Void
+    /// Finite host budget for the viewport (Track): the host viewport minus
+    /// the measured siblings, gaps, and tab-bar margin (see `TrackContent`).
+    /// Same adaptive contract as `TagSelector` — `min(4-row cap, budget)`
+    /// floored at one row; nil keeps the fixed 4-row cap.
+    let availableHeight: CGFloat?
+
+    init(
+        recents: [ExactName],
+        categories: [String: Category],
+        selectedText: String?,
+        availableHeight: CGFloat? = nil,
+        onSelect: @escaping (ExactName) -> Void
+    ) {
+        self.recents = recents
+        self.categories = categories
+        self.selectedText = selectedText
+        self.availableHeight = availableHeight
+        self.onSelect = onSelect
+    }
 
     @Environment(\.dynamicTypeSize)
     private var dynamicTypeSize
+
+    /// Scroll-edge state for the viewport dividers (shared `ChipViewport`
+    /// math — same clamp and fade contract as the tag selector).
+    @State private var edges = ChipViewport.Edges()
 
     /// The capped, most-recently-used-first slice (the store already sorts
     /// by the text's newest `started_at`; the cap is
@@ -37,25 +62,74 @@ struct RecentActivitiesChips: View {
         Array(recents.prefix(limit))
     }
 
-    /// Visible chip-area budget: three chip rows at `minTapArea` with
-    /// `spacingSmall` gaps (the common six-chip footprint). Order matters:
-    /// `maxHeight` sits INSIDE `fixedSize`, so the chain reports
-    /// `min(content, budget)` — hugging rows up to the budget, scrolling
-    /// beyond it. Reversed (fixedSize inside maxHeight) the flexible frame
-    /// would report the full proposal regardless of content: dead space
-    /// for few chips, unclipped spillover instead of scroll for many.
-    private static let maxVisibleHeight: CGFloat = 3 * Theme.minTapArea + 2 * Theme.spacingSmall
-
-    var body: some View {
-        ScrollView(.vertical) {
-            flow
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(maxHeight: Self.maxVisibleHeight)
-        .fixedSize(horizontal: false, vertical: true)
+    /// Chip row height: subheadline line height at the environment's Dynamic
+    /// Type size plus uniform padding, floored at the 44 pt target so the
+    /// clamp holds under Dynamic Type.
+    private var chipRowHeight: CGFloat {
+        let lineHeight = UIFont.preferredFont(
+            forTextStyle: .subheadline,
+            compatibleWith: sizeTrait
+        ).lineHeight
+        return max(Theme.minTapArea, lineHeight + 2 * 12)
     }
 
-    /// The chip flow: hugged by `fixedSize` up to the budget above.
+    var body: some View {
+        // Zero-layout edge hairlines: overlays on the ScrollView's outer
+        // frame (not VStack siblings, never scrolled content), so the
+        // viewport total stays within the measured host budget as the top
+        // hairline fades in — top fades in once chips scroll under it,
+        // bottom fades out at the content end, both hidden when everything
+        // fits. The viewport hugs content up to the measured host budget
+        // (four rows max) and scrolls internally beyond it — never pushing
+        // siblings or the page.
+        ScrollView(.vertical) {
+            flow
+                // Content inset carries the border clearance (same as
+                // `TagSelector`): when the catalog fits, `fixedSize` hugs
+                // the content height, so frame slack alone never
+                // materializes. 1 pt top/bottom keeps the chip strokes
+                // fully visible.
+                .padding(.vertical, ChipViewport.borderBleed / 2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxHeight: ChipViewport.viewportHeight(
+            rowHeight: chipRowHeight,
+            spacing: Theme.spacingSmall,
+            availableHeight: availableHeight
+        ))
+        .fixedSize(horizontal: false, vertical: true)
+        .onScrollGeometryChange(for: ChipViewport.Edges.self, of: { geometry in
+            ChipViewport.edges(
+                offsetY: geometry.contentOffset.y,
+                containerHeight: geometry.containerSize.height,
+                contentHeight: geometry.contentSize.height
+            )
+        }, action: { _, new in
+            edges = new
+        })
+        // Overlays add zero layout height and ignore hits, so divider
+        // visibility never changes geometry or intercepts chip taps/scroll.
+        .overlay(alignment: .top) {
+            if !edges.atTop {
+                Divider().background(Theme.hairline)
+                    .frame(maxWidth: .infinity)
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if !edges.atEnd {
+                Divider().background(Theme.hairline)
+                    .frame(maxWidth: .infinity)
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(.easeInOut(duration: 0.2), value: edges)
+    }
+
+    /// The chip flow: hugged by `fixedSize` up to the available slack above.
     private var flow: some View {
         FlowLayout(spacing: Theme.spacingSmall) {
             ForEach(capped) { recent in
@@ -116,7 +190,7 @@ struct RecentActivitiesChips: View {
                     .accessibilityHidden(true)
             }
             Text(recent.text)
-                .font(.subheadline.weight(.medium))
+                .font(.subheadline)
                 .lineLimit(1)
                 .truncationMode(.tail)
         }

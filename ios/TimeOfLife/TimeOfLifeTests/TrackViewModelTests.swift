@@ -513,6 +513,55 @@ struct TrackViewModelTests {
         #expect(vm.allNames.map(\.text) == ["Gym"])
     }
 
+    // MARK: - Inline category creation
+
+    @Test("attaching while running appends to the draft and persists the snapshot")
+    func attachCreatedCategoryWhileRunning() async {
+        let vm = makeViewModel()
+        vm.nameDraft = "Reading"
+        vm.state = .ready(TrackState.Draft(text: "Reading"))
+        vm.start()
+        await waitForPersistedDraft(vm)
+
+        vm.attachCreatedCategory(Category(id: "c1", name: "Garden", icon: "leaf"))
+        guard case let .running(draft, _) = vm.state else {
+            Issue.record("expected running state")
+            return
+        }
+        #expect(draft.categoryIDs == ["c1"])
+        #expect(vm.categories["c1"]?.name == "Garden")
+        await waitForPersistedDraft(vm) { $0?.categoryIDs == ["c1"] }
+        let persisted = try? await vm.service.runningTimerDraft()
+        #expect(persisted?.categoryIDs == ["c1"], "persisted draft must carry the attached category; wait alone passes on timeout")
+    }
+
+    /// Attaching in the recoverable error state appends to the held draft
+    /// (updateDraftNotes parity), so a category created mid-run is not lost
+    /// when the stop is retried.
+    @Test("attaching in the error state appends to the held draft")
+    func attachCreatedCategoryWhileError() async {
+        let vm = makeViewModel()
+        vm.state = .error(TrackState.Draft(text: "Reading"), startedAt: Date())
+        vm.attachCreatedCategory(Category(id: "c1", name: "Garden", icon: "leaf"))
+        guard case let .error(draft, _) = vm.state else {
+            Issue.record("expected error state")
+            return
+        }
+        #expect(draft.categoryIDs == ["c1"])
+        #expect(vm.categories["c1"]?.name == "Garden")
+        await waitForPersistedDraft(vm) { $0?.categoryIDs == ["c1"] }
+        let persisted = try? await vm.service.runningTimerDraft()
+        #expect(persisted?.categoryIDs == ["c1"], "persisted draft must carry the attached category; wait alone passes on timeout")
+    }
+
+    @Test("attaching outside a held draft only freshens the pool")
+    func attachCreatedCategoryWhileIdle() {
+        let vm = makeViewModel()
+        vm.attachCreatedCategory(Category(id: "c1", name: "Garden", icon: "leaf"))
+        #expect(vm.categories["c1"]?.name == "Garden")
+        #expect(vm.state == .idle)
+    }
+
     // MARK: - Helpers
 
     private func makeEntry(

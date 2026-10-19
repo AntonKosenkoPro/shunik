@@ -188,6 +188,10 @@ struct HistoryView: View {
                 // Unreachable: the Track notes route lives on the Track
                 // path only. Exhaustiveness, no behavior.
                 EmptyView()
+            case .categoryEditor:
+                // Unreachable: the Track category-editor route lives on the
+                // Track path only. Exhaustiveness, no behavior.
+                EmptyView()
             case .entry(let entry):
                 LogTimeView(
                     service: container.timerService,

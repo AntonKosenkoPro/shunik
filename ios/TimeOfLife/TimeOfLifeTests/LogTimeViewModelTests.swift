@@ -700,6 +700,57 @@ struct LogTimeViewModelTests {
         #expect(!vm.isAddEnabled)
     }
 
+    // MARK: - Inline category creation
+
+    @Test("attaching a created category selects it and loads store order")
+    func attachCreatedCategorySelects() async throws {
+        let store = try await makeStore()
+        let garden = Category(id: "c2", name: "Garden", icon: "leaf")
+        try await store.createCategory(garden)
+        let vm = makeViewModel(store: store)
+        await vm.attachCreatedCategory(garden)
+        #expect(vm.availableCategories.map(\.id) == ["c2"])
+        #expect(vm.categoryIDs == ["c2"])
+    }
+
+    @Test("attaching loads the canonical store order, not client collation")
+    func attachCreatedCategoryLoadsStoreOrder() async throws {
+        let store = try await makeStore()
+        try await store.createCategory(Category(id: "c1", name: "Work", icon: "briefcase"))
+        let vm = makeViewModel(store: store)
+        let garden = Category(id: "c2", name: "Garden", icon: "leaf")
+        try await store.createCategory(garden)
+        await vm.attachCreatedCategory(garden)
+        #expect(vm.availableCategories.map(\.name) == ["Garden", "Work"])
+        #expect(vm.categoryIDs == ["c2"])
+    }
+
+    @Test("re-attaching never duplicates selection")
+    func attachCreatedCategoryIdempotent() async throws {
+        let store = try await makeStore()
+        let category = Category(id: "c1", name: "Work", icon: "briefcase")
+        try await store.createCategory(category)
+        let vm = makeViewModel(store: store)
+        await vm.attachCreatedCategory(category)
+        await vm.attachCreatedCategory(category)
+        #expect(vm.availableCategories.count == 1)
+        #expect(vm.categoryIDs == ["c1"])
+    }
+
+    @Test("attaching preserves the rest of the draft")
+    func attachCreatedCategoryPreservesDraft() async throws {
+        let store = try await makeStore()
+        let garden = Category(id: "c9", name: "Garden", icon: "leaf")
+        try await store.createCategory(garden)
+        let vm = makeViewModel(store: store)
+        vm.name = "Planting"
+        vm.notes = "Bed three"
+        await vm.attachCreatedCategory(garden)
+        #expect(vm.name == "Planting")
+        #expect(vm.notes == "Bed three")
+        #expect(vm.categoryIDs == ["c9"])
+    }
+
     // MARK: - Helpers
 
     private func storedEntry(

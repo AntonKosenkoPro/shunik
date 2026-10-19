@@ -22,6 +22,9 @@ struct TrackView: View {
     /// Opens the running notes editor through the owning tab's path
     /// (fix-tab-bar-return-jump). Defaults to no-op for previews.
     var onOpenNotesEditor: () -> Void = {}
+    /// Opens the inline category editor through the owning tab's path
+    /// (inline-category-creation). Defaults to no-op for previews.
+    var onOpenCategoryEditor: () -> Void = {}
 
     var body: some View {
         content
@@ -40,7 +43,12 @@ struct TrackView: View {
     }
 
     private var content: some View {
-        TrackContent(vm: vm, onOpenNamePicker: onOpenNamePicker, onOpenNotesEditor: onOpenNotesEditor)
+        TrackContent(
+            vm: vm,
+            onOpenNamePicker: onOpenNamePicker,
+            onOpenNotesEditor: onOpenNotesEditor,
+            onOpenCategoryEditor: onOpenCategoryEditor
+        )
     }
 }
 

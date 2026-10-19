@@ -121,7 +121,7 @@ Track SHALL present the state-specific main action in one main-action region who
 - **THEN** the main-action frame does not change; only when both are exhausted does the content scroll
 
 ### Requirement: Recents present a capped wrapping chip flow
-Track SHALL present its most-recently-used exact entry texts as a wrapping chip flow below the name field, ordered by each text's newest committed `started_at` first, and SHALL cap the flow at twelve chips. Identity SHALL be trimmed exact text (case-sensitive: `Gym` and `GYM` are distinct). There is no activity entity — chips represent entry texts, never activities. The chip area SHALL keep a fixed on-screen footprint equal to the current 6-chip layout budget: chips SHALL wrap onto additional rows inside that area as needed and SHALL NOT require horizontal scrolling; when twelve chips overflow the footprint the chip area SHALL scroll internally on its own axis and the Track page itself SHALL NOT grow or scroll for Recents overflow. A single tap on a chip SHALL fill the name plus that recent's full ordered categories without starting timing. Recents SHALL yield the below-button slot to the running TagSelector while a timer is running (inactive branch opacity-hidden with the slot keeping the taller branch's height). Returning to Track SHALL reload recents and categories — seeding the starter set first on a fresh install — so History edits and new categories are reflected immediately. Track SHALL also reload recents, the full name list, and the category map when a sync cycle exits (idle or error), so relay-pulled entries and categories converge without requiring a tab switch; a failed cycle MAY have applied partial merges before throwing and still triggers the reload.
+Track SHALL present its most-recently-used exact entry texts as a wrapping chip flow below the name field, ordered by each text's newest committed `started_at` first, and SHALL cap the flow at twelve chips. Identity SHALL be trimmed exact text (case-sensitive: `Gym` and `GYM` are distinct). There is no activity entity — chips represent entry texts, never activities. The chip area SHALL hug content and clamp at up to 4 visible rows bounded by the finite available height, scrolling internally beyond the visible rows; smaller sets SHALL render compactly with no reserved dead space, twelve chips SHALL NOT require horizontal scrolling, and the Track page itself SHALL NOT grow or scroll for Recents overflow except as an accessibility fallback when the core controls cannot fit. Both chip groups SHALL carry the same border clearance: 1 pt top/bottom scroll-content padding plus a matching +2 pt max cap above the row clamp. The viewport SHALL carry edge-aware hairline dividers shared with the tag selector (`ChipViewport` contract): a divider fades in above the viewport once chips scroll under it and below it while content remains, the bottom divider fades out at the content end, and both stay hidden when everything fits. A single tap on a chip SHALL fill the name plus that recent's full ordered categories without starting timing. Recents SHALL yield the below-button slot to the running TagSelector while a timer is running (inactive branch opacity-hidden with the slot keeping the taller branch's height). Returning to Track SHALL reload recents and categories — seeding the starter set first on a fresh install — so History edits and new categories are reflected immediately. Track SHALL also reload recents, the full name list, and the category map when a sync cycle exits (idle or error), so relay-pulled entries and categories converge without requiring a tab switch; a failed cycle MAY have applied partial merges before throwing and still triggers the reload.
 
 #### Scenario: More Activities than the cap
 - **WHEN** the user has more than twelve distinct exact texts
@@ -129,19 +129,31 @@ Track SHALL present its most-recently-used exact entry texts as a wrapping chip 
 
 #### Scenario: Six or fewer Activities
 - **WHEN** the user has between one and six distinct exact texts
-- **THEN** Recents presents all of them newest-first within the fixed chip-area footprint
+- **THEN** Recents presents all of them newest-first within the chip area
 
 #### Scenario: Seven to twelve Activities
 - **WHEN** the user has between seven and twelve distinct exact texts
 - **THEN** Recents presents all of them newest-first
 
 #### Scenario: Chips wrap
-- **WHEN** the Recents chips cannot fit on one row but fit within the fixed chip-area footprint
-- **THEN** the chips flow onto additional rows inside the same footprint and every chip remains visible and reachable without horizontal scrolling and without growing the Track page
+- **WHEN** the Recents chips cannot fit on one row but fit within the available up-to-4-row clamp
+- **THEN** the chips flow onto additional rows inside the same area and every chip remains visible and reachable without horizontal scrolling and without growing the Track page
 
 #### Scenario: Overflow scrolls inside the chip area
-- **WHEN** twelve chips overflow the fixed chip-area footprint
-- **THEN** the chip area scrolls internally on its own axis while the Track page frame, the main-action frame, and the below-button slot frame do not move or grow
+- **WHEN** twelve chips overflow the available up-to-4-row clamp
+- **THEN** the chip area scrolls internally on its own axis, while the Track page frame, the main-action frame, and the below-button slot frame do not move or grow
+
+#### Scenario: Dividers follow the scroll edges
+- **WHEN** the Recents chip area is scrolled down from the top
+- **THEN** a hairline divider fades in above the viewport, marking content hidden above
+
+#### Scenario: Bottom divider hides at the content end
+- **WHEN** the Recents chip area is scrolled to its end
+- **THEN** the bottom divider fades out
+
+#### Scenario: No dividers when everything fits
+- **WHEN** the recents fit in the viewport without scrolling
+- **THEN** neither divider appears
 
 #### Scenario: Tap a Recents chip
 - **WHEN** the user taps a Recents chip
@@ -162,21 +174,6 @@ Track SHALL present its most-recently-used exact entry texts as a wrapping chip 
 #### Scenario: Fresh reinstall shows categories on first paint
 - **WHEN** the user signs in on a reinstall with an empty account file and the shell mounts after seeding
 - **THEN** the first Track paint already carries the starter categories and the name picker suggests seeded names, with recents filling in as the first sync lands
-
-### Requirement: Section headers carry a separator above their chips
-The Categories header (running `TagSelector` branch) and the Recents header (idle branch) SHALL each render a `Divider` separator between the caption text and its chips, so the header and the chip flow read as separate visual groups.
-
-#### Scenario: Recents header separator visible
-- **WHEN** Track is idle and the Recents section shows its header plus chips (or the empty hint)
-- **THEN** a separator renders between the `Recents` caption and the chips below it
-
-#### Scenario: Running categories header separator visible
-- **WHEN** a timer is running and the tag-selector section shows its `Categories` caption plus tags
-- **THEN** a separator renders between the caption and the tag chips below it
-
-#### Scenario: Separator uses theme tokens only
-- **WHEN** either separator renders in light or dark appearance
-- **THEN** it uses only existing `Theme` hairline/background tokens with no raw `Color` literals and no new strings
 
 ### Requirement: Recents highlight the prepared text
 When an exact text is prepared, its Recents chip SHALL indicate the selected state with a filled accent presentation — accent background, on-accent text, and accent border, keeping the Category icon — a visible affordance that does not rely on color alone, and assistive technologies SHALL be told that the chip is selected. No chip SHALL appear selected while Track is idle.
@@ -274,7 +271,7 @@ Track SHALL capture the entry name as plain trimmed text with no catalog, no sea
 - **THEN** the two are treated as different names with separate recents and separate inherited categories
 
 ### Requirement: Running timer hosts the category TagSelector
-While a timer is running, Track SHALL show the shared ordered `TagSelector` (select-only from existing categories, zero allowed, order preserved) below the readout. The name SHALL be locked after Start; tags SHALL stay live until Stop. The locked name card SHALL align its text to the leading edge, matching the idle/ready name-row grammar (icon + text pushed leading, never centered). Toggles SHALL rewrite only the running draft (persisted `timer_state` snapshot) and SHALL never touch history. Notes edits SHALL rewrite only the running draft notes snapshot the same way. Stop SHALL save the entry with the final ordered categories, the final draft notes, and derived duration, plus a single outbox row. The running selector SHALL render selection ordinals exactly as defined by the category-management capability (single selection shows a checkmark, multiple selections show 1-based ordinals with fade-animated renumbering) without moving the main action above it.
+While a timer is running, Track SHALL show the shared ordered `TagSelector` (zero allowed, order preserved) below the readout, ending with the inline-creation chip defined by the category-management capability. Category options remain the existing catalog (select from existing); only the trailing creation chip is new. The chip region SHALL hug content and clamp at up to 4 visible rows bounded by the finite available height, scrolling internally beyond the visible rows; the timer/name/Stop frames SHALL be preserved with no tab-bar overlap, and entire-page scroll SHALL engage only as an accessibility fallback. The name SHALL be locked after Start; tags SHALL stay live until Stop. The locked name card SHALL align its text to the leading edge, matching the idle/ready name-row grammar (icon + text pushed leading, never centered). Toggles SHALL rewrite only the running draft (persisted `timer_state` snapshot) and SHALL never touch history. Notes edits SHALL rewrite only the running draft notes snapshot the same way. Stop SHALL save the entry with the final ordered categories, the final draft notes, and derived duration, plus a single outbox row. The running selector SHALL render selection ordinals exactly as defined by the category-management capability (single selection shows a checkmark, multiple selections show 1-based ordinals with fade-animated renumbering) without moving the main action above it.
 
 #### Scenario: Toggle tags mid-run
 - **WHEN** the user toggles a category while the timer runs
@@ -299,6 +296,14 @@ While a timer is running, Track SHALL show the shared ordered `TagSelector` (sel
 #### Scenario: Stop saves final tags
 - **WHEN** the user activates Stop
 - **THEN** the entry is created with the trimmed locked text, the final ordered categories, the final draft notes, and derived duration, plus a single outbox row
+
+#### Scenario: Create a category mid-run
+- **WHEN** the user activates the creation chip while the timer runs, saves a unique valid name with an icon
+- **THEN** the editor pops back to Track and the running draft gains the new category in tap order with the draft snapshot updated
+
+#### Scenario: Duplicate name mid-run keeps the editor open
+- **WHEN** the user attempts to save a duplicate category name from the running-tag row
+- **THEN** no category is created, the editor stays open with the draft intact and a localized duplicate-name error, and the running timer and its draft are unaffected
 
 ### Requirement: Recents chips show the first inherited Category icon
 A Recents chip SHALL display the icon of the first category of that exact text's newest committed entry (first by stored position). A text whose newest entry has no categories SHALL render its chip without an icon. Recents chips SHALL NOT display category names.
