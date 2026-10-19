@@ -675,6 +675,34 @@ struct CompactTimer: View {
 
 ---
 
+## `RunningBannerFace`
+
+The Lock Screen Live Activity banner face for a running timer (lives in the `LifioLiveActivities` widget target, not the app). Icon + exact entry name + live ticking elapsed + circular Stop link, rendered as transparent content over the system card (Liquid Glass on iOS 26+, solid card below). Full behavior contract: `live-activities` spec.
+
+### Signature
+
+```swift
+struct RunningBannerFace: View {
+    let text: String
+    let iconSymbol: String
+    let startedAt: Date
+    let trackURL: URL?
+    let trackStopURL: URL?
+}
+```
+
+### Visual
+
+- Content-row insets: **12 pt leading** (icon side), **8 pt trailing**, **8 pt vertical**.
+- `HStack`: icon (`.title`) + name (`.headline`, 1 line) over live elapsed (`.subheadline.monospacedDigit()`, system timer view) + 44 pt circular Stop link; no custom container, fill, gloss, or hairline.
+- Body taps deep-link to Track; Stop opens the app at the stop URL. Dimmed rendering keeps the layout with the Stop control dimmed and inert.
+
+### Accessibility
+
+- Label zone is one combined element announcing the running entry text; the Stop circle keeps its own stop accessibility label.
+
+---
+
 ## `ActivitySearchSheet` and `ActivitySearchContent` (removed)
 
 > **Removed** by `remove-activities-layer`: Track has no search sheet — capture is the `TimerNameRow` push row plus the shared `NamePicker` page (see `SCREENS/NamePicker.md`) and Recents chips. No implementation, no call sites.

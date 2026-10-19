@@ -79,9 +79,11 @@ struct RunningBannerFace: View {
             }
         }
         // Banner breathing room, verified on-device: 8pt vertical (flush
-        // edges otherwise) + 8pt horizontal. Transparent: the system card
-        // behind provides the glass (or the solid card below iOS 26).
+        // edges otherwise) + 12pt leading (icon side) + 8pt trailing.
+        // Transparent: the system card behind provides the glass (or the
+        // solid card below iOS 26).
         .padding(.vertical, 8)
-        .padding(.horizontal, 8)
+        .padding(.leading, 12)
+        .padding(.trailing, 8)
     }
 }
