@@ -54,13 +54,14 @@ jobs:
           review_task_timeout: '15'
           # Don't hammer Ollama Cloud rate limits.
           review_concurrency: '4'
-          # Review effort low (1 round/subtask, benchmarked fastest without
-          # recall loss on this model) — the single biggest cost lever.
-          effort: 'low'
+          # Review effort medium (deeper per-file rounds; low was benchmarked
+          # fastest without recall loss on small diffs — tune back if medium
+          # proves wasteful there).
+          effort: 'medium'
           # Bound paid-provider spend: generous runaway guard (fail-open —
           # over-budget files report failed(budget) but partial results still
-          # publish). Tune after measuring typical per-run usage.
-          max_tokens_budget: '2000000'
+          # publish). 10x headroom so large diffs review in one run.
+          max_tokens_budget: '20000000'
           language: English
           # Update one summary comment in place instead of posting a new one per run.
           sticky_summary: 'true'
