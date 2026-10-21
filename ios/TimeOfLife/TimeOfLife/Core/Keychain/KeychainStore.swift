@@ -39,6 +39,66 @@ actor KeychainStore: KeychainStoring {
         SecItemDelete(query as CFDictionary)
     }
 
+    /// Saves the snapshot with one status-checked write: update the existing
+    /// item, or add it when absent. The existing item is never deleted first,
+    /// so a failing write preserves the last usable snapshot.
+    func saveSnapshot(_ snapshot: CredentialSnapshot) async -> Result<Void, KeychainError> {
+        guard let data = try? JSONEncoder().encode(snapshot) else {
+            return .failure(.storageUnavailable(underlying: "snapshot encode failed"))
+        }
+        let query = baseQuery(for: .credentialSnapshot)
+        let attributes: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        ]
+        var status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound {
+            var add = query
+            add[kSecValueData as String] = data
+            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            status = SecItemAdd(add as CFDictionary, nil)
+        }
+        guard status == errSecSuccess else {
+            return .failure(.storageUnavailable(underlying: "save OSStatus \(status)"))
+        }
+        return .success(())
+    }
+
+    /// Loads the snapshot, distinguishing absence (`errSecItemNotFound` →
+    /// `.success(nil)`) from temporary failures (any other `OSStatus` →
+    /// `.failure`). A corrupt item is reported as unavailable, never as
+    /// absent: callers must not wipe a session they cannot read.
+    func loadSnapshot() async -> Result<CredentialSnapshot?, KeychainError> {
+        var query = baseQuery(for: .credentialSnapshot)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        switch status {
+        case errSecSuccess:
+            guard let data = result as? Data else {
+                return .failure(.storageUnavailable(underlying: "snapshot data missing"))
+            }
+            do {
+                return .success(try JSONDecoder().decode(CredentialSnapshot.self, from: data))
+            } catch {
+                // Decode detail is diagnostics-only: callers surface the
+                // localized fallback, never this string. The description
+                // names the schema mismatch, not secret bytes.
+                return .failure(.storageUnavailable(underlying: "snapshot decode failed: \(error)"))
+            }
+        case errSecItemNotFound:
+            return .success(nil)
+        default:
+            return .failure(.storageUnavailable(underlying: "load OSStatus \(status)"))
+        }
+    }
+
+    func removeSnapshot() async {
+        let query = baseQuery(for: .credentialSnapshot)
+        SecItemDelete(query as CFDictionary)
+    }
+
     private func baseQuery(for key: KeychainKey) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,

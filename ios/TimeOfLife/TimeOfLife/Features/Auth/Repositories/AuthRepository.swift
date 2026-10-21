@@ -11,8 +11,11 @@ protocol AuthRepository: Sendable {
     func verifyOtp(email: String, code: String) async throws -> AuthSession
     /// `POST /auth/apple` — exchanges Apple's identity token for a session.
     func appleSignIn(identityToken: String) async throws -> AuthSession
-    /// `POST /auth/refresh` — rotates tokens.
-    func refresh(refreshToken: String) async throws -> AuthSession
+    /// `POST /auth/refresh` — rotates tokens. `attemptId` is always sent: the
+    /// backend binds it to the presented predecessor for response-loss
+    /// recovery (repeating the same predecessor + attempt reclaims a
+    /// committed-but-undelivered rotation instead of tripping reuse).
+    func refresh(refreshToken: String, attemptId: String) async throws -> AuthSession
     /// `POST /auth/logout` (Bearer) — 204.
     func logout() async throws
     /// `GET /auth/me` (Bearer).

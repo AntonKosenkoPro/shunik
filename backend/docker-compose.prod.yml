@@ -41,6 +41,11 @@ services:
       # running either way so rollback is instant (retention: see change).
       DATABASE_URL: ${DATABASE_URL:-postgres://postgres:${DB_PASSWORD}@postgres:5432/timeoflife?sslmode=disable}
       JWT_SECRET: ${JWT_SECRET}
+      # Refresh recovery keyring (fix-refresh-response-loss). Required:
+      # config.Load fail-fasts without it, so the secret must exist before
+      # the new binary deploys. Rotate by prepending the new key and
+      # removing the retired one on a later deploy.
+      REFRESH_RECOVERY_KEYS: ${REFRESH_RECOVERY_KEYS:-}
       EMAIL_BACKEND: ${EMAIL_BACKEND:-console}
       PORT: "8080"
       OTP_EXPIRY: ${OTP_EXPIRY:-10m}

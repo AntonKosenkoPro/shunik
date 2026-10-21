@@ -98,4 +98,108 @@ struct APIClientUnauthorizedTests {
             #expect(error == .offline)
         }
     }
+
+    @Test("401 with an envelope surfaces the structured rejection code")
+    func structured401SurfacesCode() async throws {
+        defer { URLProtocolStub.clear() }
+
+        URLProtocolStub.responseHandler = { request in
+            let body = TestFactories.makeErrorResponse(code: "token_reuse", message: "revoked")
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 401,
+                httpVersion: "HTTP/1.1", headerFields: nil
+            )!
+            return (body, response)
+        }
+        let client = makeClient()
+
+        // A public endpoint: no refresh is owned here, so the rejection
+        // surfaces directly instead of routing through the retry path.
+        do {
+            try await client.sendVoid(
+                APIEndpoint(
+                    method: .post,
+                    path: "/api/v1/auth/otp/request",
+                    body: OtpRequestRequest(email: "a@b.com")
+                )
+            )
+            Issue.record("Expected rejection error")
+        } catch let error as APIError {
+            #expect(error == .authenticationRejected(
+                code: "token_reuse", message: "revoked", details: [:]
+            ))
+            #expect(error.code == "token_reuse")
+        }
+    }
+
+    @Test("structured 401 still triggers one refresh-and-retry for protected requests")
+    func structured401StillRefreshes() async throws {
+        defer { URLProtocolStub.clear() }
+
+        let refreshCalls = CallCounter()
+        URLProtocolStub.responseHandler = { request in
+            if request.value(forHTTPHeaderField: "Authorization") == "Bearer old" {
+                let body = TestFactories.makeErrorResponse(code: "invalid_refresh", message: "expired")
+                let response = HTTPURLResponse(
+                    url: request.url!, statusCode: 401,
+                    httpVersion: "HTTP/1.1", headerFields: nil
+                )!
+                return (body, response)
+            }
+            let user = UserDTO(id: "u1", email: "a@b.com", emailVerified: true)
+            let data = (try? JSONEncoder().encode(user)) ?? Data()
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 200,
+                httpVersion: "HTTP/1.1", headerFields: nil
+            )!
+            return (data, response)
+        }
+        let client = makeClient(
+            accessTokenProvider: { "old" },
+            refreshHandler: {
+                refreshCalls.increment()
+                return "new"
+            }
+        )
+
+        let user = try await client.send(
+            APIEndpoint.value(method: .get, path: "/api/v1/auth/me", requiresAuth: true),
+            as: UserDTO.self
+        )
+
+        #expect(user.id == "u1")
+        #expect(refreshCalls.count == 1, "exactly one owned refresh per protected request")
+    }
+
+    @Test("failed refresh preserves the structured rejection for the caller")
+    func structuredRefreshFailureIsPreserved() async throws {
+        defer { URLProtocolStub.clear() }
+
+        URLProtocolStub.responseHandler = { request in
+            let body = TestFactories.makeErrorResponse(code: "invalid_refresh", message: "expired")
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 401,
+                httpVersion: "HTTP/1.1", headerFields: nil
+            )!
+            return (body, response)
+        }
+        let client = makeClient(
+            accessTokenProvider: { "expired" },
+            refreshHandler: {
+                throw APIError.authenticationRejected(code: "token_reuse", message: "revoked")
+            }
+        )
+
+        do {
+            _ = try await client.send(
+                APIEndpoint.value(method: .get, path: "/api/v1/auth/me", requiresAuth: true),
+                as: UserDTO.self
+            )
+            Issue.record("Expected rejection error")
+        } catch let error as APIError {
+            // The refresh outcome surfaces intact — never collapsed into a
+            // bare signal the caller would misread as ambiguous.
+            #expect(error.code == "token_reuse")
+        }
+    }
 }

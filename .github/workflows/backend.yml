@@ -171,6 +171,14 @@ jobs:
             # Error reporting (observability-stage-0): empty keeps Sentry
             # disabled; set the secret to enable panic/5xx capture.
             SENTRY_DSN=${{ secrets.SENTRY_DSN }}
+            # Refresh recovery (fix-refresh-response-loss): comma-separated 64-hex
+            # AES-256 keys, first = primary. The backend fail-fasts without it,
+            # so this secret must exist before the new binary deploys. Rotation:
+            # prepend the new key (oldest stays usable for pending receipts),
+            # deploy, then remove the retired key on a later deploy. Never
+            # delete pending receipts as part of a rollback — previous binaries
+            # ignore the variable and pending receipts expire naturally.
+            REFRESH_RECOVERY_KEYS=${{ secrets.REFRESH_RECOVERY_KEYS }}
             ENVEOF
             chmod 600 .env
 
@@ -180,6 +188,29 @@ jobs:
             : "${DB_PASSWORD:?secret DB_PASSWORD is empty}"
             : "${JWT_SECRET:?secret JWT_SECRET is empty}"
             [ "${#JWT_SECRET}" -ge 32 ] || { echo "JWT_SECRET must be at least 32 bytes"; exit 1; }
+            # Format check mirrors ParseRecoveryKeys (config.go): comma-separated,
+            # edge-trimmed, empties ignored, every entry 64 hex chars (32 bytes).
+            # A malformed value would otherwise pass this pre-flight and
+            # crash-loop the freshly deployed container at boot. Interior
+            # whitespace is rejected (Go trims edges only; hex.DecodeString
+            # fails on interior space), so strip-all must equal edge-trimmed.
+            __rec_ok=1; __rec_count=0
+            __rec_rest="${REFRESH_RECOVERY_KEYS},"
+            while [ -n "$__rec_rest" ]; do
+              __rec_raw="${__rec_rest%%,*}"; __rec_rest="${__rec_rest#*,}"
+              __rec_edge="$(printf '%s' "$__rec_raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+              [ -z "$__rec_edge" ] && continue
+              case "$__rec_edge" in
+                *[[:space:]]*) __rec_ok=0; continue ;;
+              esac
+              __rec_count=$((__rec_count + 1))
+              case "$__rec_edge" in
+                *[!0-9a-fA-F]*|"") __rec_ok=0 ;;
+                *) if [ "${#__rec_edge}" -ne 64 ]; then __rec_ok=0; fi ;;
+              esac
+            done
+            [ "$__rec_ok" -eq 1 ] && [ "$__rec_count" -ge 1 ] || { echo "REFRESH_RECOVERY_KEYS must be comma-separated 64-char hex keys (openssl rand -hex 32); empty or malformed values fail the backend boot check"; exit 1; }
+            : "${REFRESH_RECOVERY_KEYS:?secret REFRESH_RECOVERY_KEYS is empty (fix-refresh-response-loss: backend fail-fasts without the recovery keyring)}"
             # EMAIL_BACKEND is a non-secret per-environment variable (vars.EMAIL_BACKEND),
             # not a secret. Default to console when unset — compose also defaults to console.
             EMAIL_BACKEND="${EMAIL_BACKEND:-console}"

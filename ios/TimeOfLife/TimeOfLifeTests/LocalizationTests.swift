@@ -102,7 +102,8 @@ struct LocalizationTests {
         let codes = [
             "invalid_body", "internal_error", "rate_limited",
             "invalid_otp", "otp_expired", "otp_attempts_exceeded",
-            "invalid_refresh", "token_reuse",
+            "invalid_refresh", "token_reuse", "refresh_expired",
+            "refresh_attempt_completed", "refresh_attempt_conflict",
         ]
         let unknownText = NSLocalizedString("error.unknown", comment: "")
 
@@ -118,6 +119,26 @@ struct LocalizationTests {
     func offlineMapping() {
         let msg = ErrorLocalization.message(for: .offline)
         #expect(!msg.isEmpty)
+    }
+
+    @Test("refresh recovery codes resolve in en + ru bundles")
+    func refreshRecoveryCodesResolve() throws {
+        let keys = [
+            "error.refresh_attempt_completed",
+            "error.refresh_attempt_conflict",
+        ]
+        let main = Bundle.main
+
+        for code in ["en", "ru"] {
+            let path = try #require(main.path(forResource: code, ofType: "lproj"))
+            let bundle = try #require(Bundle(path: path))
+
+            for key in keys {
+                let value = NSLocalizedString(key, bundle: bundle, comment: "")
+                #expect(value != key, "Unresolved key \(key) in \(code)")
+                #expect(!value.isEmpty, "Empty value for key \(key) in \(code)")
+            }
+        }
     }
 
     // MARK: - Validation fragment keys

@@ -14,11 +14,11 @@ import Foundation
 struct AuthGateTests {
 
     private func makeService(
-        initialTokens: [KeychainKey: String] = [:],
+        initialSnapshot: CredentialSnapshot? = nil,
         cached: CachedSession? = nil
     ) -> (AuthService, FakeAuthRepository, InMemoryKeychainStore, SessionCache, SessionStore) {
         let repository = FakeAuthRepository()
-        let keychain = InMemoryKeychainStore(initial: initialTokens)
+        let keychain = InMemoryKeychainStore(snapshot: initialSnapshot)
         let cache = SessionCache(defaults: UserDefaults(suiteName: UUID().uuidString)!)
         if let cached { cache.save(cached) }
         let store = SessionStore()
@@ -31,13 +31,18 @@ struct AuthGateTests {
         return (service, repository, keychain, cache, store)
     }
 
+    private func tokens(_ keychain: InMemoryKeychainStore) async -> (access: String?, refresh: String?) {
+        let snapshot = await TestFactories.snapshotTokens(keychain)
+        return (snapshot.access, snapshot.refresh)
+    }
+
     // MARK: - Launch gate (restore transitions)
 
     @Test("restore with a restorable session signs in — gate is replaced by the shell")
     func restoreWithTokensSignsIn() async {
         let cached = CachedSession(id: "u1", email: "a@b.com", emailVerified: true)
         let (service, _, _, _, store) = makeService(
-            initialTokens: [.refreshToken: "rt", .accessToken: "at"],
+            initialSnapshot: TestFactories.makeSnapshot(accessToken: "at", refreshToken: "rt"),
             cached: cached
         )
 
@@ -62,7 +67,7 @@ struct AuthGateTests {
     @Test("restore with a token but no cache still restores via /me")
     func restoreTokenWithoutCache() async {
         let (service, repo, _, _, store) = makeService(
-            initialTokens: [.refreshToken: "rt", .accessToken: "at"]
+            initialSnapshot: TestFactories.makeSnapshot(accessToken: "at", refreshToken: "rt")
         )
 
         await service.restoreSession()
@@ -79,7 +84,7 @@ struct AuthGateTests {
     func revokedSessionLocksToGate() async {
         let cached = CachedSession(id: "u1", email: "a@b.com", emailVerified: true)
         let (service, repo, keychain, cache, store) = makeService(
-            initialTokens: [.refreshToken: "rt", .accessToken: "at"],
+            initialSnapshot: TestFactories.makeSnapshot(accessToken: "at", refreshToken: "rt"),
             cached: cached
         )
         repo.meError = APIError.unauthorized
@@ -88,7 +93,7 @@ struct AuthGateTests {
         await service.restoreSession()
 
         #expect(store.state == .signedOut)
-        #expect(await keychain.string(for: .refreshToken) == nil)
+        #expect(await tokens(keychain) == (nil, nil))
         #expect(cache.load() == nil)
     }
 
@@ -97,14 +102,14 @@ struct AuthGateTests {
     @Test("logout flips signed-in back to signedOut (gate re-renders)")
     func logoutReturnsToGate() async throws {
         let (service, _, keychain, _, store) = makeService(
-            initialTokens: [.refreshToken: "rt", .accessToken: "at"],
+            initialSnapshot: TestFactories.makeSnapshot(accessToken: "at", refreshToken: "rt"),
             cached: CachedSession(id: "u1", email: "a@b.com", emailVerified: true)
         )
 
         await service.logout()
 
         #expect(store.state == .signedOut)
-        #expect(await keychain.string(for: .refreshToken) == nil)
+        #expect(await tokens(keychain) == (nil, nil))
     }
 
     // MARK: - Restoring splash (fix-track-empty-after-reinstall 4.2)
@@ -118,7 +123,7 @@ struct AuthGateTests {
     func restoreClearsRestoringWithSession() async {
         let cached = CachedSession(id: "u1", email: "a@b.com", emailVerified: true)
         let (service, _, _, _, store) = makeService(
-            initialTokens: [.refreshToken: "rt", .accessToken: "at"],
+            initialSnapshot: TestFactories.makeSnapshot(accessToken: "at", refreshToken: "rt"),
             cached: cached
         )
 
@@ -147,7 +152,7 @@ struct AuthGateTests {
         // No cached session: restore must await the (slow) `/me` call with
         // the gate still signed-out — the reinstall login-flash window.
         let (service, repo, _, _, store) = makeService(
-            initialTokens: [.refreshToken: "rt", .accessToken: "at"]
+            initialSnapshot: TestFactories.makeSnapshot(accessToken: "at", refreshToken: "rt")
         )
         repo.meDelayNanoseconds = 300_000_000
         store.setRestoring(false)

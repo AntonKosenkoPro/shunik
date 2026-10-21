@@ -21,6 +21,7 @@ import (
 	"github.com/antonkosenko/time-of-life/backend/internal/email"
 	"github.com/antonkosenko/time-of-life/backend/internal/migrations"
 	"github.com/antonkosenko/time-of-life/backend/internal/ratelimit"
+	"github.com/antonkosenko/time-of-life/backend/internal/recovery"
 )
 
 func newTestStore(t *testing.T) *db.SQLiteStore {
@@ -77,7 +78,13 @@ func newTestHandlerWithDependencies(
 		Apple:      ratelimit.NewTokenBucket(100, 100, time.Minute),
 	}
 	config := HandlerConfig{}
-	return NewHandler(store, tokenService, otpService, emailSender, rateLimiter, verifier, config, logger)
+	return NewHandler(store, tokenService, otpService, emailSender, rateLimiter, verifier, config, logger, testRecoveryKeyring())
+}
+
+// testRecoveryKeyring returns a fixed test keyring so handler tests exercise
+// the recovery path. Production keys come from REFRESH_RECOVERY_KEYS.
+func testRecoveryKeyring() *recovery.Keyring {
+	return recovery.NewKeyring([][]byte{bytes.Repeat([]byte{0x07}, recovery.KeySize)})
 }
 
 func capturedOTP(t *testing.T, sender *captureSender) string {

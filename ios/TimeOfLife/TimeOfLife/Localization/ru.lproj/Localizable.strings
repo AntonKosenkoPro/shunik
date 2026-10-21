@@ -51,6 +51,8 @@
 "error.unauthorized" = "Сессия истекла. Войдите снова.";
 "error.invalid_request" = "Нет данных устройства. Обновите приложение и попробуйте снова.";
 "error.refresh_expired" = "Сессия истекла. Войдите снова.";
+"error.refresh_attempt_completed" = "Сессия уже обновлена. Попробуйте снова.";
+"error.refresh_attempt_conflict" = "Конфликт сессии. Попробуйте снова.";
 "error.apple_not_configured" = "Вход через Apple временно недоступен. Попробуйте позже.";
 "error.invalid_apple_token" = "Не удалось войти через Apple. Попробуйте снова.";
 

@@ -83,21 +83,35 @@ actor APIClient: APISending {
         do {
             return try await execute(request)
         } catch APIError.unauthorized where allowRetry && endpoint.requiresAuth {
-            guard let refreshHandler else { throw APIError.unauthorized }
-            let newToken: String
-            do {
-                newToken = try await refreshHandler()
-            } catch let error as APIError {
-                // Preserve offline and transport failures so callers do not
-                // sign out merely because a refresh could not reach the API.
-                throw error
-            } catch {
-                throw APIError.unauthorized
-            }
-            guard !newToken.isEmpty else { throw APIError.unauthorized }
-            let retryRequest = try await makeRequest(endpoint, overrideToken: newToken)
-            return try await execute(retryRequest)
+            return try await refreshAndRetry(endpoint)
+        } catch APIError.authenticationRejected where allowRetry && endpoint.requiresAuth {
+            return try await refreshAndRetry(endpoint)
         }
+    }
+
+    /// The single refresh owner for a protected request: runs the refresh
+    /// handler once and retries the request with the new token. Refresh
+    /// failures surface with their outcome preserved (revocation codes,
+    /// conflicts, transport/decoding/storage) so callers can tell a
+    /// conclusive rejection from an ambiguous failure; only a superseded
+    /// (cancelled) refresh propagates as-is.
+    private func refreshAndRetry(_ endpoint: APIEndpoint) async throws -> Data {
+        guard let refreshHandler else { throw APIError.unauthorized }
+        let newToken: String
+        do {
+            newToken = try await refreshHandler()
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as APIError {
+            // Preserve offline and transport failures so callers do not
+            // sign out merely because a refresh could not reach the API.
+            throw error
+        } catch {
+            throw APIError.unauthorized
+        }
+        guard !newToken.isEmpty else { throw APIError.unauthorized }
+        let retryRequest = try await makeRequest(endpoint, overrideToken: newToken)
+        return try await execute(retryRequest)
     }
 
     private func execute(_ request: URLRequest) async throws -> Data {
@@ -123,6 +137,18 @@ actor APIClient: APISending {
         case 200...299:
             return data
         case 401:
+            // Surface the structured rejection (invalid_refresh, token_reuse,
+            // refresh_expired, ...) instead of collapsing every 401 into one
+            // undifferentiated signal. A missing/undecodable envelope keeps
+            // the legacy bare form.
+            if !data.isEmpty,
+               let env = try? decoder.decode(ErrorEnvelope.self, from: data) {
+                throw APIError.authenticationRejected(
+                    code: env.error.code,
+                    message: env.error.message,
+                    details: env.detailsAsStringMap
+                )
+            }
             throw APIError.unauthorized
         default:
             if !data.isEmpty,

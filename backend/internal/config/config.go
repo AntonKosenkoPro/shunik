@@ -2,6 +2,8 @@
 package config
 
 import (
+	"encoding/hex"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -54,6 +56,11 @@ type Config struct {
 	// SentryDSN enables Sentry error reporting (observability Stage 0).
 	// Empty (default) = fully disabled, zero behavior change.
 	SentryDSN string
+	// RecoveryKeys holds the parsed REFRESH_RECOVERY_KEYS keyring: AES-256
+	// keys sealing pending refresh successors for response-loss recovery.
+	// Keys[0] is the primary sealing key; the rest are retired keys kept
+	// for decrypting receipts sealed before rotation.
+	RecoveryKeys [][]byte
 }
 
 // Load reads configuration from the environment (.env first, non-fatal if missing).
@@ -200,7 +207,80 @@ func Load() (*Config, error) {
 	// Optional: SENTRY_DSN — Sentry error reporting. Empty = disabled.
 	cfg.SentryDSN = os.Getenv("SENTRY_DSN")
 
+	// Required: REFRESH_RECOVERY_KEYS — the stable server-side keyring
+	// sealing pending refresh successors (fix-refresh-response-loss).
+	// Recovery is always enabled, so startup fails fast without keys rather
+	// than running a relay that cannot recover lost refresh responses.
+	// Format: comma-separated hex-encoded 32-byte (AES-256) keys; the first
+	// is the primary sealing key, the rest are retired keys retained for
+	// decrypting older receipts. Generate with `openssl rand -hex 32`.
+	keys, err := ParseRecoveryKeys(os.Getenv("REFRESH_RECOVERY_KEYS"))
+	if err != nil {
+		return nil, err
+	}
+	if len(keys) == 0 {
+		return nil, requiredFieldError("REFRESH_RECOVERY_KEYS")
+	}
+	cfg.RecoveryKeys = keys
+
 	return cfg, nil
+}
+
+// ParseRecoveryKeys parses a comma-separated list of hex-encoded 32-byte
+// (AES-256) keys into raw key bytes. The first key is the primary sealing
+// key; the rest are retired keys. Empty entries are ignored; an empty input
+// yields no keys. Any malformed entry (non-hex or wrong length) is an error.
+func ParseRecoveryKeys(raw string) ([][]byte, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	var keys [][]byte
+	for i, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		key, err := parseRecoveryKey(i+1, part)
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, key)
+	}
+	return keys, nil
+}
+
+// parseRecoveryKey decodes one keyring entry: exactly 32 bytes of hex. The
+// 1-based index names the failing entry without ever logging the key
+// material itself. The all-zero key is rejected: it is a plausible
+// placeholder mistake, and sealing under a guessable key would defeat the
+// confidentiality the receipts exist to protect (`openssl rand -hex 32`
+// never emits it, so there is no false-positive risk).
+func parseRecoveryKey(index int, hexKey string) ([]byte, error) {
+	key, err := hex.DecodeString(hexKey)
+	if err != nil || len(key) != 32 {
+		return nil, fmt.Errorf("invalid REFRESH_RECOVERY_KEYS entry %d: expected 64 hex chars: %w", index, errOrLength(err, len(key)))
+	}
+	if isZeroKey(key) {
+		return nil, invalidFieldError("REFRESH_RECOVERY_KEYS", "non-trivial 32-byte key (all-zero key rejected; generate with `openssl rand -hex 32`)")
+	}
+	return key, nil
+}
+
+func errOrLength(err error, n int) error {
+	if err != nil {
+		return err
+	}
+	return fmt.Errorf("decoded to %d bytes, want 32", n)
+}
+
+func isZeroKey(key []byte) bool {
+	for _, b := range key {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // ParseCORSAllowedOrigins parses a comma-separated allowlist of exact

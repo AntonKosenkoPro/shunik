@@ -7,11 +7,11 @@ import Foundation
 struct AuthServiceTests {
 
     private func makeService(
-        initialTokens: [KeychainKey: String] = [:],
+        initialSnapshot: CredentialSnapshot? = nil,
         cached: CachedSession? = nil
     ) -> (AuthService, FakeAuthRepository, InMemoryKeychainStore, SessionCache, SessionStore) {
         let repo = FakeAuthRepository()
-        let keychain = InMemoryKeychainStore(initial: initialTokens)
+        let keychain = InMemoryKeychainStore(snapshot: initialSnapshot)
         let cache = SessionCache(defaults: UserDefaults(suiteName: UUID().uuidString)!)
         if let cached { cache.save(cached) }
         let store = SessionStore()
@@ -24,6 +24,15 @@ struct AuthServiceTests {
         return (service, repo, keychain, cache, store)
     }
 
+    private func tokens(_ keychain: InMemoryKeychainStore) async -> (access: String?, refresh: String?) {
+        let snapshot = await TestFactories.snapshotTokens(keychain)
+        return (snapshot.access, snapshot.refresh)
+    }
+
+    private func waitForRefreshSend(_ repo: FakeAuthRepository) async throws {
+        try await TestFactories.waitForRefreshSend(repo)
+    }
+
     // MARK: - requestOTP
 
     @Test("requestOTP normalizes email, caches it, and writes no tokens on success")
@@ -33,8 +42,7 @@ struct AuthServiceTests {
         try await service.requestOtp(email: "  Foo@Bar.com ")
 
         #expect(repo.calls == [.requestOtp(email: "foo@bar.com")])
-        #expect(await keychain.string(for: .accessToken) == nil)
-        #expect(await keychain.string(for: .refreshToken) == nil)
+        #expect(await tokens(keychain) == (nil, nil))
         #expect(store.cachedEmail == "foo@bar.com")
     }
 
@@ -60,8 +68,7 @@ struct AuthServiceTests {
         try await service.verifyOtp(email: "a@b.com", code: "123456")
 
         #expect(repo.calls == [.verifyOtp(email: "a@b.com", code: "123456")])
-        #expect(await keychain.string(for: .accessToken) == "at")
-        #expect(await keychain.string(for: .refreshToken) == "rt")
+        #expect(await tokens(keychain) == ("at", "rt"))
         #expect(cache.load()?.email == "a@b.com")
         #expect(
             store.state == .signedIn(
@@ -120,15 +127,14 @@ struct AuthServiceTests {
     @Test("logout clears local state even if server call fails")
     func logoutClearsLocal() async throws {
         let (service, repo, keychain, cache, store) = makeService(
-            initialTokens: [.accessToken: "at", .refreshToken: "rt"],
+            initialSnapshot: TestFactories.makeSnapshot(accessToken: "at", refreshToken: "rt"),
             cached: CachedSession(id: "u1", email: "a@b.com", emailVerified: true)
         )
         repo.logoutError = APIError.offline
 
         await service.logout()
 
-        #expect(await keychain.string(for: .accessToken) == nil)
-        #expect(await keychain.string(for: .refreshToken) == nil)
+        #expect(await tokens(keychain) == (nil, nil))
         #expect(cache.load() == nil)
         #expect(store.state == .signedOut)
     }
@@ -136,14 +142,13 @@ struct AuthServiceTests {
     @Test("logout resets state to unauthenticated")
     func logoutResetsState() async throws {
         let (service, _, keychain, cache, store) = makeService(
-            initialTokens: [.accessToken: "at", .refreshToken: "rt"],
+            initialSnapshot: TestFactories.makeSnapshot(accessToken: "at", refreshToken: "rt"),
             cached: CachedSession(id: "u1", email: "a@b.com", emailVerified: true)
         )
 
         await service.logout()
 
-        #expect(await keychain.string(for: .accessToken) == nil)
-        #expect(await keychain.string(for: .refreshToken) == nil)
+        #expect(await tokens(keychain) == (nil, nil))
         #expect(cache.load() == nil)
         #expect(store.state == .signedOut)
     }
@@ -154,7 +159,7 @@ struct AuthServiceTests {
     func restoreSessionAuthenticated() async throws {
         let cached = CachedSession(id: "u1", email: "a@b.com", emailVerified: true)
         let (service, repo, _, cache, store) = makeService(
-            initialTokens: [.accessToken: "at", .refreshToken: "rt"],
+            initialSnapshot: TestFactories.makeSnapshot(accessToken: "at", refreshToken: "rt"),
             cached: cached
         )
         // me() succeeds by default
@@ -181,11 +186,12 @@ struct AuthServiceTests {
     /// The gate decides on `SessionStore.state` alone; every launch path
     /// (no session → gate, restored session → shell, revocation → gate)
     /// must land in the right state. Data-file assertions live in task 3.x.
+
     @Test("revoked session locks to the gate: signed out, tokens cleared, cache cleared")
     func revokedSessionLocksToGate() async throws {
         let cached = CachedSession(id: "u1", email: "a@b.com", emailVerified: true)
         let (service, repo, keychain, cache, store) = makeService(
-            initialTokens: [.accessToken: "at", .refreshToken: "rt"],
+            initialSnapshot: TestFactories.makeSnapshot(accessToken: "at", refreshToken: "rt"),
             cached: cached
         )
         repo.meError = APIError.unauthorized
@@ -193,8 +199,7 @@ struct AuthServiceTests {
         await service.restoreSession()
 
         #expect(store.state == .signedOut)
-        #expect(await keychain.string(for: .accessToken) == nil)
-        #expect(await keychain.string(for: .refreshToken) == nil)
+        #expect(await tokens(keychain) == (nil, nil))
         #expect(cache.load() == nil)
     }
 
@@ -202,7 +207,7 @@ struct AuthServiceTests {
     func offlineRestoreKeepsGateDown() async throws {
         let cached = CachedSession(id: "u1", email: "a@b.com", emailVerified: true)
         let (service, repo, _, _, store) = makeService(
-            initialTokens: [.accessToken: "at", .refreshToken: "rt"],
+            initialSnapshot: TestFactories.makeSnapshot(accessToken: "at", refreshToken: "rt"),
             cached: cached
         )
         repo.meError = APIError.offline
@@ -216,7 +221,7 @@ struct AuthServiceTests {
     func restoreOfflineKeepsCached() async throws {
         let cached = CachedSession(id: "u1", email: "a@b.com", emailVerified: true)
         let (service, repo, _, cache, store) = makeService(
-            initialTokens: [.accessToken: "at", .refreshToken: "rt"],
+            initialSnapshot: TestFactories.makeSnapshot(accessToken: "at", refreshToken: "rt"),
             cached: cached
         )
         repo.meError = APIError.offline
@@ -231,7 +236,7 @@ struct AuthServiceTests {
     func restoreSessionKeepsCachedOnServerError() async throws {
         let cached = CachedSession(id: "u1", email: "a@b.com", emailVerified: true)
         let (service, repo, keychain, cache, store) = makeService(
-            initialTokens: [.accessToken: "at", .refreshToken: "rt"],
+            initialSnapshot: TestFactories.makeSnapshot(accessToken: "at", refreshToken: "rt"),
             cached: cached
         )
         repo.meError = APIError.server(code: "http_500", message: "Internal server error")
@@ -240,36 +245,14 @@ struct AuthServiceTests {
 
         #expect(store.state == .signedIn(cached))
         #expect(cache.load() == cached)
-        #expect(await keychain.string(for: .accessToken) == "at")
-        #expect(await keychain.string(for: .refreshToken) == "rt")
+        #expect(await tokens(keychain) == ("at", "rt"))
     }
 
-    @Test("restoreSession refreshes on 401 from /me")
-    func restoreRefreshesOn401() async throws {
+    @Test("restore locks the gate on 401 with no rotation landed (restore sends no refresh of its own)")
+    func restore401WithoutRotationLocksGate() async throws {
         let cached = CachedSession(id: "u1", email: "a@b.com", emailVerified: true)
         let (service, repo, keychain, _, store) = makeService(
-            initialTokens: [.accessToken: "at", .refreshToken: "rt"],
-            cached: cached
-        )
-        repo.meError = APIError.unauthorized
-
-        await service.restoreSession()
-
-        // refreshResult rotates tokens to at2/rt2
-        #expect(await keychain.string(for: .accessToken) == "at2")
-        #expect(await keychain.string(for: .refreshToken) == "rt2")
-        if case .signedIn(let s) = store.state {
-            #expect(s.id == "u1")
-        } else {
-            Issue.record("Expected signed in state")
-        }
-    }
-
-    @Test("restoreSession signs out when refresh also fails")
-    func restoreSignsOutOnDoubleFailure() async throws {
-        let cached = CachedSession(id: "u1", email: "a@b.com", emailVerified: true)
-        let (service, repo, keychain, _, store) = makeService(
-            initialTokens: [.accessToken: "at", .refreshToken: "rt"],
+            initialSnapshot: TestFactories.makeSnapshot(accessToken: "at", refreshToken: "rt"),
             cached: cached
         )
         repo.meError = APIError.unauthorized
@@ -277,8 +260,9 @@ struct AuthServiceTests {
 
         await service.restoreSession()
 
-        #expect(await keychain.string(for: .accessToken) == nil)
+        #expect(await tokens(keychain) == (nil, nil))
         #expect(store.state == .signedOut)
+        #expect(repo.refreshSends.isEmpty, "restore must not start its own refresh; APIClient owns the single retry")
     }
 
     // MARK: - performRefresh
@@ -286,23 +270,22 @@ struct AuthServiceTests {
     @Test("performRefresh rotates tokens and returns new access token")
     func performRefresh() async throws {
         let (service, repo, keychain, _, _) = makeService(
-            initialTokens: [.accessToken: "at", .refreshToken: "rt"]
+            initialSnapshot: TestFactories.makeSnapshot(accessToken: "at", refreshToken: "rt")
         )
 
         let new = try await service.performRefresh()
 
         #expect(new == "at2")
-        #expect(await keychain.string(for: .refreshToken) == "rt2")
-        #expect(repo.calls == [.refresh(refreshToken: "rt")])
+        #expect(await tokens(keychain) == ("at2", "rt2"))
+        #expect(repo.refreshSends.count == 1)
+        #expect(repo.refreshSends.first?.refreshToken == "rt")
+        #expect(!(repo.refreshSends.first?.attemptId.isEmpty ?? true), "an attempt id is always sent")
     }
 
     @Test("performRefresh throws unauthorized when no refresh token")
     func performRefreshNoToken() async throws {
         let cached = CachedSession(id: "u1", email: "a@b.com", emailVerified: true)
-        let (service, _, keychain, cache, store) = makeService(
-            initialTokens: [.accessToken: "at"],
-            cached: cached
-        )
+        let (service, _, keychain, cache, store) = makeService(cached: cached)
 
         do {
             _ = try await service.performRefresh()
@@ -310,7 +293,7 @@ struct AuthServiceTests {
         } catch let error as APIError {
             #expect(error == .unauthorized)
         }
-        #expect(await keychain.string(for: .accessToken) == nil)
+        #expect(await tokens(keychain) == (nil, nil))
         #expect(cache.load() == nil)
         #expect(store.state == .signedOut)
     }
@@ -319,7 +302,7 @@ struct AuthServiceTests {
     func performRefreshRejectedTokenSignsOut() async throws {
         let cached = CachedSession(id: "u1", email: "a@b.com", emailVerified: true)
         let (service, repo, keychain, cache, store) = makeService(
-            initialTokens: [.accessToken: "expired", .refreshToken: "revoked"],
+            initialSnapshot: TestFactories.makeSnapshot(accessToken: "expired", refreshToken: "revoked"),
             cached: cached
         )
         repo.refreshError = APIError.unauthorized
@@ -330,71 +313,38 @@ struct AuthServiceTests {
         } catch let error as APIError {
             #expect(error == .unauthorized)
         }
-        #expect(await keychain.string(for: .accessToken) == nil)
-        #expect(await keychain.string(for: .refreshToken) == nil)
+        #expect(await tokens(keychain) == (nil, nil))
         #expect(cache.load() == nil)
         #expect(store.state == .signedOut)
     }
 
     @Test("performRefresh coalesces concurrent refreshes into one network call (single-flight)")
     func performRefreshSingleFlight() async throws {
-        let (service, repo, _, _, _) = makeService(initialTokens: [.refreshToken: "rt"])
+        let (service, repo, _, _, _) = makeService(
+            initialSnapshot: TestFactories.makeSnapshot(accessToken: "at", refreshToken: "rt")
+        )
         // Hold the refresh on the gate so the first call stays in-flight long
         // enough for the second to arrive and have to join it.
         repo.refreshGateHeld = true
 
-        func refreshCount(_ calls: [FakeAuthRepository.Call]) -> Int {
-            calls.filter { if case .refresh = $0 { return true }; return false }.count
-        }
-
         // Start two refreshes concurrently.
-        async let a = service.performRefresh()
-        async let b = service.performRefresh()
+        async let first = service.performRefresh()
+        async let second = service.performRefresh()
 
         // Wait until the in-flight refresh has recorded its single network call.
-        var polls = 0
-        while refreshCount(repo.calls) == 0 && polls < 500 {
-            try await Task.sleep(nanoseconds: 1_000_000)
-            polls += 1
-        }
+        try await waitForRefreshSend(repo)
         // While the first refresh is still gated, only ONE network refresh
         // must have happened — the second caller joined the in-flight task
         // instead of starting its own (which would revoke the shared token).
-        #expect(refreshCount(repo.calls) == 1, "expected a single in-flight refresh, got \(refreshCount(repo.calls))")
+        #expect(repo.refreshSends.count == 1, "expected a single in-flight refresh")
 
         repo.releaseRefreshGate()
-        let (tokenA, tokenB) = try await (a, b)
+        let (tokenA, tokenB) = try await (first, second)
 
         #expect(tokenA == "at2")
         #expect(tokenB == "at2")
-        // Still exactly one network refresh after both callers complete.
-        #expect(refreshCount(repo.calls) == 1)
-    }
-
-    // MARK: - requestOtp then verifyOtp (cached email)
-
-    @Test("verifyOtp uses the email cached by requestOtp")
-    func verifyOtpWithStoredEmail() async throws {
-        let (service, repo, keychain, cache, store) = makeService()
-
-        // Simulate: requestOtp was called first, caching the email
-        try await service.requestOtp(email: "  User@Example.com ")
-        #expect(store.cachedEmail == "user@example.com")
-
-        // verifyOtp with the cached email completes sign-in.
-        try await service.verifyOtp(email: "user@example.com", code: "123456")
-
-        #expect(repo.calls == [
-            .requestOtp(email: "user@example.com"),
-            .verifyOtp(email: "user@example.com", code: "123456"),
-        ])
-        #expect(await keychain.string(for: .accessToken) == "at")
-        #expect(await keychain.string(for: .refreshToken) == "rt")
-        #expect(cache.load()?.email == "user@example.com")
-        #expect(
-            store.state == .signedIn(
-                CachedSession(id: "u1", email: "user@example.com", emailVerified: true)
-            )
-        )
+        // Still exactly one network refresh after both callers complete, and
+        // both shared its single durable attempt.
+        #expect(repo.refreshSends.count == 1)
     }
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/antonkosenko/time-of-life/backend/internal/handlers"
 	"github.com/antonkosenko/time-of-life/backend/internal/observe"
 	"github.com/antonkosenko/time-of-life/backend/internal/ratelimit"
+	"github.com/antonkosenko/time-of-life/backend/internal/recovery"
 )
 
 // Dependencies holds all dependencies for the server.
@@ -32,6 +33,10 @@ type Dependencies struct {
 	AppleVerifier  apple.Verifier
 	HandlerCfg     handlers.HandlerConfig
 	RequestTimeout time.Duration
+	// RecoveryKeyring seals pending refresh successors for response-loss
+	// recovery. Nil disables recovery (refresh attempts are ignored);
+	// NewDefaultDependencies builds it from config.
+	RecoveryKeyring *recovery.Keyring
 	// CORSAllowedOrigins is the exact-match allowlist of origins echoed
 	// for credentialed browser calls. Empty (default) = deny all.
 	CORSAllowedOrigins []string
@@ -122,6 +127,7 @@ func NewDefaultDependencies(cfg *config.Config, store db.Store) Dependencies {
 		AppleVerifier:      appleVerifier,
 		HandlerCfg:         handlerCfg,
 		RequestTimeout:     cfg.RequestTimeout,
+		RecoveryKeyring:    recovery.NewKeyring(cfg.RecoveryKeys),
 		CORSAllowedOrigins: config.ParseCORSAllowedOrigins(cfg.CORSAllowedOrigins),
 	}
 }
@@ -144,6 +150,7 @@ func New(deps Dependencies) *Server {
 		deps.AppleVerifier,
 		deps.HandlerCfg,
 		logger,
+		deps.RecoveryKeyring,
 	)
 
 	s := &Server{}

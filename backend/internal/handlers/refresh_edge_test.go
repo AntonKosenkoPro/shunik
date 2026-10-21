@@ -33,6 +33,7 @@ func shortTTLHandler(t *testing.T, store db.Store, sender email.Sender, refreshT
 		nil,
 		HandlerConfig{},
 		logger,
+		testRecoveryKeyring(),
 	)
 }
 

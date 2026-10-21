@@ -38,10 +38,16 @@ struct OtpVerifyRequest: Codable, Equatable, Sendable {
     let code: String
 }
 
-/// `POST /auth/refresh` body.
+/// `POST /auth/refresh` body. `refreshAttemptId` is always sent (updated
+/// clients): the backend binds it to one predecessor for response-loss
+/// recovery, and treats a missing field as a legacy non-recoverable rotation.
 struct RefreshRequest: Codable, Equatable, Sendable {
     let refreshToken: String
-    enum CodingKeys: String, CodingKey { case refreshToken = "refresh_token" }
+    let refreshAttemptId: String
+    enum CodingKeys: String, CodingKey {
+        case refreshToken = "refresh_token"
+        case refreshAttemptId = "refresh_attempt_id"
+    }
 }
 
 /// `POST /auth/apple` body. `identityToken` is Apple's RS256 identity-token JWT.

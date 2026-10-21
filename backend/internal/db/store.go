@@ -33,6 +33,51 @@ type RefreshToken struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// RecoveryReceipt is the pending record of one accepted refresh rotation
+// (fix-refresh-response-loss). It binds an attempt to one predecessor,
+// account, and device and carries the successor refresh credential in
+// authenticated-encrypted form plus the successor's fixed expiry. Only
+// hashes and the sealed blob are persisted — never plaintext tokens or raw
+// attempt identifiers. A receipt closes (Consumed) when its successor is
+// consumed by the next rotation, or on logout/revocation; expiry is checked
+// lazily on access, so no background sweeper is needed.
+type RecoveryReceipt struct {
+	AttemptHash     string
+	UserID          string
+	DeviceID        string
+	PredecessorHash string
+	SuccessorHash   string
+	SealedSuccessor []byte
+	ExpiresAt       time.Time
+	Consumed        bool
+	CreatedAt       time.Time
+}
+
+// RotateArgs carries one transactional refresh rotation: revoke the
+// predecessor, insert the successor, and record the pending recovery
+// receipt. SuccessorHash and AttemptHash are SHA-256 hex digests;
+// SealedSuccessor is the AES-256-GCM sealed successor; ExpiresAt is the
+// successor's fixed refresh expiry (retries never extend it).
+// PruneConsumedBefore bounds retention: receipts that are consumed and
+// expired before it are deleted opportunistically; zero disables pruning.
+type RotateArgs struct {
+	UserID              string
+	DeviceID            string
+	PredecessorID       string
+	PredecessorHash     string
+	SuccessorHash       string
+	AttemptHash         string
+	SealedSuccessor     []byte
+	ExpiresAt           time.Time
+	PruneConsumedBefore time.Time
+}
+
+// RotateResult reports the committed successor row.
+type RotateResult struct {
+	SuccessorID        string
+	SuccessorCreatedAt time.Time
+}
+
 // CategoryTag is a denormalized category (id + name + icon) attached to an
 // entry in API responses. It is never written on its own.
 type CategoryTag struct {
@@ -151,16 +196,40 @@ type Store interface {
 	// GetRefreshToken returns a refresh token by its hash, including user info.
 	GetRefreshToken(ctx context.Context, tokenHash string) (RefreshToken, error)
 
-	// RevokeRefreshToken marks a refresh token as revoked.
+	// RevokeRefreshToken marks a refresh token as revoked. Pending
+	// recovery receipts naming it as successor close with it.
 	RevokeRefreshToken(ctx context.Context, tokenID string) error
 
-	// RevokeAllUserSessions revokes all refresh tokens for a user.
+	// RevokeAllUserSessions revokes all refresh tokens for a user. Pending
+	// recovery receipts of the user close with them.
 	RevokeAllUserSessions(ctx context.Context, userID string) error
 
 	// RevokeUserDeviceSessions revokes the refresh family of one device:
 	// all non-revoked refresh tokens for user with the given device_id.
+	// Pending recovery receipts of that device close with it, so a replayed
+	// attempt can no longer recreate the revoked session.
 	RevokeUserDeviceSessions(ctx context.Context, userID, deviceID string) error
 
+	// RotateRefreshToken atomically revokes the predecessor, inserts the
+	// successor, records the pending recovery receipt, and closes the
+	// receipt the predecessor itself recovered (successor consumption).
+	// Commit-all or commit-nothing: failures before commit leave the
+	// predecessor usable and persist no partial successor or receipt. The
+	// predecessor revocation is single-use guarded: a concurrent rotation
+	// that already consumed it returns ErrPredecessorRevoked without
+	// touching the family. A concurrent duplicate delivery that already
+	// accepted the attempt returns ErrAttemptExists without touching it.
+	RotateRefreshToken(ctx context.Context, args RotateArgs) (RotateResult, error)
+
+	// FindRecoveryReceipt returns the pending receipt for an attempt hash,
+	// or ErrNotFound when the attempt was never accepted.
+	FindRecoveryReceipt(ctx context.Context, attemptHash string) (RecoveryReceipt, error)
+
+	// ConsumeRecoveryReceipt closes a pending receipt without revoking
+	// anything. Used when an expiry check rejects recovery: the receipt is
+	// dead from that moment, and closing it lets the opportunistic sweep
+	// reclaim the row once it is long past expiry.
+	ConsumeRecoveryReceipt(ctx context.Context, attemptHash string) error
 	// GetUserByID returns a user by their ID.
 	GetUserByID(ctx context.Context, userID string) (User, error)
 

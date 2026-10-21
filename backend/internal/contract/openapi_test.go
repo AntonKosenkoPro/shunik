@@ -30,6 +30,8 @@ var canonicalErrorCodes = []string{
 	"invalid_refresh",
 	"token_reuse",
 	"refresh_expired",
+	"refresh_attempt_completed",
+	"refresh_attempt_conflict",
 	"unauthorized",
 	"not_found",
 	"conflict",
@@ -105,6 +107,7 @@ type rawComponents struct {
 type rawSchemaDef struct {
 	Properties map[string]any `yaml:"properties"`
 	Enum       []any          `yaml:"enum"`
+	Required   []any          `yaml:"required"`
 }
 
 func loadSpec(t *testing.T) *rawSpec {
@@ -466,6 +469,40 @@ func TestSpec_NoModifiedSinceOnListCategories(t *testing.T) {
 	for _, p := range get.Parameters {
 		if p.Name == "modified_since" {
 			t.Error("GET /api/v1/categories must not document modified_since (handler ignores it)")
+		}
+	}
+}
+
+// Response-loss recovery (fix-refresh-response-loss): POST /auth/refresh
+// must document the optional refresh_attempt_id field on RefreshRequest and
+// the 409 attempt-conflict responses alongside 200/401/500.
+func TestSpec_RefreshAttemptDocumented(t *testing.T) {
+	s := loadSpec(t)
+	refresh, ok := s.Components.Schemas["RefreshRequest"]
+	if !ok {
+		t.Fatal("expected RefreshRequest schema")
+	}
+	if _, ok := refresh.Properties["refresh_token"]; !ok {
+		t.Error("RefreshRequest schema must document refresh_token")
+	}
+	if _, ok := refresh.Properties["refresh_attempt_id"]; !ok {
+		t.Error("RefreshRequest schema must document the optional refresh_attempt_id")
+	}
+	// refresh_attempt_id must stay optional: promoting it to required
+	// would break legacy clients, which keep working without recovery.
+	for _, name := range refresh.Required {
+		if s, _ := name.(string); s == "refresh_attempt_id" {
+			t.Error("refresh_attempt_id must not become required (absent keeps legacy behavior)")
+		}
+	}
+
+	post, ok := s.Paths["/api/v1/auth/refresh"]["post"]
+	if !ok {
+		t.Fatal("expected POST /api/v1/auth/refresh")
+	}
+	for _, want := range []string{"200", "401", "409", "500"} {
+		if _, ok := post.Responses[want]; !ok {
+			t.Errorf("POST /api/v1/auth/refresh must document %s", want)
 		}
 	}
 }

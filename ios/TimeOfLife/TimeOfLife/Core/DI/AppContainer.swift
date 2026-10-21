@@ -313,7 +313,13 @@ final class AppContainer: ObservableObject {
             baseURL: baseURL,
             session: URLSession.shared,
             accessTokenProvider: { [weak keychain] () async -> String? in
-                await keychain?.string(for: .accessToken)
+                // Tokens live in the single credential snapshot now (split
+                // per-token Keychain keys are gone): an unreadable store
+                // yields no token, and the refresh path keeps retry intent.
+                guard let result = await keychain?.loadSnapshot(),
+                      case .success(let snapshot) = result
+                else { return nil }
+                return snapshot?.accessToken
             },
             refreshHandler: { [weak clientHolder] () async throws -> String in
                 guard let service = await clientHolder?.service else {

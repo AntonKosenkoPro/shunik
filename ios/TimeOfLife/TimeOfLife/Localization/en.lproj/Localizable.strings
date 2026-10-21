@@ -51,6 +51,8 @@
 "error.unauthorized" = "Session expired. Please sign in again.";
 "error.invalid_request" = "Missing device information. Please update the app and try again.";
 "error.refresh_expired" = "Session expired. Please sign in again.";
+"error.refresh_attempt_completed" = "Session already updated. Please try again.";
+"error.refresh_attempt_conflict" = "Sign-in conflict. Please try again.";
 "error.apple_not_configured" = "Sign in with Apple is temporarily unavailable. Please try again later.";
 "error.invalid_apple_token" = "Sign in with Apple failed. Please try again.";
 

@@ -14,7 +14,8 @@ info:
     3. **Refresh** — `POST /api/v1/auth/refresh` with the refresh token and `X-Device-Id`.
        Issues a new token pair within the sending device's refresh family and revokes the
        old token. Reuse of a revoked token revokes only that device's family — other
-       devices' sessions keep working.
+       devices' sessions keep working. Response-loss recovery via the optional
+       `refresh_attempt_id` is specified normatively on the operation itself.
     4. **Logout** — `POST /api/v1/auth/logout` with a Bearer access token and `X-Device-Id`.
        Revokes only the calling device's refresh family; other devices' sessions remain valid.
     5. **Me** — `GET /api/v1/auth/me` with a Bearer access token. Returns the user profile.
@@ -47,6 +48,10 @@ info:
 
     ## Security
     - No passwords. OTP codes and refresh tokens are stored only as SHA-256 hashes.
+      The sole recoverable server-side refresh credential is the pending successor in
+      a refresh recovery receipt, sealed with AES-256-GCM (account, device,
+      predecessor, attempt, and fixed expiry as associated data) under the
+      `REFRESH_RECOVERY_KEYS` keyring — never plaintext, never logged.
     - JWT access tokens use HS256 signing.
     - Rate limiting: 3 req/min for OTP request, 5 req/min for OTP verify (per IP+email).
     - User enumeration is prevented: `/api/v1/auth/otp/request` always returns 202.
@@ -330,6 +335,23 @@ paths:
         devices' sessions. There is deliberately NO device limit: no 409
         `device_limit` response exists (device quota counting is deferred to
         issue #46 — do not file its absence as a bug).
+
+        Response-loss recovery: the optional `refresh_attempt_id` names one logical
+        rotation (a client-generated UUID, durable across retries, suspension, and
+        restart). Rotation commits predecessor revocation, successor insertion, and a
+        pending recovery receipt atomically. Before the successor is consumed or
+        revoked, repeating the same predecessor and accepted pending attempt returns
+        the identical successor refresh credential plus a fresh access token — without
+        rotating again and without revocation. Recovery holds until the successor's
+        fixed refresh expiry and never extends it. Requests without the field keep
+        legacy behavior with no recovery.
+
+        Failure taxonomy: `invalid_refresh`, `token_reuse`, and `refresh_expired`
+        keep their 401 meanings and revocation rules (revoked-before-expiry ordering
+        preserved; wrong-device presentations are rejected without revocation or
+        recovery). `refresh_attempt_completed` and `refresh_attempt_conflict` are 409
+        non-authentication conflicts that revoke nothing. Database, crypto, and
+        receipt failures are 500 service errors that revoke nothing.
       tags:
         - Auth
       parameters:
@@ -342,6 +364,7 @@ paths:
               $ref: "#/components/schemas/RefreshRequest"
             example:
               refresh_token: abc123...
+              refresh_attempt_id: 019639f1-7a3b-7abc-9def-100000000009
       responses:
         "200":
           description: Tokens refreshed successfully
@@ -398,6 +421,31 @@ paths:
                     error:
                       code: refresh_expired
                       message: Refresh token has expired. Please sign in again.
+        "409":
+          description: |
+            Non-authentication refresh conflict — nothing is revoked and no credentials
+            are issued. `refresh_attempt_completed`: the attempt's successor was already
+            consumed, revoked, or otherwise closed (a delayed duplicate after the client
+            advanced — keep the current credentials). `refresh_attempt_conflict`: the
+            attempt identifier is bound to a different predecessor (retry with the
+            attempt bound to the presented token).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                refresh_attempt_completed:
+                  summary: Attempt already completed (delayed duplicate after advancement)
+                  value:
+                    error:
+                      code: refresh_attempt_completed
+                      message: Refresh attempt already completed. Use the current session token.
+                refresh_attempt_conflict:
+                  summary: Attempt rebound to a different predecessor
+                  value:
+                    error:
+                      code: refresh_attempt_conflict
+                      message: Refresh attempt does not match this token. Retry with the attempt bound to this token.
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -1114,7 +1162,12 @@ components:
 
     RefreshRequest:
       type: object
-      description: Request body for refreshing tokens. The device scope comes from the `X-Device-Id` header on the request, not from this body.
+      description: |
+        Request body for refreshing tokens. The device scope comes from the `X-Device-Id`
+        header on the request, not from this body. The optional `refresh_attempt_id`
+        carries the response-loss recovery contract specified on
+        POST /api/v1/auth/refresh; absent keeps legacy behavior with no recovery.
+        Refresh and access-token lifetimes are unchanged by recovery.
       required:
         - refresh_token
       properties:
@@ -1122,6 +1175,14 @@ components:
           type: string
           description: Opaque refresh token (64 hex characters) from the requesting device's family
           example: a1b2c3d4e5f6...
+        refresh_attempt_id:
+          type: string
+          description: |
+            Durable identifier for one logical rotation, reused across retries
+            of the same predecessor. Minted as a UUIDv7 by the reference
+            client; the server validates presence and length only (any
+            trimmed string up to 128 chars is accepted) and binds it to one
+            predecessor, account, and device.
 
     AppleSignInRequest:
       type: object

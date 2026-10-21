@@ -13,6 +13,8 @@ func TestConfig_Load_Branches(t *testing.T) {
 		"DATABASE_URL":  "postgres://localhost:5432/test",
 		"JWT_SECRET":    "test-secret-key-at-least-32-bytes!!",
 		"EMAIL_BACKEND": "console",
+		// 32-byte test key, hex-encoded (`openssl rand -hex 32` shape).
+		"REFRESH_RECOVERY_KEYS": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
 	}
 
 	setRequired := func(t *testing.T) {
@@ -99,7 +101,7 @@ func TestConfig_Load_Branches(t *testing.T) {
 	})
 
 	t.Run("missing required", func(t *testing.T) {
-		for _, missing := range []string{"DATABASE_URL", "JWT_SECRET", "EMAIL_BACKEND"} {
+		for _, missing := range []string{"DATABASE_URL", "JWT_SECRET", "EMAIL_BACKEND", "REFRESH_RECOVERY_KEYS"} {
 			setRequired(t)
 			t.Setenv(missing, "")
 			// godotenv.Load does not override set (even empty) vars, so the
@@ -187,5 +189,61 @@ func TestParseCORSAllowedOrigins(t *testing.T) {
 	}
 	if got := ParseCORSAllowedOrigins(" , ,"); len(got) != 0 {
 		t.Errorf("expected empty for blank entries, got %+v", got)
+	}
+}
+
+func TestParseRecoveryKeys(t *testing.T) {
+	key1 := "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+	key2 := "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
+
+	if got, err := ParseRecoveryKeys(""); err != nil || len(got) != 0 {
+		t.Errorf("empty input: expected no keys, got %d (%v)", len(got), err)
+	}
+	if got, err := ParseRecoveryKeys(" , ,"); err != nil || len(got) != 0 {
+		t.Errorf("blank entries: expected no keys, got %d (%v)", len(got), err)
+	}
+
+	got, err := ParseRecoveryKeys(" " + key1 + ",," + key2 + " ")
+	if err != nil {
+		t.Fatalf("ParseRecoveryKeys: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 keys, got %d", len(got))
+	}
+	for i, k := range got {
+		if len(k) != 32 {
+			t.Errorf("key %d: expected 32 bytes, got %d", i, len(k))
+		}
+	}
+	if got[0][0] != 0x01 || got[1][0] != 0x20 {
+		t.Error("key order must be preserved (first = primary)")
+	}
+
+	for _, bad := range []string{
+		"not-hex",
+		"0102",      // too short
+		key1 + "00", // too long
+		key1 + ", zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", // non-hex
+	} {
+		if _, err := ParseRecoveryKeys(bad); err == nil {
+			t.Errorf("expected error for %q, got nil", bad)
+		}
+	}
+}
+
+// Recovery is always enabled, so Load fails fast on malformed keys rather
+// than running a relay that cannot recover lost refresh responses.
+func TestConfig_Load_InvalidRecoveryKeys(t *testing.T) {
+	required := map[string]string{
+		"DATABASE_URL":  "postgres://localhost:5432/test",
+		"JWT_SECRET":    "test-secret-key-at-least-32-bytes!!",
+		"EMAIL_BACKEND": "console",
+	}
+	for k, v := range required {
+		t.Setenv(k, v)
+	}
+	t.Setenv("REFRESH_RECOVERY_KEYS", "too-short")
+	if _, err := Load(); err == nil {
+		t.Error("expected error for malformed REFRESH_RECOVERY_KEYS, got nil")
 	}
 }

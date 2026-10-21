@@ -33,10 +33,10 @@ final class RemoteAuthRepository: AuthRepository {
         )
     }
 
-    func refresh(refreshToken: String) async throws -> AuthSession {
+    func refresh(refreshToken: String, attemptId: String) async throws -> AuthSession {
         try await client.send(
             APIEndpoint(method: .post, path: "\(basePath)/auth/refresh",
-                        body: RefreshRequest(refreshToken: refreshToken)),
+                        body: RefreshRequest(refreshToken: refreshToken, refreshAttemptId: attemptId)),
             as: AuthSession.self
         )
     }

@@ -35,6 +35,7 @@ func trustedTestHandler(t *testing.T, store db.Store, raw string) *Handler {
 		nil,
 		HandlerConfig{TrustedProxies: nets},
 		logger,
+		testRecoveryKeyring(),
 	)
 }
 

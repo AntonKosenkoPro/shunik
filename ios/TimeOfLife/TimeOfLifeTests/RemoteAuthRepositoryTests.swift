@@ -111,14 +111,14 @@ struct RemoteAuthRepositoryTests {
 
     // MARK: - refreshToken
 
-    @Test("refreshToken calls POST /auth/refresh with correct body")
+    @Test("refreshToken calls POST /auth/refresh with token and attempt id")
     func refreshEndpoint() async throws {
         let (repo, mock) = makeRepo()
         mock.sendHandler = { _, _ in
             TestFactories.makeAuthResponse(accessToken: "at2", refreshToken: "rt2")
         }
 
-        _ = try await repo.refresh(refreshToken: "rt1")
+        _ = try await repo.refresh(refreshToken: "rt1", attemptId: "attempt-1")
 
         let r = try #require(mock.received.first)
         #expect(r.path == "/api/v1/auth/refresh")
@@ -126,6 +126,7 @@ struct RemoteAuthRepositoryTests {
         let body = try #require(r.body)
         let decoded = try JSONDecoder().decode(RefreshRequest.self, from: body)
         #expect(decoded.refreshToken == "rt1")
+        #expect(decoded.refreshAttemptId == "attempt-1", "the attempt id is always sent")
     }
 
     @Test("refreshToken returns new token pair on success")
@@ -137,7 +138,7 @@ struct RemoteAuthRepositoryTests {
         )
         mock.sendHandler = { _, _ in expectedSession }
 
-        let session = try await repo.refresh(refreshToken: "old_refresh")
+        let session = try await repo.refresh(refreshToken: "old_refresh", attemptId: "attempt-9")
 
         #expect(session.accessToken == "new_access")
         #expect(session.refreshToken == "new_refresh")

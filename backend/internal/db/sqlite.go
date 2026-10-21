@@ -188,10 +188,20 @@ func (s *SQLiteStore) GetRefreshToken(ctx context.Context, tokenHash string) (Re
 
 // RevokeRefreshToken marks a refresh token as revoked.
 func (s *SQLiteStore) RevokeRefreshToken(ctx context.Context, tokenID string) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE refresh_tokens SET revoked = true WHERE id = ?
-	`, tokenID)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
+		return fmt.Errorf("revoke refresh token: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE refresh_tokens SET revoked = true WHERE id = ?
+	`, tokenID); err != nil {
+		return fmt.Errorf("revoke refresh token: %w", err)
+	}
+	if err := closeSuccessorReceiptsSQLite(ctx, tx, tokenID); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("revoke refresh token: %w", err)
 	}
 	return nil
@@ -199,10 +209,23 @@ func (s *SQLiteStore) RevokeRefreshToken(ctx context.Context, tokenID string) er
 
 // RevokeAllUserSessions revokes all refresh tokens for a user.
 func (s *SQLiteStore) RevokeAllUserSessions(ctx context.Context, userID string) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE refresh_tokens SET revoked = true WHERE user_id = ? AND revoked = false
-	`, userID)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
+		return fmt.Errorf("revoke all user sessions: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE refresh_tokens SET revoked = true WHERE user_id = ? AND revoked = false
+	`, userID); err != nil {
+		return fmt.Errorf("revoke all user sessions: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE refresh_recovery_receipts SET consumed = true
+		WHERE user_id = ? AND consumed = false
+	`, userID); err != nil {
+		return fmt.Errorf("revoke all user sessions: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("revoke all user sessions: %w", err)
 	}
 	return nil
@@ -210,12 +233,174 @@ func (s *SQLiteStore) RevokeAllUserSessions(ctx context.Context, userID string) 
 
 // RevokeUserDeviceSessions revokes the refresh family of one device.
 func (s *SQLiteStore) RevokeUserDeviceSessions(ctx context.Context, userID, deviceID string) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE refresh_tokens SET revoked = true
-		WHERE user_id = ? AND device_id = ? AND revoked = false
-	`, userID, deviceID)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("revoke user device sessions: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE refresh_tokens SET revoked = true
+		WHERE user_id = ? AND device_id = ? AND revoked = false
+	`, userID, deviceID); err != nil {
+		return fmt.Errorf("revoke user device sessions: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE refresh_recovery_receipts SET consumed = true
+		WHERE user_id = ? AND device_id = ? AND consumed = false
+	`, userID, deviceID); err != nil {
+		return fmt.Errorf("revoke user device sessions: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("revoke user device sessions: %w", err)
+	}
+	return nil
+}
+
+// closeSuccessorReceiptsSQLite closes the pending receipts whose successor
+// is the revoked token, so a replayed attempt cannot recreate the session.
+func closeSuccessorReceiptsSQLite(ctx context.Context, tx *sql.Tx, tokenID string) error {
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE refresh_recovery_receipts SET consumed = true
+		WHERE successor_hash = (SELECT token_hash FROM refresh_tokens WHERE id = ?)
+		  AND consumed = false
+	`, tokenID); err != nil {
+		return fmt.Errorf("revoke refresh token: %w", err)
+	}
+	return nil
+}
+
+// RotateRefreshToken atomically revokes the predecessor, inserts the
+// successor, records the pending recovery receipt, and closes the receipt
+// the predecessor itself recovered. Statements touch refresh_tokens before
+// refresh_recovery_receipts — the same lock order as the revocation paths.
+// The predecessor revocation is single-use guarded (`AND revoked = false`):
+// a concurrent rotation that already consumed it gets ErrPredecessorRevoked
+// and commits nothing, so cross-attempt races cannot fork the device family.
+func (s *SQLiteStore) RotateRefreshToken(ctx context.Context, args RotateArgs) (RotateResult, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return RotateResult{}, fmt.Errorf("rotate refresh token: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Single-use guard: only a live predecessor rotates.
+	updateres, err := tx.ExecContext(ctx, `
+		UPDATE refresh_tokens SET revoked = true
+		WHERE id = ? AND revoked = false
+	`, args.PredecessorID)
+	if err != nil {
+		return RotateResult{}, fmt.Errorf("rotate refresh token: %w", err)
+	}
+	affected, err := updateres.RowsAffected()
+	if err != nil {
+		return RotateResult{}, fmt.Errorf("rotate refresh token: %w", err)
+	}
+	if affected == 0 {
+		return RotateResult{}, fmt.Errorf("rotate refresh token: %w", ErrPredecessorRevoked)
+	}
+
+	// Bind the successor timestamp in Go so the committed row's created_at
+	// is known without a post-commit read (which could fail after commit
+	// and misreport a successful rotation as failed).
+	now := time.Now().UTC()
+	successorID := uuidV7()
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO refresh_tokens (id, user_id, token_hash, device_id, revoked, created_at)
+		VALUES (?, ?, ?, ?, false, ?)
+	`, successorID, args.UserID, args.SuccessorHash, args.DeviceID, fmtTime(now)); err != nil {
+		return RotateResult{}, fmt.Errorf("rotate refresh token: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE refresh_recovery_receipts SET consumed = true
+		WHERE successor_hash = ? AND consumed = false
+	`, args.PredecessorHash); err != nil {
+		return RotateResult{}, fmt.Errorf("rotate refresh token: %w", err)
+	}
+
+	// Scoped conflict target: only a duplicate attempt_hash folds into
+	// ErrAttemptExists. Any other constraint failure surfaces as a real
+	// storage error instead of misrouting into the recovery path.
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO refresh_recovery_receipts
+			(attempt_hash, user_id, device_id, predecessor_hash, successor_hash,
+			 sealed_successor, expires_at, consumed, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, false, ?)
+		ON CONFLICT (attempt_hash) DO NOTHING
+	`, args.AttemptHash, args.UserID, args.DeviceID, args.PredecessorHash,
+		args.SuccessorHash, args.SealedSuccessor, fmtTime(args.ExpiresAt), fmtTime(now))
+	if err != nil {
+		return RotateResult{}, fmt.Errorf("rotate refresh token: %w", err)
+	}
+	affected, err = res.RowsAffected()
+	if err != nil {
+		return RotateResult{}, fmt.Errorf("rotate refresh token: %w", err)
+	}
+	if affected == 0 {
+		return RotateResult{}, fmt.Errorf("rotate refresh token: %w", ErrAttemptExists)
+	}
+
+	if err := pruneRecoveryReceiptsSQLite(ctx, tx, args.PruneConsumedBefore); err != nil {
+		return RotateResult{}, fmt.Errorf("rotate refresh token: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return RotateResult{}, fmt.Errorf("rotate refresh token: %w", err)
+	}
+
+	return RotateResult{SuccessorID: successorID, SuccessorCreatedAt: now}, nil
+}
+
+// pruneRecoveryReceiptsSQLite deletes consumed receipts long past their
+// expiry (see pruneRecoveryReceiptsPG): bounded retention, no sweeper.
+// Capped per rotation like the Postgres twin.
+func pruneRecoveryReceiptsSQLite(ctx context.Context, tx *sql.Tx, before time.Time) error {
+	if before.IsZero() {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM refresh_recovery_receipts
+		WHERE rowid IN (
+			SELECT rowid FROM refresh_recovery_receipts
+			WHERE consumed = true AND expires_at < ?
+			LIMIT 100
+		)
+	`, fmtTime(before)); err != nil {
+		return fmt.Errorf("prune recovery receipts: %w", err)
+	}
+	return nil
+}
+
+// FindRecoveryReceipt returns the pending receipt for an attempt hash.
+func (s *SQLiteStore) FindRecoveryReceipt(ctx context.Context, attemptHash string) (RecoveryReceipt, error) {
+	var rc RecoveryReceipt
+	var expiresAt, createdAt string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT attempt_hash, user_id, device_id, predecessor_hash, successor_hash,
+		       sealed_successor, expires_at, consumed, created_at
+		FROM refresh_recovery_receipts
+		WHERE attempt_hash = ?
+	`, attemptHash).Scan(
+		&rc.AttemptHash, &rc.UserID, &rc.DeviceID, &rc.PredecessorHash,
+		&rc.SuccessorHash, &rc.SealedSuccessor, &expiresAt, &rc.Consumed, &createdAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return RecoveryReceipt{}, fmt.Errorf("find recovery receipt: %w", ErrNotFound)
+		}
+		return RecoveryReceipt{}, fmt.Errorf("find recovery receipt: %w", err)
+	}
+	rc.ExpiresAt = parseTime(expiresAt)
+	rc.CreatedAt = parseTime(createdAt)
+	return rc, nil
+}
+
+// ConsumeRecoveryReceipt closes a pending receipt without revoking anything.
+func (s *SQLiteStore) ConsumeRecoveryReceipt(ctx context.Context, attemptHash string) error {
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE refresh_recovery_receipts SET consumed = true
+		WHERE attempt_hash = ? AND consumed = false
+	`, attemptHash); err != nil {
+		return fmt.Errorf("consume recovery receipt: %w", err)
 	}
 	return nil
 }
