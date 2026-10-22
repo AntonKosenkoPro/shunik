@@ -2,6 +2,9 @@ name: ai-review
 # Stage 1 of the two-stage review process (docs/review-process.md).
 # OpenCodeReview (alibaba/open-code-review): deterministic file bundling + review agent.
 # Manual trigger: comment "/review" on a PR. Advisory only — never blocks merge.
+# Optional per-run params: /review [effort=low|medium|high] [budget=<n>[k|m]]
+# [model=<ollama-cloud-id>] [think=max|medium|off] [full=true|false] (trusted roles only).
+# Every run publishes a job summary (params, range, finding counts) for the Checks tab.
 on:
   issue_comment:
     types: [created]
@@ -36,38 +39,133 @@ jobs:
             core.setOutput('base_ref', pr.base.ref);
             core.setOutput('head_sha', pr.head.sha);
 
+      - name: Parse /review params
+        id: params
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Grammar: /review [effort=low|medium|high] [budget=<n>[k|m]] [model=<ollama-cloud-id>] [think=max|medium|off] [full=true|false]
+            // Only the /review line carries params (first line whose first token
+            // is /review); all other text is ignored (bare-/review compatible).
+            // First occurrence of a key wins; duplicates never override.
+            // Recognized key + invalid value fails the job with usage (fail-closed,
+            // before any spend). Cost-affecting overrides are restricted to
+            // trusted roles; everyone else may run bare /review (CI defaults).
+            const body = context.payload.comment?.body || '';
+            const reviewLine = (body.split('\n').find((l) => /^\s*\/review\b/i.test(l)) || '');
+            const tail = reviewLine.replace(/^\s*\/review\b/i, '');
+            const params = {};
+            for (const t of tail.split(/\s+/)) {
+              const m = t.match(/^(effort|budget|model|think|full)=(\S+)$/i);
+              if (m && params[m[1].toLowerCase()] === undefined) params[m[1].toLowerCase()] = m[2];
+            }
+            const usage = 'Usage: /review [effort=low|medium|high] [budget=<n>[k|m]] [model=<ollama-cloud-id>] [think=max|medium|off] [full=true|false]';
+            const fail = (msg) => { core.setFailed(`::error::${msg}\n${usage}`); };
+            // Tokens that look like params but sit outside the /review line are
+            // never honored — say so loudly instead of silently running defaults.
+            // Same shape as the parse grammar (key + non-empty value; bare
+            // `key=` can never be a param), compared case-insensitively like
+            // the parser so a honored `Effort=low` isn't misreported.
+            const tailTokens = tail.split(/\s+/);
+            const displaced = body.split(/\s+/).filter((t) =>
+              /^(effort|budget|model|think|full)=\S+$/i.test(t) &&
+              !tailTokens.some((u) => u.toLowerCase() === t.toLowerCase()));
+            if (displaced.length > 0) {
+              core.notice(`key=value params are only honored on the /review line; ignoring: ${displaced.join(' ')}`);
+            }
+            // Loudness parity: later duplicates of a captured key are also
+            // dropped (first occurrence wins) — surface those too.
+            const seenKeys = new Set();
+            const overridden = tailTokens.filter((t) => {
+              const m = t.match(/^(effort|budget|model|think|full)=(\S+)$/i);
+              if (!m) return false;
+              const k = m[1].toLowerCase();
+              if (seenKeys.has(k)) return true;
+              seenKeys.add(k);
+              return false;
+            });
+            if (overridden.length > 0) {
+              core.notice(`duplicate /review params are ignored (first occurrence wins): ${overridden.join(' ')}`);
+            }
+            let effort = (params.effort || 'medium').toLowerCase();
+            if (!['low', 'medium', 'high'].includes(effort)) return fail(`Invalid effort '${params.effort}'.`);
+            let budget;
+            {
+              const raw = params.budget || '20000000';
+              const m = raw.match(/^(\d+)([kKmM])?$/);
+              if (!m) return fail(`Invalid budget '${params.budget}'.`);
+              budget = parseInt(m[1], 10) * (m[2] ? (m[2].toLowerCase() === 'k' ? 1e3 : 1e6) : 1);
+              if (budget < 1e6 || budget > 1e8) return fail(`Budget ${budget} out of range [1000000, 100000000].`);
+            }
+            let model = (params.model || 'deepseek-v4.1-flash:1017').toLowerCase();
+            if (!/^[a-z0-9._:/-]+$/.test(model)) return fail(`Invalid model '${params.model}'. Use an Ollama Cloud model ID (e.g. deepseek-v4.1-flash:1017, glm-5.3-flash).`);
+            let think = (params.think || 'max').toLowerCase();
+            if (!['max', 'medium', 'off'].includes(think)) return fail(`Invalid think '${params.think}'.`);
+            let full = (params.full || 'false').toLowerCase();
+            if (!['true', 'false'].includes(full)) return fail(`Invalid full '${params.full}'.`);
+            // Cost-affecting overrides are restricted to trusted roles (checked
+            // after value validation so a bad value still reports its usage
+            // error); everyone else may run bare /review (CI defaults).
+            if (Object.keys(params).length > 0) {
+              const trusted = ['OWNER', 'MEMBER', 'COLLABORATOR']
+                .includes(context.payload.comment?.author_association);
+              if (!trusted) return fail('/review params are limited to owners/members/collaborators.');
+            }
+            core.exportVariable('EFFORT', effort);
+            core.exportVariable('MAX_TOKENS_BUDGET', String(budget));
+            core.exportVariable('REVIEW_MODEL', model);
+            core.exportVariable('THINK', think);
+            // Byte-identical to the pre-params literal '{"think": "max"}' when
+            // think=max (allowlisted tokens need no JSON escaping), so bare
+            // /review keeps the checkpoint fingerprint unchanged.
+            core.exportVariable('EXTRA_BODY', '{"think": "' + think + '"}');
+            core.exportVariable('FULL_REVIEW', full);
+            core.info(`review params: effort=${effort} budget=${budget} model=${model} think=${think} full=${full}`);
+
       - name: Run OpenCodeReview
+        id: review
         # The action performs its own full checkout (fetch-depth: 0).
         uses: alibaba/open-code-review@v1.12.9
         with:
           # Ollama Cloud — OpenAI-compatible endpoint (models.dev: ollama-cloud base URL).
           llm_url: https://ollama.com/v1
           llm_auth_token: ${{ secrets.OLLAMA_API_KEY }}
-          # glm-5.3-flash, thinking at max (benchmarked: deepest useful
-          # reasoning on Ollama Cloud; reasoning_effort is ignored there).
-          llm_model: glm-5.3-flash
+          # Any Ollama Cloud model ID (endpoint fixed; parse step validates
+          # charset, trusted roles only). CI default is deepseek-v4.1-flash:1017;
+          # e.g. `/review model=glm-5.3-flash` for the previous default.
+          llm_model: ${{ env.REVIEW_MODEL }}
           # openai protocol (explicit; supersedes the required llm_use_anthropic boolean)
           llm_protocol: openai
           llm_use_anthropic: 'false'
-          llm_extra_body: '{"think": "max"}'
+          # Built by the parse step as {"think": <max|medium|off>}; default
+          # reproduces today's exact value so bare-/review checkpoints survive.
+          # (think is the only thinking knob Ollama Cloud honors;
+          # reasoning_effort is ignored there.)
+          llm_extra_body: ${{ env.EXTRA_BODY }}
           llm_timeout: '600'
           review_task_timeout: '15'
           # Don't hammer Ollama Cloud rate limits.
           review_concurrency: '4'
           # Review effort medium (deeper per-file rounds; low was benchmarked
           # fastest without recall loss on small diffs — tune back if medium
-          # proves wasteful there).
-          effort: 'medium'
+          # proves wasteful there). Overridable per-run via `/review effort=low`.
+          effort: ${{ env.EFFORT }}
           # Bound paid-provider spend: generous runaway guard (fail-open —
           # over-budget files report failed(budget) but partial results still
           # publish). 10x headroom so large diffs review in one run.
-          max_tokens_budget: '20000000'
+          # Overridable per-run via `/review budget=5m` (clamped to 1M–100M).
+          max_tokens_budget: ${{ env.MAX_TOKENS_BUDGET }}
+          # Stream live [ocr] progress into the log (visible in Checks).
+          stream_progress: 'true'
           language: English
           # Update one summary comment in place instead of posting a new one per run.
           sticky_summary: 'true'
           # Cross-push checkpoints: the first /review covers merge-base..head; a later
           # /review covers only <checkpoint>..<head> (fail-closed: falls back to full).
           checkpoint_range: 'true'
+          # Force one merge-base..head review for this run (`/review full=true`);
+          # still records a new checkpoint. Default false = incremental behavior.
+          full_review: ${{ env.FULL_REVIEW }}
           # All findings post inline (no severity routing to the summary).
           route_severity_below: ''
           upload_artifacts: 'true'
@@ -75,3 +173,35 @@ jobs:
           pr_number: ${{ github.event.issue.number }}
           base_ref: ${{ steps.refs.outputs.base_ref }}
           head_sha: ${{ steps.refs.outputs.head_sha }}
+
+      - name: Publish review summary
+        # Always report, even when the review failed: the Checks tab shows
+        # params + outcome without opening comments or logs. Never changes
+        # the job conclusion (advisory stays advisory).
+        # Third-party action outputs reach the shell only via env: (script-
+        # injection policy — GH expressions expand before the shell parses).
+        # The PARAMS_* values are allowlist-validated by the parse step.
+        if: always()
+        env:
+          PARAMS_OUTCOME: ${{ steps.params.outcome }}
+          SUMMARY_RANGE: ${{ steps.review.outputs.range_summary || 'n/a' }}
+          SUMMARY_TOTAL: ${{ steps.review.outputs.comments_total || '0' }}
+          SUMMARY_INLINE: ${{ steps.review.outputs.comments_inline || '0' }}
+          SUMMARY_FAILED: ${{ steps.review.outputs.comments_failed || '0' }}
+          SUMMARY_ROUTED: ${{ steps.review.outputs.comments_routed || '0' }}
+          SUMMARY_URL: ${{ steps.review.outputs.summary_comment_url || 'n/a' }}
+          SUMMARY_CHECKPOINT: ${{ steps.review.outputs.checkpoint_after || 'n/a' }}
+        run: |
+          {
+            echo "## AI review"
+            echo ""
+            if [ "$PARAMS_OUTCOME" != "success" ]; then
+              echo "- Params: not captured (parse step outcome: $PARAMS_OUTCOME; see job log for the failing value)"
+            else
+              echo "- Params: effort=\`$EFFORT\` budget=\`$MAX_TOKENS_BUDGET\` model=\`$REVIEW_MODEL\` think=\`$THINK\` full=\`$FULL_REVIEW\`"
+            fi
+            echo "- Range: \`$SUMMARY_RANGE\`"
+            echo "- Findings: \`$SUMMARY_TOTAL\` total, \`$SUMMARY_INLINE\` inline, \`$SUMMARY_FAILED\` failed, \`$SUMMARY_ROUTED\` routed"
+            echo "- Summary: $SUMMARY_URL"
+            echo "- Checkpoint: \`$SUMMARY_CHECKPOINT\`"
+          } >> "$GITHUB_STEP_SUMMARY"
