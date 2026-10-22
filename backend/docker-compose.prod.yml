@@ -52,15 +52,26 @@ services:
       OTP_MAX_ATTEMPTS: ${OTP_MAX_ATTEMPTS:-5}
       OTP_EMAIL_TEMPLATE: ${OTP_EMAIL_TEMPLATE:-}
       OTP_EMAIL_HTML_TEMPLATE: ${OTP_EMAIL_HTML_TEMPLATE:-}
+      # Account-status evidence secret (explicit account deletion). REQUIRED:
+      # at least 32 random bytes, MUST differ from JWT_SECRET.
+      ACCOUNT_STATUS_SECRET: ${ACCOUNT_STATUS_SECRET:-}
       # AWS SES (real mail sender). Required when EMAIL_BACKEND=ses.
       # Set EMAIL_BACKEND=ses only after SES is verified in production.
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_REGION: ${AWS_REGION:-}
       SES_FROM: ${SES_FROM:-}
-      # Sign in with Apple (F2). APPLE_CLIENT_ID is the app's Bundle ID;
-      # empty disables the feature (the /auth/apple route returns 503).
+      # Sign in with Apple + automatic unlinking on explicit deletion.
+      # ALL-OR-NOTHING: when any of the five is set, all five are required
+      # (startup fails fast on a partial set). APPLE_CLIENT_ID is the app's
+      # Bundle ID; empty (all empty) disables the feature. APPLE_REDIRECT_URI
+      # is the only optional one. APPLE_PRIVATE_KEY is the raw .p8 contents.
       APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
+      APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}
+      APPLE_KEY_ID: ${APPLE_KEY_ID:-}
+      APPLE_PRIVATE_KEY: ${APPLE_PRIVATE_KEY:-}
+      APPLE_REDIRECT_URI: ${APPLE_REDIRECT_URI:-}
+      APPLE_TOKEN_KEYS: ${APPLE_TOKEN_KEYS:-}
       APPLE_JWKS_URL: ${APPLE_JWKS_URL:-}
       # Sentry error reporting (observability Stage 0). Empty = disabled,
       # the server runs exactly as without Sentry.

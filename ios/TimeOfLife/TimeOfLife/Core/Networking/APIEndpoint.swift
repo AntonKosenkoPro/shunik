@@ -7,17 +7,23 @@ struct APIEndpoint: Equatable, Sendable {
     let path: String
     let body: Data?
     let requiresAuth: Bool
+    /// Explicit Bearer token for endpoints that do NOT use the session access
+    /// token (account-status checks present the status credential, never the
+    /// login token). When set, it wins over `accessTokenProvider` and the
+    /// request never triggers the refresh-and-retry path.
+    let customBearer: String?
 
-    init(method: HTTPMethod, path: String, body: Encodable? = nil, requiresAuth: Bool = false) {
+    init(method: HTTPMethod, path: String, body: Encodable? = nil, requiresAuth: Bool = false, customBearer: String? = nil) {
         self.method = method
         self.path = path
         self.requiresAuth = requiresAuth
+        self.customBearer = customBearer
         self.body = APIEndpoint.encode(body)
     }
 
     /// Convenience for endpoints with no body.
-    static func value(method: HTTPMethod, path: String, requiresAuth: Bool = false) -> APIEndpoint {
-        APIEndpoint(method: method, path: path, body: Optional<EmptyBody>.none, requiresAuth: requiresAuth)
+    static func value(method: HTTPMethod, path: String, requiresAuth: Bool = false, customBearer: String? = nil) -> APIEndpoint {
+        APIEndpoint(method: method, path: path, body: Optional<EmptyBody>.none, requiresAuth: requiresAuth, customBearer: customBearer)
     }
 
     private static func encode(_ body: Encodable?) -> Data? {

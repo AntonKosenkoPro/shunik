@@ -1,13 +1,13 @@
-import OSLog
 import SwiftUI
 
-/// The Profile destination (app-shell spec): account + sync status, on-device
-/// category management, and the destructive erase control. Signed-in only —
+/// The Profile destination (app-shell spec): the Account hub (email +
+/// sign-out + local/permanent deletion live in Account), sync status with
+/// Sync now, on-device category management, and version. Signed-in only —
 /// the launch gate guarantees a session, so there is no "Enable Sync" row and
 /// no auth sheet. No activity management exists (no activity catalog —
 /// remove-activities-layer). Profile is a pushed page (back navigation, no
 /// Done): it renders inside the presenting tab's NavigationStack, and
-/// Manage Categories pushes from here the same way.
+/// Account + Manage Categories push from here the same way.
 struct ProfileView: View {
     @EnvironmentObject var container: AppContainer
     /// The signed-in session (Profile renders only behind the launch gate):
@@ -19,24 +19,20 @@ struct ProfileView: View {
     /// Sync now button never re-enabled. Separate environment objects (as in
     /// `TimeOfLifeApp`) subscribe to the real publishers.
     @EnvironmentObject var sync: SyncController
-    @State private var isShowingEraseConfirm = false
-    /// The last erase failure message, surfaced in an alert. Set only when
-    /// `eraseLocalData()` throws — the file then survives on disk, so the
-    /// flow stays signed in for a retry instead of logging out and
-    /// reporting success.
-    @State private var eraseErrorMessage: String?
     /// Last successful-sync date (fix-sync-status-row): feeds the age
     /// subtitle under "Syncing…" so the status row keeps its two-line height
     /// across states instead of jumping. Nil before the first sync.
     @State private var lastIdleDate: Date?
 
-    private static let logger = Logger(subsystem: "com.antonkosenko.timeoflifeapp", category: "profile")
-
-    /// Sign-out row contract (fix-profile-signout-row): shared `ListRow`
-    /// geometry with a leading icon + danger tint, mirroring Erase local data.
-    /// Pinned by `ProfileSignOutRowTests`; keep the icon + id in sync there.
+    /// Sign-out row contract (fix-profile-signout-row, issue #68): shared
+    /// `ListRow` geometry with a leading icon + danger tint, mirroring the
+    /// local-data row. The row moved to Account (Profile → Account) and keeps
+    /// its icon + accessibility id there; pinned by `ProfileSignOutRowTests`
+    /// and the Account navigation tests.
     static let signOutIcon = "rectangle.portrait.and.arrow.right"
     static let signOutAccessibilityId = "ProfileSignOutButton"
+    /// Stable id for the Profile → Account navigation row (Account.md).
+    static let accountRowAccessibilityId = "ProfileAccountRow"
 
     var body: some View {
         List {
@@ -50,25 +46,9 @@ struct ProfileView: View {
         // and no tab-switch path. The tab bar hides through the owning
         // stack's path-driven visibility (fix-tab-bar-return-jump) — this
         // view declares nothing, so pop restores the bar in the same pass.
-        .alert(L10n.profileEraseLocalDataConfirmTitle.text, isPresented: $isShowingEraseConfirm) {
-            Button(L10n.profileEraseConfirm.text, role: .destructive) {
-                Task { await eraseLocalData() }
-            }
-            Button(L10n.profileEraseCancel.text, role: .cancel) {}
-        } message: {
-            Text(L10n.profileEraseLocalDataConfirmMessage.text)
-        }
-        .alert(
-            L10n.profileEraseLocalData.text,
-            isPresented: Binding(
-                get: { eraseErrorMessage != nil },
-                set: { if !$0 { eraseErrorMessage = nil } }
-            )
-        ) {
-            Button(L10n.commonOk.text, role: .cancel) { eraseErrorMessage = nil }
-        } message: {
-            Text(eraseErrorMessage ?? "")
-        }
+        // Account pushes from here on the same tab path (caller-local link,
+        // like Manage Categories), so it inherits the hidden tab bar and
+        // system Back for free.
         .accessibilityIdentifier("Profile")
     }
 
@@ -76,17 +56,15 @@ struct ProfileView: View {
 
     private var accountSection: some View {
         Section(L10n.profileAccount.text) {
-            syncStatusRow
-            Button(role: .destructive) {
-                Task { await container.authService.logout() }
+            NavigationLink {
+                AccountView(container: container)
+                    .environmentObject(container)
+                    .environmentObject(session)
             } label: {
-                ListRow(
-                    title: L10n.profileSignOut.text,
-                    icon: Self.signOutIcon,
-                    tint: Theme.danger
-                )
+                ListRow(title: L10n.accountTitle.text, icon: "person.crop.circle", subtitle: session.cachedEmail)
             }
-            .accessibilityIdentifier(Self.signOutAccessibilityId)
+            .accessibilityIdentifier(Self.accountRowAccessibilityId)
+            syncStatusRow
         }
         // Remember the last idle date so the syncing/error branches can keep
         // the row's two-line height with real content (no layout jump).
@@ -189,16 +167,6 @@ struct ProfileView: View {
                 ListRow(title: L10n.profileCategories.text, icon: "tag")
             }
             .accessibilityIdentifier("ProfileCategoriesRow")
-            Button(role: .destructive) {
-                isShowingEraseConfirm = true
-            } label: {
-                ListRow(
-                    title: L10n.profileEraseLocalData.text,
-                    icon: "trash",
-                    tint: Theme.danger
-                )
-            }
-            .accessibilityIdentifier("ProfileEraseLocalDataButton")
         }
     }
 
@@ -224,29 +192,6 @@ struct ProfileView: View {
     private var sessionUserID: String {
         if case let .signedIn(current) = session.state { return current.id }
         return ""
-    }
-
-    private func eraseLocalData() async {
-        // Deletes ONLY the active account's database file (account-bound-
-        // store spec: explicit per-account erase, never a logout side
-        // effect). A failed removal throws: log it, surface it, and stay
-        // signed in so the user can retry — logging out anyway would strand
-        // the surviving file as a dormant account with a success claim.
-        // On success the store ends unbound; logout then clears the session
-        // artifacts (Keychain tokens, cached session) and the gate
-        // re-renders full-screen.
-        do {
-            try await container.eraseLocalData()
-        } catch {
-            Self.logger.error("Erase local data failed: \(String(describing: error), privacy: .public)")
-            eraseErrorMessage = error.localizedDescription
-            return
-        }
-        await container.authService.logout()
-        // Clear any stale auth routes (e.g. OTP for the erased account) so
-        // the gate starts over from its first step (local-first-store
-        // "Erase resets auth flow").
-        container.navigation.path = []
     }
 }
 

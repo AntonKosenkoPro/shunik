@@ -76,15 +76,30 @@ actor APIClient: APISending {
         }
     }
 
+    /// Sends an endpoint and returns the raw body with its HTTP status code.
+    /// Non-2xx responses throw the same envelope errors as `send`. Requests
+    /// carrying `customBearer` never trigger the refresh-and-retry path: a
+    /// status credential is not a session and must never mint one.
+    func sendRaw(_ endpoint: APIEndpoint) async throws -> (data: Data, statusCode: Int) {
+        let request = try await makeRequest(endpoint)
+        do {
+            return try await executeRaw(request)
+        } catch APIError.unauthorized where endpoint.requiresAuth && endpoint.customBearer == nil {
+            return try await refreshAndRetryRaw(endpoint)
+        } catch APIError.authenticationRejected where endpoint.requiresAuth && endpoint.customBearer == nil {
+            return try await refreshAndRetryRaw(endpoint)
+        }
+    }
+
     // MARK: - Internals
 
     private func requestData(_ endpoint: APIEndpoint, allowRetry: Bool) async throws -> Data {
         let request = try await makeRequest(endpoint)
         do {
             return try await execute(request)
-        } catch APIError.unauthorized where allowRetry && endpoint.requiresAuth {
+        } catch APIError.unauthorized where allowRetry && endpoint.requiresAuth && endpoint.customBearer == nil {
             return try await refreshAndRetry(endpoint)
-        } catch APIError.authenticationRejected where allowRetry && endpoint.requiresAuth {
+        } catch APIError.authenticationRejected where allowRetry && endpoint.requiresAuth && endpoint.customBearer == nil {
             return try await refreshAndRetry(endpoint)
         }
     }
@@ -114,7 +129,35 @@ actor APIClient: APISending {
         return try await execute(retryRequest)
     }
 
+    /// The raw variant of `refreshAndRetry`: same single-refresh ownership,
+    /// preserving the HTTP status code for status-sensitive endpoints.
+    private func refreshAndRetryRaw(_ endpoint: APIEndpoint) async throws -> (data: Data, statusCode: Int) {
+        guard let refreshHandler else { throw APIError.unauthorized }
+        let newToken: String
+        do {
+            newToken = try await refreshHandler()
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as APIError {
+            // Preserve offline and transport failures so callers do not
+            // sign out merely because a refresh could not reach the API.
+            throw error
+        } catch {
+            throw APIError.unauthorized
+        }
+        guard !newToken.isEmpty else { throw APIError.unauthorized }
+        let retryRequest = try await makeRequest(endpoint, overrideToken: newToken)
+        return try await executeRaw(retryRequest)
+    }
+
     private func execute(_ request: URLRequest) async throws -> Data {
+        try await executeRaw(request).data
+    }
+
+    /// Executes one request round-trip, returning the body with its status.
+    /// `interpret` throws the envelope errors for non-2xx; transport mapping
+    /// matches `execute` exactly.
+    private func executeRaw(_ request: URLRequest) async throws -> (data: Data, statusCode: Int) {
         do {
             let (data, response) = try await session.data(for: request)
             return try interpret(data: data, response: response)
@@ -129,13 +172,13 @@ actor APIClient: APISending {
         }
     }
 
-    private func interpret(data: Data, response: URLResponse) throws -> Data {
+    private func interpret(data: Data, response: URLResponse) throws -> (data: Data, statusCode: Int) {
         guard let http = response as? HTTPURLResponse else {
             throw APIError.unexpected
         }
         switch http.statusCode {
         case 200...299:
-            return data
+            return (data, http.statusCode)
         case 401:
             // Surface the structured rejection (invalid_refresh, token_reuse,
             // refresh_expired, ...) instead of collapsing every 401 into one
@@ -193,7 +236,14 @@ actor APIClient: APISending {
         if let body = endpoint.body {
             request.httpBody = body
         }
-        if endpoint.requiresAuth {
+        // Explicit Bearer scheme wins over the session token: a status
+        // credential (or any future dedicated capability) authenticates its
+        // own request and must never mint or trigger a session refresh. The
+        // two are never combined — customBearer present means the session
+        // token is not sent.
+        if let custom = endpoint.customBearer, !custom.isEmpty {
+            request.setValue("Bearer \(custom)", forHTTPHeaderField: "Authorization")
+        } else if endpoint.requiresAuth {
             let token: String?
             if let overrideToken { token = overrideToken } else { token = await accessTokenProvider() }
             if let token, !token.isEmpty {

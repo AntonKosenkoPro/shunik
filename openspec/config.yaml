@@ -15,7 +15,7 @@ context: |
   activity entity — entries own their text, ordered categories, and notes.
 
   OpenSpec routing: baseline specs (`openspec/specs/<capability>/spec.md`) are the merged
-  contract and are NEVER edited directly (24 baselines incl. `account-bound-store`,
+  contract and are NEVER edited directly (25 baselines incl. `account-bound-store`, `account-deletion`,
   `device-sessions`, `apple-signin`, `live-activities`, `backend-database`,
   `email-otp-auth`, `observability`, and `relay-cors`). Behavior changes go through a change: delta specs
   under `openspec/changes/<change>/specs/`. The local-first architecture now lives in the

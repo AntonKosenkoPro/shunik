@@ -1,4 +1,5 @@
 #if DEBUG
+// swiftlint:disable file_length
 import Foundation
 import os
 import SwiftUI
@@ -47,16 +48,10 @@ extension AppContainer {
         // URL — the UI-testing stub never hits the real auth API.
         let apiClient = APIClient(baseURL: AppConfig.baseURL, session: .shared)
         let appleService = AppleSignInService()
-        let catalog = RemoteCatalogRepository(client: apiClient)
         let undoBuffer = UndoBufferStore(store: localStore)
-        let syncController = SyncController(
-            store: localStore,
-            remote: catalog,
-            connectivity: connectivity
-        ) { [weak sessionStore] in
-            guard case let .signedIn(session) = sessionStore?.state else { return nil }
-            return session.id
-        }
+        let syncController = makeStubSyncController(
+            store: localStore, connectivity: connectivity, sessionStore: sessionStore
+        )
 
         let container = AppContainer(
             baseURL: AppConfig.baseURL,
@@ -76,10 +71,25 @@ extension AppContainer {
             clientHolder: nil
         )
 
+        seedAll(
+            screen: screen, keychain: keychain, sessionStore: sessionStore,
+            navigation: navigation, localStore: localStore
+        )
+        return container
+    }
+
+    /// Enqueues every deterministic seed for the requested screen.
+    private static func seedAll(
+        screen: String,
+        keychain: InMemoryKeychainStore,
+        sessionStore: SessionStore,
+        navigation: AppNavigationStack,
+        localStore: LocalStore
+    ) {
         seed(screen: screen, sessionStore: sessionStore, navigation: navigation)
         seedHistoryIfNeeded(screen: screen, localStore: localStore)
         seedTrackCategoriesIfNeeded(screen: screen, localStore: localStore)
-        return container
+        seedDeletionEvidence(keychain: keychain)
     }
 
     private static func temporaryStoreURL(userID: String) -> URL {
@@ -140,6 +150,42 @@ extension AppContainer {
         }
     }
 
+    /// Sync controller for the stub graph: same same-account guard shape as
+    /// production, reading the stub session. Sync traffic never runs here
+    /// (no test screen triggers it), but the wiring must exist for the
+    /// container to build.
+    private static func makeStubSyncController(
+        store: LocalStore,
+        connectivity: MockConnectivity,
+        sessionStore: SessionStore
+    ) -> SyncController {
+        let apiClient = APIClient(baseURL: AppConfig.baseURL, session: .shared)
+        let catalog = RemoteCatalogRepository(client: apiClient)
+        return SyncController(
+            store: store,
+            remote: catalog,
+            connectivity: connectivity
+        ) { [weak sessionStore] in
+            guard case let .signedIn(session) = sessionStore?.state else { return nil }
+            return session.id
+        }
+    }
+    /// Seeds a status-capability-like test value into this graph's SEPARATE
+    /// (in-memory, DEBUG-only) Keychain — never the production Keychain. It
+    /// enables the Account deletion flow in the harness without real
+    /// network/OTP: no production bypass, no shared state. Best-effort: the
+    /// stub `me()` below returns the same test value, so restore
+    /// re-establishes it even if this seed races.
+    private static func seedDeletionEvidence(keychain: InMemoryKeychainStore) {
+        let deletionSeed = AccountDeletionStorage(keychain: keychain)
+        Task {
+            _ = await deletionSeed.saveStatusCredential(
+                "status-test-ui-test",
+                expiresAt: "2099-01-01T00:00:00Z",
+                accountID: "ui-test"
+            )
+        }
+    }
     /// Kicks off History entry seeding for the `"history"` screen.
     /// The seeding task is enqueued at init, ahead of any appear-driven
     /// read (best-effort ordering, not a runtime guarantee: a read that
@@ -277,18 +323,40 @@ extension AppContainer {
 /// canned sessions so the agent can drive the flow (request OTP → enter code
 /// → verify) without a network or real email. DEBUG-only; never ships.
 ///
-/// Stateless `Sendable` struct — safe for the `@MainActor` container to hold.
-struct UITestingAuthRepository: AuthRepository {
+/// Deletion-aware: `fetchAccountStatus` reports `.active` until
+/// `deleteAccount` is called, then flips to `.deleted` for the stub account
+/// — so the harness can exercise Account → Cancel (no call, still active)
+/// and the confirmed-delete path without real network/OTP/prod. No
+/// production bypass: everything lives in this DEBUG graph's in-memory
+/// Keychain and throwaway database file.
+///
+/// Locked for thread safety (the stub is held across actor boundaries).
+final class UITestingAuthRepository: AuthRepository, @unchecked Sendable {
     private static let user = UserDTO(
         id: "ui-test", email: "user@example.com", emailVerified: true
     )
+    /// Test status-capability value, matching the seeded Keychain entry in
+    /// `uiTesting(screen:)`. Far-future expiry so harness checks stay valid.
+    static let testStatusCredential = "status-test-ui-test"
+    private static let testStatusExpiresAt = "2099-01-01T00:00:00Z"
+
+    private let lock = NSLock()
+    private var deleted = false
 
     private static func session(for email: String) -> AuthSession {
         AuthSession(
             accessToken: "at-ui",
             refreshToken: "rt-ui",
-            user: UserDTO(id: "ui-test", email: email, emailVerified: true)
+            user: UserDTO(id: "ui-test", email: email, emailVerified: true),
+            accountStatusCredential: testStatusCredential,
+            accountStatusExpiresAt: testStatusExpiresAt
         )
+    }
+
+    /// Test observability: whether the stub account has been deleted.
+    var isDeleted: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return deleted
     }
 
     func requestOtp(email: String) async throws {}
@@ -297,7 +365,7 @@ struct UITestingAuthRepository: AuthRepository {
         Self.session(for: email)
     }
 
-    func appleSignIn(identityToken: String) async throws -> AuthSession {
+    func appleSignIn(identityToken: String, authorizationCode: String? = nil) async throws -> AuthSession {
         Self.session(for: "apple@privaterelay.appleid.com")
     }
 
@@ -307,6 +375,29 @@ struct UITestingAuthRepository: AuthRepository {
 
     func logout() async throws {}
 
-    func me() async throws -> UserDTO { Self.user }
+    func me() async throws -> MeResponse {
+        MeResponse(
+            user: Self.user,
+            accountStatusCredential: Self.testStatusCredential,
+            accountStatusExpiresAt: Self.testStatusExpiresAt
+        )
+    }
+
+    func deleteAccount() async throws -> AccountDeletionOutcome {
+        markDeleted()
+        return .completed
+    }
+
+    func fetchAccountStatus(statusCredential: String) async throws -> AccountStatusResponse {
+        AccountStatusResponse(accountID: "ui-test", state: isDeleted ? .deleted : .active)
+    }
+
+    func acquireAppleDeletionCredential(identityToken: String, authorizationCode: String?) async throws {}
+
+    /// Synchronous lock dance (Swift 6 mode forbids direct `NSLock` use
+    /// from async contexts — callers never touch the lock directly).
+    private func markDeleted() {
+        lock.lock(); deleted = true; lock.unlock()
+    }
 }
 #endif

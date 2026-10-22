@@ -83,17 +83,20 @@ The system SHALL reject new rotations whose presented refresh token has exceeded
 - **THEN** the backend returns `refresh_expired` without renewing that session
 
 ### Requirement: Revoked or exhausted session locks, never wipes
-The system SHALL, on confirmed session revocation or exhaustion, lock the app to the auth gate with all local account files intact. Re-login SHALL resume the existing account file when an authentication slot is free. Interrupted refresh delivery, retryable service failures, and temporary credential-storage failures SHALL NOT be treated as confirmed session revocation.
+The system SHALL, on confirmed session revocation or exhaustion without independently confirmed account deletion, lock the app to the auth gate with all local account files intact. Re-login SHALL resume the existing account file when an authentication slot is free. Interrupted refresh delivery, retryable service failures, and temporary credential-storage failures SHALL NOT be treated as confirmed session revocation. A generic 401, unknown refresh credential, expired session, or Apple consent-revocation event SHALL NOT authorize local erasure. Only account-scoped deletion acknowledgment or valid scoped deletion-status confirmation SHALL authorize the separate cleanup defined by `account-deletion`; inconclusive deletion checks SHALL preserve files.
 
 #### Scenario: Locked to auth gate with files intact
-- **WHEN** the backend revokes the active session and the app detects it
-- **THEN** the app locks to the auth gate, all local database files remain untouched, and after re-login the same account resumes without data loss
+- **WHEN** the backend revokes the active session and the app detects it without account-deletion confirmation
+- **THEN** the app locks to the auth gate, all local database files remain untouched, and after re-login the same existing account resumes without data loss
 
 #### Scenario: Lost response does not force sign-in
-- **WHEN** refresh rotation commits but the response is lost or truncated, normal networking is restored, and the user retries sync
+- **WHEN** refresh rotation commits but its response is lost or truncated, normal networking is restored, and the user retries sync
 - **THEN** the app recovers the session, remains signed in, and completes sync without visiting Welcome
-- **AND** entries, timer draft, outbox, cursors, and the active account binding remain intact
+- **AND** entries, timer draft, outbox, cursors, and active account binding remain intact
 
+#### Scenario: Confirmed account-deletion exception
+- **WHEN** a locked device independently confirms deletion of its original account using valid account-scoped evidence
+- **THEN** it schedules cleanup of only that deleted UUID rather than treating the original authentication rejection itself as permission to wipe
 ### Requirement: Durable refresh attempt identity
 The client SHALL durably record an unpredictable attempt identifier bound to its current refresh credential, account, and device before sending a logical refresh. It SHALL reuse that identifier while delivery or durable replacement is uncertain, including after suspension or process restart. Concurrent callers SHALL share one logical attempt. Failure to durably record intent SHALL prevent the request from being sent.
 
@@ -153,7 +156,7 @@ The client SHALL replace the access credential, refresh credential, and pending-
 - **THEN** the client ignores that stale result and continues with the current credentials rather than signing out
 
 ### Requirement: Recovery secrets remain protected and bounded
-The server SHALL use hashes for refresh-token authentication lookups and SHALL NOT persist plaintext tokens or raw attempt identifiers. The sole recoverable server-side refresh credential SHALL be an authenticated-encrypted pending successor, bound to its account, device, predecessor, attempt, and fixed expiry. It SHALL be removed on consumption, logout, revocation, or expiry; retained non-secret receipt metadata SHALL also have bounded retention. Logs SHALL NOT contain tokens, raw attempt identifiers, ciphertext, request bodies, or encryption keys.
+The server SHALL use hashes for Lifio refresh-token authentication lookups and SHALL NOT persist plaintext tokens or raw attempt identifiers. The sole recoverable server-side Lifio session refresh credential SHALL be an authenticated-encrypted pending successor, bound to its account, device, predecessor, attempt, and fixed expiry. It SHALL be removed on consumption, logout, revocation, or expiry; retained non-secret receipt metadata SHALL also have bounded retention. Separately stored Apple revocation credentials SHALL follow the authenticated-encryption and deletion-retention rules in `apple-signin`, and SHALL NOT be usable as Lifio session credentials. Logs SHALL NOT contain tokens, raw attempt identifiers, ciphertext, request bodies, or encryption keys.
 
 #### Scenario: Receipt is modified or its key is unavailable
 - **WHEN** a pending receipt cannot be authenticated or decrypted, or its backing storage is unavailable
@@ -161,8 +164,7 @@ The server SHALL use hashes for refresh-token authentication lookups and SHALL N
 
 #### Scenario: Server restarts during pending recovery
 - **WHEN** the backend restarts while a valid pending recovery receipt exists
-- **THEN** the same device and attempt can still recover with the configured persistent keys; no process-local cache is required
-
+- **THEN** the same device and attempt can still recover with the configured persistent keys and no process-local cache is required
 ### Requirement: Transient refresh failures do not masquerade as authentication rejection
 The system SHALL distinguish confirmed `invalid_refresh`, `token_reuse`, and `refresh_expired` responses from transport, decoding, storage, and service failures. A failed database lookup caused by a service error SHALL NOT be reported as a token that does not exist. A protected request SHALL have one refresh owner, without a second blind refresh fallback during session restoration.
 
@@ -180,3 +182,22 @@ The system SHALL NOT count devices, enforce a device limit, or present a device 
 #### Scenario: Extra device is not rejected
 - **WHEN** a user signs in from an additional device beyond any hypothetical quota
 - **THEN** the sign-in succeeds normally; no device-limit error is returned and no picker is shown
+
+### Requirement: Access and recovery enforce current account lifecycle
+Protected access SHALL require the account to still exist, in addition to a valid access token. Verified external Apple consent revocation SHALL invalidate Lifio session lineages authorized before that revocation across devices, without deleting the account. Refresh and accepted-response recovery SHALL not bypass this invalidation. A later completed Apple reauthorization SHALL create a new valid lineage for the same existing account that delayed older notifications cannot revoke. Database failure SHALL remain a service failure, not a deleted-account verdict. Ordinary logout/reuse SHALL retain existing per-device scope.
+
+#### Scenario: Old access token after account deletion
+- **WHEN** a correctly signed unexpired access token targets an account that has been deleted
+- **THEN** it cannot read/write protected data and no valid refresh/recovery session can be created for that account
+
+#### Scenario: External Apple revoke affects all old sessions
+- **WHEN** a verified Apple consent-revocation event is processed
+- **THEN** the account's pre-event Lifio sessions and their pending recoveries lose access across devices while all account data remains intact
+
+#### Scenario: Delayed old event after reconnect
+- **WHEN** the user completes a new Apple authorization and an older revocation notification is delivered or replayed afterwards
+- **THEN** the newly authorized lineage stays usable and the existing account UUID is preserved
+
+#### Scenario: Database unavailable
+- **WHEN** checking current account or authorization state fails because storage is unavailable
+- **THEN** a service error is returned without claiming deletion or erasing local data

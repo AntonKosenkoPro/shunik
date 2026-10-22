@@ -83,7 +83,24 @@ func NewVerifier(ctx context.Context, clientID, jwksURL string) (Verifier, error
 	if err != nil {
 		return nil, fmt.Errorf("create apple JWKS keyfunc: %w", err)
 	}
-	return &keyfuncVerifier{clientID: clientID, kf: kf, leeway: 30 * time.Second}, nil
+	return NewIdentityVerifier(clientID, kf), nil
+}
+
+// NewSharedKeyfunc fetches Apple's public keys once and refreshes them in
+// the background. One instance serves both the identity-token and the
+// notification verifiers so the process runs a single JWKS refresh loop.
+func NewSharedKeyfunc(ctx context.Context, jwksURL string) (keyfunc.Keyfunc, error) {
+	kf, err := keyfunc.NewDefaultCtx(ctx, []string{jwksURL})
+	if err != nil {
+		return nil, fmt.Errorf("create apple JWKS keyfunc: %w", err)
+	}
+	return kf, nil
+}
+
+// NewIdentityVerifier validates identity tokens against an existing JWKS
+// keyfunc (see NewSharedKeyfunc).
+func NewIdentityVerifier(clientID string, kf keyfunc.Keyfunc) Verifier {
+	return &keyfuncVerifier{clientID: clientID, kf: kf, leeway: 30 * time.Second}
 }
 
 // Verify validates the identity token and returns its claims.

@@ -167,7 +167,8 @@ struct RemoteAuthRepositoryTests {
         let expectedUser = TestFactories.makeUser(id: "u1", email: "user@example.com")
         mock.sendHandler = { _, _ in MeResponse(user: expectedUser) }
 
-        let user = try await repo.me()
+        let response = try await repo.me()
+        let user = response.user
 
         #expect(user.id == "u1")
         #expect(user.email == "user@example.com")

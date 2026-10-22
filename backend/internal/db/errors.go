@@ -50,4 +50,38 @@ var (
 	// rotation committed nothing. The handler routes the loser to the
 	// winner's receipt (same attempt) or to reuse handling (other attempt).
 	ErrPredecessorRevoked = errors.New("refresh predecessor already revoked")
+
+	// ErrUserMissing is returned when an account-scoped write finds its
+	// account already purged. Handlers map it to an ordinary authentication
+	// failure — never to deletion proof, recovery, or a partial write.
+	ErrUserMissing = errors.New("user account no longer exists")
+
+	// ErrAppleRevocationPending is returned by the fenced Apple upsert when
+	// a durable revocation job is still pending for the same Apple subject:
+	// accepting a new grant now could be invalidated by the outstanding
+	// revoke. The caller surfaces a retryable 503 without consuming the
+	// authorization code or creating a session.
+	ErrAppleRevocationPending = errors.New("apple revocation pending for subject")
+
+	// ErrAppleEmailInUse is returned by the fenced Apple upsert when the
+	// presented Apple identity's email already belongs to a different
+	// account (email-OTP or another Apple subject). Identities are never
+	// merged: the handler maps it to 409 apple_email_in_use and the client
+	// signs in with email instead.
+	ErrAppleEmailInUse = errors.New("apple email already registered")
+
+	// ErrAppleCredentialMissing is returned by PurgeUser when an
+	// Apple-identity account reaches the purge transaction without a stored
+	// revocable credential (e.g. a consent-revocation callback erased the
+	// vault between the handler's pre-check and the purge). The transaction
+	// rolls back — nothing is deleted — and the handler maps it to 409
+	// apple_credential_required: required revocation material must exist
+	// under the same lock that deletes the account, never merely observed
+	// before it.
+	ErrAppleCredentialMissing = errors.New("apple credential missing for purge")
+
+	// ErrNotificationReplay is returned when an Apple server-to-server
+	// notification id was already processed. The caller treats it as an
+	// idempotent no-op (HTTP 200, no state change).
+	ErrNotificationReplay = errors.New("apple notification already processed")
 )

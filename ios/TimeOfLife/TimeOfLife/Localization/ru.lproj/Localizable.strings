@@ -27,6 +27,32 @@
 // Sign out confirmation
 "signOut.cancel" = "Отмена";
 
+// Account (Profile → Account; app-shell + account-deletion specs)
+"account.title" = "Аккаунт";
+"account.identitySection" = "Аккаунт";
+"account.identityFooter" = "Выход сохраняет данные на этом устройстве. Повторный вход восстановит их.";
+"account.thisDeviceSection" = "Это устройство";
+"account.thisDeviceFooter" = "Удаляет с этого устройства только данные этого аккаунта и выводит вас из аккаунта. Синхронизированные данные остаются на сервере.";
+"account.deleteLocalData" = "Удалить локальные данные";
+"account.signOutConfirmTitle" = "Выйти из аккаунта?";
+"account.signOutConfirmMessage" = "Вы выйдете из аккаунта на этом устройстве. Данные останутся на этом устройстве и на сервере.";
+"account.permanentSection" = "Безвозвратное удаление";
+"account.permanentFooter" = "Навсегда удаляет ваш аккаунт Lifio и синхронизированные данные, а также данные этого аккаунта с этого устройства. Другие ваши устройства будут выведены из аккаунта.";
+"account.deleteTitle" = "Удалить аккаунт и локальные данные?";
+"account.deleteMessage" = "Это навсегда удалит ваш аккаунт Lifio и все синхронизированные записи, категории и заметки, а также удалит данные этого аккаунта с этого устройства. Ваши другие устройства будут выведены из аккаунта.";
+"account.deleteConfirm" = "Удалить аккаунт и локальные данные";
+"account.deletingProgress" = "Удаление аккаунта…";
+"account.deleteError" = "Не удалось удалить аккаунт. Попробуйте ещё раз.";
+"account.deleteFailedTitle" = "Не удалось удалить аккаунт";
+"account.deleteOffline" = "Нет соединения. Подключитесь и попробуйте ещё раз.";
+"account.deleteOfflineTitle" = "Нет соединения";
+"account.stillExists" = "Ваш аккаунт всё ещё существует. Данные не удалены.";
+"account.stillExistsTitle" = "Аккаунт всё ещё существует";
+"account.pendingAppleUnlink" = "Аккаунт удалён. Отключение авторизации Apple ещё выполняется и завершится автоматически.";
+"account.cleanupRetryTitle" = "Завершить очистку аккаунта";
+"account.cleanupRetryMessage" = "Ваш аккаунт был удалён, но часть локальных данных не была удалена. Повторите очистку сейчас.";
+"account.cleanupRetryConfirm" = "Очистить сейчас";
+
 // Validation (unified messages — Requirements U2/U4: one merged message per field)
 "common.and" = "и";
 "validation.emailEmpty" = "Введите эл. почту.";
@@ -98,7 +124,7 @@
 "profile.onDeviceFooter" = "Категории и записи хранятся на этом устройстве. Синхронизация необязательна.";
 "profile.eraseLocalData" = "Стереть локальные данные";
 "profile.eraseLocalDataConfirmTitle" = "Стереть локальные данные?";
-"profile.eraseLocalDataConfirmMessage" = "Это навсегда удалит все категории, записи и ожидающие синхронизацию данные на этом устройстве.";
+"profile.eraseLocalDataConfirmMessage" = "Это навсегда удалит все категории, записи и ожидающие синхронизацию данные на этом устройстве и выведет вас из аккаунта.";
 "profile.eraseConfirm" = "Стереть";
 "profile.eraseCancel" = "Отмена";
 // Build-configuration suffix for the Profile version row (universal

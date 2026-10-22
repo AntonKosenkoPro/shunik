@@ -52,6 +52,8 @@ func newTestServerWithAllowlist(t *testing.T, allowed []string) *Server {
 	rateLimiter := &handlers.RateLimiterGroup{
 		OTPRequest: ratelimit.NewTokenBucket(100, 100, time.Minute),
 		OTPVerify:  ratelimit.NewTokenBucket(100, 100, time.Minute),
+		Apple:      ratelimit.NewTokenBucket(100, 100, time.Minute),
+		Status:     ratelimit.NewTokenBucket(100, 100, time.Minute),
 	}
 	handlerCfg := handlers.HandlerConfig{}
 

@@ -40,6 +40,24 @@ type Dependencies struct {
 	// CORSAllowedOrigins is the exact-match allowlist of origins echoed
 	// for credentialed browser calls. Empty (default) = deny all.
 	CORSAllowedOrigins []string
+	// StatusService mints account-status evidence. Built from
+	// ACCOUNT_STATUS_SECRET; nil disables the status endpoint's issuance
+	// (production always configures it).
+	StatusService *auth.StatusService
+	// AppleClient exchanges codes and revokes Apple tokens. Nil when Apple
+	// revocation is unconfigured (explicit Apple deletion then 503s without
+	// purging — never a silent skip).
+	AppleClient apple.Client
+	// AppleNotifications verifies server-to-server notifications. Nil when
+	// Apple is unconfigured.
+	AppleNotifications apple.NotificationVerifier
+	// AppleTokenKeyring seals stored Apple credentials and revocation jobs.
+	// Nil when Apple revocation is unconfigured.
+	AppleTokenKeyring *recovery.Keyring
+	// AppleDigestKey is the rotation-stable HMAC key for subject digests.
+	AppleDigestKey []byte
+	// AppleClientID is the Bundle ID referenced by revocation jobs.
+	AppleClientID string
 }
 
 // defaultAccessTokenTTL and defaultRefreshTokenTTL mirror the config defaults
@@ -51,7 +69,7 @@ const (
 )
 
 // NewDefaultDependencies creates a default set of dependencies from config and store.
-func NewDefaultDependencies(cfg *config.Config, store db.Store) Dependencies {
+func NewDefaultDependencies(ctx context.Context, cfg *config.Config, store db.Store) Dependencies {
 	logger := slog.Default()
 
 	accessTTL := cfg.AccessTokenTTL
@@ -90,6 +108,11 @@ func NewDefaultDependencies(cfg *config.Config, store db.Store) Dependencies {
 	rateLimiter := &handlers.RateLimiterGroup{
 		OTPRequest: ratelimit.OTPRequestLimit,
 		OTPVerify:  ratelimit.OTPVerifyLimit,
+		Status:     ratelimit.NewTokenBucket(10, 10, time.Minute),
+		// Apple server-to-server deliveries are unauthenticated: blunt
+		// floods before JWS verification, with a ceiling high enough that
+		// Apple's own delivery retries never throttle.
+		AppleNotifications: ratelimit.NewTokenBucket(60, 60, time.Minute),
 	}
 
 	trustedProxies, err := handlers.ParseTrustedProxies(cfg.TrustedProxies)
@@ -105,16 +128,39 @@ func NewDefaultDependencies(cfg *config.Config, store db.Store) Dependencies {
 		TrustedProxies: trustedProxies,
 	}
 
-	// Sign in with Apple is config-gated: only construct the JWKS verifier
-	// (and register its route) when APPLE_CLIENT_ID is set.
+	// Explicit account deletion is always issued: the status signer needs
+	// only ACCOUNT_STATUS_SECRET (required, distinct from JWT_SECRET).
+	statusService := auth.NewStatusService(cfg.AccountStatusSecret)
+
+	// Apple revocation material (all-or-nothing at config load): when none
+	// of the APPLE_* variables is set, Sign in with Apple stays disabled
+	// (the registered route returns 503) and explicit Apple deletion is
+	// unavailable — the OTP path keeps working.
 	var appleVerifier apple.Verifier
+	var appleNotifs apple.NotificationVerifier
+	var appleClient apple.Client
+	var appleTokenKeyring *recovery.Keyring
+	var digestKey []byte
 	if cfg.AppleClientID != "" {
-		v, err := apple.NewVerifier(context.Background(), cfg.AppleClientID, cfg.AppleJWKSURL)
-		if err != nil {
-			logger.Error("failed to create apple verifier; feature disabled", "error", err)
+		kf, kerr := apple.NewSharedKeyfunc(ctx, cfg.AppleJWKSURL)
+		if kerr != nil {
+			logger.Error("failed to create apple JWKS keyfunc; feature disabled", "error", kerr)
 		} else {
-			appleVerifier = v
+			appleVerifier = apple.NewIdentityVerifier(cfg.AppleClientID, kf)
+			appleNotifs = apple.NewNotificationVerifier(cfg.AppleClientID, kf)
 			rateLimiter.Apple = ratelimit.AppleLimit
+		}
+		privKey, perr := apple.ParsePrivateKey([]byte(cfg.ApplePrivateKey))
+		if perr != nil {
+			// Config preflight validates this; a runtime mismatch fails
+			// closed to revocation-unavailable (explicit 503s, never silent
+			// skips) instead of crashing the relay.
+			logger.Error("failed to parse apple private key; revocation unavailable", "error", perr)
+		} else {
+			appleClient = apple.NewRESTClient(cfg.AppleClientID, cfg.AppleTeamID, cfg.AppleKeyID,
+				privKey, "", cfg.AppleRedirectURI, nil)
+			appleTokenKeyring = recovery.NewKeyring(cfg.AppleTokenKeys)
+			digestKey = apple.SubjectDigestKey([]byte(cfg.AccountStatusSecret))
 		}
 	}
 
@@ -129,12 +175,28 @@ func NewDefaultDependencies(cfg *config.Config, store db.Store) Dependencies {
 		RequestTimeout:     cfg.RequestTimeout,
 		RecoveryKeyring:    recovery.NewKeyring(cfg.RecoveryKeys),
 		CORSAllowedOrigins: config.ParseCORSAllowedOrigins(cfg.CORSAllowedOrigins),
+		StatusService:      statusService,
+		AppleClient:        appleClient,
+		AppleNotifications: appleNotifs,
+		AppleTokenKeyring:  appleTokenKeyring,
+		AppleDigestKey:     digestKey,
+		AppleClientID:      cfg.AppleClientID,
 	}
 }
 
 // Server holds the HTTP server and its dependencies.
 type Server struct {
 	router http.Handler
+	worker *apple.Worker
+}
+
+// StartWorkers runs the Apple revocation worker until ctx ends. A missing
+// worker (unconfigured Apple) is a no-op.
+func (s *Server) StartWorkers(ctx context.Context) {
+	if s.worker == nil {
+		return
+	}
+	go s.worker.Start(ctx)
 }
 
 // New creates a new Server with all routes configured.
@@ -151,9 +213,19 @@ func New(deps Dependencies) *Server {
 		deps.HandlerCfg,
 		logger,
 		deps.RecoveryKeyring,
+		handlers.WithAccountDeletion(
+			deps.StatusService,
+			deps.AppleClient,
+			deps.AppleNotifications,
+			deps.AppleTokenKeyring,
+			deps.AppleDigestKey,
+			deps.AppleClientID,
+		),
 	)
 
-	s := &Server{}
+	s := &Server{
+		worker: apple.NewWorker(deps.Store, deps.AppleClient, deps.AppleTokenKeyring, logger, time.Minute),
+	}
 
 	r := chi.NewRouter()
 
@@ -180,8 +252,16 @@ func New(deps Dependencies) *Server {
 			// 503 (apple_not_configured) when the verifier is nil, surfacing
 			// the contract instead of a 404.
 			r.Post("/apple", h.AppleSignIn)
+			// Server-to-server Apple notifications (verified JWS payload, no
+			// bearer): consent-revoked signs out, never deletes.
+			r.Post("/apple/notifications", h.AppleNotifications)
 			r.With(h.AuthMiddleware).Post("/logout", h.Logout)
 			r.With(h.AuthMiddleware).Get("/me", h.Me)
+			// Explicit account deletion (self-only) + read-only status
+			// evidence (status-only credential, no access token accepted).
+			r.With(h.AuthMiddleware).Delete("/account", h.DeleteAccount)
+			r.Post("/account/status", h.AccountStatus)
+			r.With(h.AuthMiddleware).Post("/apple/deletion-credential", h.AppleDeletionCredential)
 		})
 
 		// Categories, entries, and deletion tombstones. All protected.

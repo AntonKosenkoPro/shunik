@@ -48,14 +48,27 @@ func (s *PostgresStore) Close() error {
 	return nil
 }
 
+// pgUserColumns is the full user projection, including the Apple
+// session-lineage and consent-cutoff columns added by 009.
+const pgUserColumns = `id, email, email_verified, created_at,
+	apple_subject, apple_auth_time, apple_auth_lineage, apple_consent_cutoff`
+
+// pgScanUser scans a user row in pgUserColumns order. Nullable Apple columns
+// decode into pointer fields (NULL → nil); a revoked-but-live account keeps
+// its identity columns while its lineage is nulled.
+func pgScanUser(sc pgxScanner, u *User) error {
+	return sc.Scan(&u.ID, &u.Email, &u.EmailVerified, &u.CreatedAt,
+		&u.AppleSubject, &u.AppleAuthTime, &u.AppleAuthLineage, &u.AppleConsentCutoff)
+}
+
 // GetUserByEmail returns a user by their email.
 func (s *PostgresStore) GetUserByEmail(ctx context.Context, email string) (User, error) {
 	var u User
-	err := s.pool.QueryRow(ctx, `
-		SELECT id, email, email_verified, created_at
+	err := pgScanUser(s.pool.QueryRow(ctx, `
+		SELECT `+pgUserColumns+`
 		FROM users
 		WHERE email = $1
-	`, email).Scan(&u.ID, &u.Email, &u.EmailVerified, &u.CreatedAt)
+	`, email), &u)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return User{}, fmt.Errorf("get user by email: %w", ErrNotFound)
@@ -68,20 +81,20 @@ func (s *PostgresStore) GetUserByEmail(ctx context.Context, email string) (User,
 // UpsertUser creates a user if not exists, returns the user.
 func (s *PostgresStore) UpsertUser(ctx context.Context, email string) (User, error) {
 	var u User
-	err := s.pool.QueryRow(ctx, `
+	err := pgScanUser(s.pool.QueryRow(ctx, `
 		INSERT INTO users (id, email, email_verified, created_at)
 		VALUES (gen_random_uuid(), $1, false, NOW())
 		ON CONFLICT (email) DO NOTHING
-		RETURNING id, email, email_verified, created_at
-	`, email).Scan(&u.ID, &u.Email, &u.EmailVerified, &u.CreatedAt)
+		RETURNING `+pgUserColumns+`
+	`, email), &u)
 	if err != nil {
 		// If the conflict prevented returning, fetch the existing user
 		if errors.Is(err, pgx.ErrNoRows) {
-			err = s.pool.QueryRow(ctx, `
-				SELECT id, email, email_verified, created_at
+			err = pgScanUser(s.pool.QueryRow(ctx, `
+				SELECT `+pgUserColumns+`
 				FROM users
 				WHERE email = $1
-			`, email).Scan(&u.ID, &u.Email, &u.EmailVerified, &u.CreatedAt)
+			`, email), &u)
 		}
 		if err != nil {
 			return User{}, fmt.Errorf("upsert user: %w", err)
@@ -158,10 +171,20 @@ func (s *PostgresStore) MarkOTPExhausted(ctx context.Context, otpID string) erro
 
 // SaveRefreshToken stores a new refresh token.
 func (s *PostgresStore) SaveRefreshToken(ctx context.Context, userID string, tokenHash string, deviceID string) error {
+	return s.SaveRefreshTokenWithAuth(ctx, userID, tokenHash, deviceID, nil, "")
+}
+
+// SaveRefreshTokenWithAuth stores a refresh token with its session's Apple
+// auth pair (nil/empty = email-OTP session, unaffected by Apple cutoffs).
+func (s *PostgresStore) SaveRefreshTokenWithAuth(ctx context.Context, userID string, tokenHash string, deviceID string, authTime *time.Time, authLineage string) error {
+	var lineage any
+	if authLineage != "" {
+		lineage = authLineage
+	}
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO refresh_tokens (id, user_id, token_hash, device_id, revoked, created_at)
-		VALUES (gen_random_uuid(), $1, $2, $3, false, NOW())
-	`, userID, tokenHash, deviceID)
+		INSERT INTO refresh_tokens (id, user_id, token_hash, device_id, revoked, created_at, auth_time, auth_lineage)
+		VALUES (gen_random_uuid(), $1, $2, $3, false, NOW(), $4, $5)
+	`, userID, tokenHash, deviceID, authTime, lineage)
 	if err != nil {
 		return fmt.Errorf("save refresh token: %w", err)
 	}
@@ -172,10 +195,10 @@ func (s *PostgresStore) SaveRefreshToken(ctx context.Context, userID string, tok
 func (s *PostgresStore) GetRefreshToken(ctx context.Context, tokenHash string) (RefreshToken, error) {
 	var t RefreshToken
 	err := s.pool.QueryRow(ctx, `
-		SELECT id, user_id, token_hash, device_id, revoked, created_at
+		SELECT id, user_id, token_hash, device_id, revoked, created_at, auth_time, auth_lineage
 		FROM refresh_tokens
 		WHERE token_hash = $1
-	`, tokenHash).Scan(&t.ID, &t.UserID, &t.TokenHash, &t.DeviceID, &t.Revoked, &t.CreatedAt)
+	`, tokenHash).Scan(&t.ID, &t.UserID, &t.TokenHash, &t.DeviceID, &t.Revoked, &t.CreatedAt, &t.AuthTime, &t.AuthLineage)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return RefreshToken{}, fmt.Errorf("get refresh token: %w", ErrNotFound)
@@ -284,6 +307,21 @@ func (s *PostgresStore) RotateRefreshToken(ctx context.Context, args RotateArgs)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	// Account lifecycle fence first (consistent lock order: the account row
+	// before the family rows, matching purge). A purge that removed the
+	// account races here as ErrUserMissing — never a partial successor and
+	// never a reuse burn: the handler maps it to an ordinary authentication
+	// failure without recovery or revocation.
+	var one int
+	if err := tx.QueryRow(ctx, `
+		SELECT 1 FROM users WHERE id = $1 FOR UPDATE
+	`, args.UserID).Scan(&one); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return RotateResult{}, fmt.Errorf("rotate refresh token: %w", ErrUserMissing)
+		}
+		return RotateResult{}, fmt.Errorf("rotate refresh token: %w", err)
+	}
+
 	// Single-use guard: only a live predecessor rotates. A concurrent
 	// rotation that already revoked it matches zero rows and loses here,
 	// before any successor or receipt is written.
@@ -299,11 +337,16 @@ func (s *PostgresStore) RotateRefreshToken(ctx context.Context, args RotateArgs)
 	}
 
 	var out RotateResult
+	// The successor inherits the predecessor's auth lineage in the same
+	// statement, so a rotation can never mint a lineage-clean token from a
+	// cutoff session — rotation cannot evade the cutoff. A purge that
+	// removed the account races here as a zero-row copy.
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO refresh_tokens (id, user_id, token_hash, device_id, revoked, created_at)
-		VALUES (gen_random_uuid(), $1, $2, $3, false, NOW())
+		INSERT INTO refresh_tokens (id, user_id, token_hash, device_id, revoked, created_at, auth_time, auth_lineage)
+		SELECT gen_random_uuid(), $1, $2, $3, false, NOW(), auth_time, auth_lineage
+		FROM refresh_tokens WHERE id = $4
 		RETURNING id, created_at
-	`, args.UserID, args.SuccessorHash, args.DeviceID).Scan(&out.SuccessorID, &out.SuccessorCreatedAt); err != nil {
+	`, args.UserID, args.SuccessorHash, args.DeviceID, args.PredecessorID).Scan(&out.SuccessorID, &out.SuccessorCreatedAt); err != nil {
 		return RotateResult{}, fmt.Errorf("rotate refresh token: %w", err)
 	}
 
@@ -396,11 +439,11 @@ func (s *PostgresStore) ConsumeRecoveryReceipt(ctx context.Context, attemptHash 
 // GetUserByID returns a user by their ID.
 func (s *PostgresStore) GetUserByID(ctx context.Context, userID string) (User, error) {
 	var u User
-	err := s.pool.QueryRow(ctx, `
-		SELECT id, email, email_verified, created_at
+	err := pgScanUser(s.pool.QueryRow(ctx, `
+		SELECT `+pgUserColumns+`
 		FROM users
 		WHERE id = $1
-	`, userID).Scan(&u.ID, &u.Email, &u.EmailVerified, &u.CreatedAt)
+	`, userID), &u)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return User{}, fmt.Errorf("get user by id: %w", ErrNotFound)
@@ -417,13 +460,13 @@ func (s *PostgresStore) GetUserByID(ctx context.Context, userID string) (User, e
 // `WHERE apple_subject IS NOT NULL`); omitting it fails with SQLSTATE 42P10.
 func (s *PostgresStore) UpsertUserByAppleSubject(ctx context.Context, appleSubject, email string) (User, error) {
 	var u User
-	err := s.pool.QueryRow(ctx, `
+	err := pgScanUser(s.pool.QueryRow(ctx, `
 		INSERT INTO users (id, email, email_verified, created_at, apple_subject)
 		VALUES (gen_random_uuid(), $1, true, NOW(), $2)
 		ON CONFLICT (apple_subject) WHERE apple_subject IS NOT NULL DO UPDATE
 			SET email_verified = true
-		RETURNING id, email, email_verified, created_at
-	`, email, appleSubject).Scan(&u.ID, &u.Email, &u.EmailVerified, &u.CreatedAt)
+		RETURNING `+pgUserColumns+`
+	`, email, appleSubject), &u)
 	if err != nil {
 		return User{}, fmt.Errorf("upsert apple user: %w", err)
 	}

@@ -41,13 +41,41 @@ type Handler struct {
 	config          HandlerConfig
 	logger          *slog.Logger
 	recoveryKeyring *recovery.Keyring
+	statusService   *auth.StatusService
+	appleClient     apple.Client
+	appleNotifs     apple.NotificationVerifier
+	appleTokenKeys  *recovery.Keyring
+	digestKey       []byte
+	appleClientID   string
 }
 
 // RateLimiterGroup holds the rate limiters used by the handlers.
+// Nil buckets disable that path's limiting (tests); production wires all.
 type RateLimiterGroup struct {
-	OTPRequest *ratelimit.TokenBucket
-	OTPVerify  *ratelimit.TokenBucket
-	Apple      *ratelimit.TokenBucket
+	OTPRequest         *ratelimit.TokenBucket
+	OTPVerify          *ratelimit.TokenBucket
+	Apple              *ratelimit.TokenBucket
+	Status             *ratelimit.TokenBucket
+	AppleNotifications *ratelimit.TokenBucket
+}
+
+// HandlerOption customizes a Handler after construction.
+type HandlerOption func(*Handler)
+
+// WithAccountDeletion wires explicit account deletion: status credentials,
+// the Apple revoke client + notification verifier, the Apple token keyring,
+// the rotation-stable HMAC digest key, and the Apple client ID recorded on
+// revocation jobs. Any nil component degrades its endpoint to an explicit
+// unavailable error (never a silent successful skip).
+func WithAccountDeletion(status *auth.StatusService, client apple.Client, notifs apple.NotificationVerifier, tokenKeys *recovery.Keyring, digestKey []byte, appleClientID string) HandlerOption {
+	return func(h *Handler) {
+		h.statusService = status
+		h.appleClient = client
+		h.appleNotifs = notifs
+		h.appleTokenKeys = tokenKeys
+		h.digestKey = digestKey
+		h.appleClientID = appleClientID
+	}
 }
 
 // NewHandler creates a new Handler with the given dependencies. appleVerifier
@@ -65,8 +93,9 @@ func NewHandler(
 	config HandlerConfig,
 	logger *slog.Logger,
 	recoveryKeyring *recovery.Keyring,
+	opts ...HandlerOption,
 ) *Handler {
-	return &Handler{
+	h := &Handler{
 		store:           store,
 		tokenService:    tokenService,
 		otpService:      otpService,
@@ -77,6 +106,10 @@ func NewHandler(
 		logger:          logger,
 		recoveryKeyring: recoveryKeyring,
 	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
 }
 
 // ---------- Request / Response types ----------
@@ -100,18 +133,246 @@ type refreshReq struct {
 
 type appleSignInReq struct {
 	IdentityToken string `json:"identity_token"`
+	// AuthorizationCode is the single-use code from the native authorization.
+	// Updated clients always send it; identity-token-only requests from prior
+	// clients keep their legacy sign-in behaviour (without storing a
+	// revocable credential — explicit deletion then requires fresh
+	// same-subject authorization via the deletion-credential endpoint).
+	AuthorizationCode string `json:"authorization_code,omitempty"`
+}
+
+// AppleSignIn handles POST /api/v1/auth/apple.
+// It verifies Apple's identity-token JWT, upserts the user by Apple's stable
+// `sub` identifier behind the revocation fence, and issues our own access +
+// refresh tokens (the same issuance path as VerifyOTP). Apple users are
+// considered email-verified. When an authorization code is presented it is
+// validated with Apple and the returned revocable credential is sealed into
+// the vault, enabling automatic unlinking on explicit deletion.
+func (h *Handler) AppleSignIn(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if h.appleVerifier == nil {
+		writeError(w, http.StatusServiceUnavailable, "apple_not_configured",
+			"Sign in with Apple is not configured", nil)
+		return
+	}
+
+	deviceID, ok := requireDeviceID(w, r)
+	if !ok {
+		return
+	}
+
+	var req appleSignInReq
+	if err := decodeJSON(r, &req); err != nil {
+		h.logger.Warn("invalid apple sign-in body", "error", err)
+		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body", nil)
+		return
+	}
+
+	if req.IdentityToken == "" {
+		writeError(w, http.StatusBadRequest, "invalid_body", "Identity token is required", nil)
+		return
+	}
+
+	// Rate limit per IP.
+	ip := h.clientIP(r)
+	if h.rateLimiter.Apple != nil && !h.rateLimiter.Apple.Allow(ip) {
+		h.logger.Warn("apple sign-in rate limited", "ip", ip)
+		writeError(w, http.StatusTooManyRequests, "rate_limited",
+			"Too many requests. Please try again later.", nil)
+		return
+	}
+
+	claims, err := h.appleVerifier.Verify(ctx, req.IdentityToken)
+	if err != nil {
+		h.logger.Warn("apple identity token verification failed", "error", err)
+		writeError(w, http.StatusUnauthorized, "invalid_apple_token",
+			"Invalid Apple identity token", nil)
+		return
+	}
+
+	// Fenced upsert: a pending revocation job for this subject refuses the
+	// signup with 503 before any session exists, so an old revoke can never
+	// invalidate the new grant. The code is not consumed on this path.
+	user, err := h.store.UpsertAppleUser(ctx, claims.Sub, claims.Email, h.subjectDigest(claims.Sub), time.Now())
+	if err != nil {
+		if errors.Is(err, db.ErrAppleRevocationPending) {
+			h.logger.Warn("apple signup fenced by pending revocation", "sub", redactSubject(claims.Sub))
+			writeError(w, http.StatusServiceUnavailable, "apple_revocation_pending",
+				"Apple unlinking is still in progress. Please retry shortly.", nil)
+			return
+		}
+		if errors.Is(err, db.ErrAppleEmailInUse) {
+			h.logger.Warn("apple signup email already registered", "sub", redactSubject(claims.Sub))
+			writeError(w, http.StatusConflict, "apple_email_in_use",
+				"This email is already registered. Sign in with email instead.", nil)
+			return
+		}
+		if errors.Is(err, db.ErrNotFound) {
+			h.writeInternalError(w, r, "apple upsert lost the user row", err)
+			return
+		}
+		h.writeInternalError(w, r, "failed to upsert apple user", err)
+		return
+	}
+
+	// When an authorization code is presented, validate it with Apple now:
+	// a successful exchange proves a fresh authorization and mints (or
+	// confirms) the lineage. Exchange failures degrade to the legacy path
+	// (no vault credential stored) except a hard Apple rejection of the
+	// code, which fails the request.
+	var exchanged *apple.TokenResponse
+	if req.AuthorizationCode != "" {
+		if h.appleClient == nil {
+			h.logger.Warn("apple authorization code presented but revocation is unconfigured")
+		} else if tr, xerr := h.appleClient.ExchangeCode(ctx, req.AuthorizationCode); xerr != nil {
+			if errors.Is(xerr, apple.ErrInvalidGrant) {
+				h.logger.Warn("apple authorization code rejected", "userID", user.ID)
+				writeError(w, http.StatusUnauthorized, "invalid_apple_token",
+					"Invalid Apple authorization code", nil)
+				return
+			}
+			h.logger.Warn("apple token exchange unavailable; continuing without stored credential",
+				"userID", user.ID, "error", xerr)
+		} else {
+			// Bind the token response to the verified identity: the
+			// exchange must resolve to the same subject and audience, or
+			// the credential is attached to nothing.
+			if idClaims, verr := h.appleVerifier.Verify(ctx, tr.IDToken); verr != nil ||
+				idClaims.Sub != claims.Sub {
+				h.logger.Warn("apple exchange identity mismatch", "userID", user.ID)
+				writeError(w, http.StatusUnauthorized, "invalid_apple_token",
+					"Invalid Apple authorization code", nil)
+				return
+			}
+			exchanged = &tr
+		}
+	}
+
+	// Authorize the session lineage. A set consent cutoff ends every
+	// pre-cutoff authorization: only a fresh proof past the cutoff mints a
+	// new lineage — a live code exchange, or an identity token issued at/after
+	// the cutoff. A stale pre-revocation token (identity-token-only legacy
+	// path) cannot mint its way around Settings revocation and is rejected.
+	// Without a cutoff the existing lineage is kept (minted when absent) so
+	// one device's sign-in never kills another's sessions.
+	//
+	// Every sign-in stamps its OWN verified authorization time (a live code
+	// exchange proves now; otherwise Apple's issued-at, falling back to now
+	// when absent) and records it as the account's latest authorization.
+	// Sessions carry that time into their tokens, and the consent cutoff
+	// compares per-session times — reusing the first authorization's time
+	// would wrongly kill a fresh grant authorized after a (delayed)
+	// revocation event but before its callback arrives.
+	lineage := ""
+	if user.AppleAuthLineage != nil {
+		lineage = *user.AppleAuthLineage
+	}
+	authTime := h.verifiedAuthTime(claims, exchanged != nil)
+	switch {
+	case user.AppleConsentCutoff != nil:
+		if _, ferr := h.appleAuthorizationFresh(claims, exchanged != nil, *user.AppleConsentCutoff); ferr != nil {
+			h.logger.Warn("stale apple authorization past cutoff", "userID", user.ID)
+			writeError(w, http.StatusUnauthorized, "invalid_apple_token",
+				"This Apple authorization predates revocation. Re-authorize with Apple.", nil)
+			return
+		}
+		lineage = newLineageID()
+	case lineage == "":
+		lineage = newLineageID()
+	default:
+		// Existing lineage, no cutoff: keep the lineage for vault
+		// stability, but the latest-authorization metadata still advances
+		// to this sign-in so a later delayed revocation event can tell a
+		// fresh grant from a superseded one.
+	}
+	// Every branch stamps the session: the invariant is that a completed
+	// sign-in always records its latest authorization (never silently keep
+	// stale lineage/auth-time metadata, which feeds cutoff enforcement).
+	if err := h.store.SetAppleSession(ctx, user.ID, authTime, lineage); err != nil {
+		h.writeInternalError(w, r, "failed to stamp apple session", err)
+		return
+	}
+
+	// Seal a successfully exchanged credential into the vault under the
+	// session lineage. A missing keyring cannot happen when Apple is
+	// configured (startup preflight); without it this degrades to
+	// no-stored-credential rather than a failed login.
+	if exchanged != nil && exchanged.RefreshToken != "" {
+		if h.appleTokenKeys == nil {
+			h.logger.Warn("apple token keyring unconfigured; credential not stored", "userID", user.ID)
+		} else if sealed, serr := h.appleTokenKeys.Seal([]byte(exchanged.RefreshToken),
+			apple.VaultAAD(lineage, authTime)); serr != nil {
+			h.logger.Error("failed to seal apple credential", "error", serr)
+		} else if serr := h.store.SaveAppleCredential(ctx, db.AppleCredential{
+			UserID: user.ID, SealedRefresh: sealed, AuthTime: authTime, LineageID: lineage,
+		}); serr != nil {
+			h.writeInternalError(w, r, "failed to store apple credential", serr)
+			return
+		}
+	}
+
+	// Issue tokens (same path as VerifyOTP). Apple users are email-verified.
+	user.AppleAuthLineage = &lineage
+	h.issueTokens(ctx, w, r, user, deviceID, authTime, lineage)
+	h.logger.Info("apple user signed in", "userID", user.ID)
+}
+
+// verifiedAuthTime reports the authorization time this sign-in proves: a
+// live code exchange proves now; otherwise Apple's verified issued-at is
+// the only trustworthy time (same Apple-clock domain as revocation events),
+// falling back to now when the token carries none. Sessions carry this
+// time so a later consent cutoff can compare per-session freshness.
+func (h *Handler) verifiedAuthTime(claims apple.Claims, exchanged bool) time.Time {
+	if !exchanged && claims.IssuedAt != nil {
+		return claims.IssuedAt.Time
+	}
+	return time.Now()
+}
+
+// appleAuthorizationFresh reports whether the presented Apple authorization
+// is fresh past the consent cutoff: a live code exchange always is (the
+// exchange itself proves a live grant even within the cutoff's second); an
+// identity-token-only authorization is fresh only when its issued-at is
+// strictly after the cutoff. Same-second iat equality is not reliable
+// freshness — both claims and events are often integer seconds, so an iat
+// equal to the cutoff cannot prove the authorization postdates the event
+// and fails closed. A missing iat or a stale iat is an error.
+func (h *Handler) appleAuthorizationFresh(claims apple.Claims, exchanged bool, cutoff time.Time) (bool, error) {
+	if exchanged {
+		return true, nil
+	}
+	if claims.IssuedAt == nil {
+		return false, errors.New("apple identity token carries no issued-at")
+	}
+	if !claims.IssuedAt.After(cutoff) {
+		return false, errors.New("apple identity token does not postdate consent revocation")
+	}
+	return true, nil
 }
 
 type userResponse struct {
 	ID            string `json:"id"`
 	Email         string `json:"email"`
 	EmailVerified bool   `json:"email_verified"`
+	// HasAppleIdentity is server truth for provider handling (the account
+	// has an Apple subject) — never inferred from an email suffix.
+	HasAppleIdentity bool `json:"has_apple_identity"`
+	// AppleDeletionAuthorizationRequired reports an Apple account with no
+	// stored revocable credential: explicit deletion must first obtain
+	// same-subject authorization (or fail with apple_credential_required).
+	AppleDeletionAuthorizationRequired bool `json:"apple_deletion_authorization_required"`
 }
 
 type authResponse struct {
 	AccessToken  string       `json:"access_token"`
 	RefreshToken string       `json:"refresh_token"`
 	User         userResponse `json:"user"`
+	// AccountStatusCredential is the narrow read-only deletion-evidence
+	// credential (see auth.StatusService). Omitted when the server is
+	// unconfigured (tests); production always issues it.
+	AccountStatusCredential string `json:"account_status_credential,omitempty"`
+	AccountStatusExpiresAt  string `json:"account_status_expires_at,omitempty"`
 }
 
 type errorDetail struct {
@@ -193,6 +454,13 @@ func writeAccepted(w http.ResponseWriter) {
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 }
 
+// writeNotificationAccepted responds 200 with the accepted envelope. Apple
+// expects HTTP 200 for server-to-server deliveries (processed or idempotent
+// no-op); it is distinct from OTP's enumeration-closing 202.
+func writeNotificationAccepted(w http.ResponseWriter) {
+	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
+}
+
 // deviceIDFromRequest extracts the stable client device id sent as the
 // X-Device-Id header on session endpoints (verify, apple, refresh, logout).
 func deviceIDFromRequest(r *http.Request) string {
@@ -212,11 +480,13 @@ func requireDeviceID(w http.ResponseWriter, r *http.Request) (string, bool) {
 }
 
 // issueTokens creates an access + refresh token pair for user, persists the
-// refresh token hash bound to deviceID (per-device refresh family), and
-// writes the authResponse envelope. On any failure it writes an
-// internal_error response. It returns nothing; callers return.
-func (h *Handler) issueTokens(ctx context.Context, w http.ResponseWriter, r *http.Request, user db.User, emailVerified bool, deviceID string) {
-	accessToken, err := h.tokenService.CreateAccessToken(user.ID, user.Email)
+// refresh token hash bound to deviceID (per-device refresh family) plus the
+// session's Apple auth pair, and writes the authResponse envelope (including
+// the account-status credential and Apple deletion-readiness metadata). On
+// any failure it writes an internal_error response. It returns nothing;
+// callers return.
+func (h *Handler) issueTokens(ctx context.Context, w http.ResponseWriter, r *http.Request, user db.User, deviceID string, authTime time.Time, authLineage string) {
+	accessToken, err := h.tokenService.CreateAccessTokenWithAuth(user.ID, user.Email, authTime, authLineage)
 	if err != nil {
 		h.writeInternalError(w, r, "failed to create access token", err)
 		return
@@ -228,20 +498,68 @@ func (h *Handler) issueTokens(ctx context.Context, w http.ResponseWriter, r *htt
 		return
 	}
 
-	if err := h.store.SaveRefreshToken(ctx, user.ID, refreshHash, deviceID); err != nil {
-		h.writeInternalError(w, r, "failed to save refresh token", err)
+	saveErr := error(nil)
+	if authLineage != "" {
+		saveErr = h.store.SaveRefreshTokenWithAuth(ctx, user.ID, refreshHash, deviceID, &authTime, authLineage)
+	} else {
+		saveErr = h.store.SaveRefreshToken(ctx, user.ID, refreshHash, deviceID)
+	}
+	if saveErr != nil {
+		h.writeInternalError(w, r, "failed to save refresh token", saveErr)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, authResponse{
+	h.writeAuthResponse(w, r, user, accessToken, rawRefresh)
+}
+
+// writeAuthResponse writes the authenticated session envelope: the token
+// pair, server-truth provider metadata, and (when configured) a fresh
+// account-status credential. Status issuance failure is a service error, not
+// an omitted field: clients must be able to rely on its presence.
+func (h *Handler) writeAuthResponse(w http.ResponseWriter, r *http.Request, user db.User, accessToken, rawRefresh string) {
+	hasApple, required := h.deletionReadiness(r.Context(), user)
+	resp := authResponse{
 		AccessToken:  accessToken,
 		RefreshToken: rawRefresh,
 		User: userResponse{
-			ID:            user.ID,
-			Email:         user.Email,
-			EmailVerified: emailVerified,
+			ID:                                 user.ID,
+			Email:                              user.Email,
+			EmailVerified:                      user.EmailVerified,
+			HasAppleIdentity:                   hasApple,
+			AppleDeletionAuthorizationRequired: required,
 		},
-	})
+	}
+	if h.statusService != nil {
+		cred, exp, err := h.statusService.Mint(user.ID)
+		if err != nil {
+			h.writeInternalError(w, r, "failed to mint status credential", err)
+			return
+		}
+		resp.AccountStatusCredential = cred
+		resp.AccountStatusExpiresAt = exp.UTC().Format(time.RFC3339)
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// deletionReadiness reports server-truth provider metadata for a user: the
+// account has an Apple identity, and explicit deletion would need fresh
+// same-subject authorization (no stored revocable credential). Provider
+// handling is never inferred from an email suffix. A vault read failure
+// degrades to required=true with a warning: re-acquiring a credential is
+// always safe, while a 500 here would lose an already-completed
+// auth/refresh response (rotation has already committed).
+func (h *Handler) deletionReadiness(ctx context.Context, user db.User) (hasApple, required bool) {
+	if user.AppleSubject == nil || *user.AppleSubject == "" {
+		return false, false
+	}
+	if _, err := h.store.GetAppleCredential(ctx, user.ID); err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			return true, true
+		}
+		h.logger.Warn("apple credential vault read failed; reporting required", "error", err, "userID", user.ID)
+		return true, true
+	}
+	return true, false
 }
 
 // maxBodyBytes caps request bodies (64 KB). Oversized bodies are rejected
@@ -370,6 +688,19 @@ func (h *Handler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A set Apple consent cutoff ends every lineageless session — including
+	// email-OTP sessions for this Apple-registered account, which the
+	// middleware and refresh would immediately 401 as dead ends. Reject up
+	// front with the re-authorization instruction instead of minting
+	// credentials that can never be used.
+	if user.AppleSubject != nil && *user.AppleSubject != "" &&
+		h.sessionCutByRevocation(nil, nil, user) {
+		h.logger.Warn("otp sign-in fenced by apple consent cutoff", "userID", user.ID)
+		writeError(w, http.StatusUnauthorized, "invalid_apple_token",
+			"This Apple authorization predates revocation. Re-authorize with Apple.", nil)
+		return
+	}
+
 	otp, err := h.store.GetValidOTP(ctx, user.ID)
 	if err != nil {
 		h.logger.Warn("no valid OTP found for user", "userID", user.ID)
@@ -408,66 +739,9 @@ func (h *Handler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 		h.writeInternalError(w, r, "failed to mark user verified", err)
 		return
 	}
+	user.EmailVerified = true
 
-	h.issueTokens(ctx, w, r, user, true, deviceID)
-}
-
-// AppleSignIn handles POST /api/v1/auth/apple.
-// It verifies Apple's identity-token JWT, upserts the user by Apple's stable
-// `sub` identifier, and issues our own access + refresh tokens (the same
-// issuance path as VerifyOTP). Apple users are considered email-verified.
-func (h *Handler) AppleSignIn(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	if h.appleVerifier == nil {
-		writeError(w, http.StatusServiceUnavailable, "apple_not_configured",
-			"Sign in with Apple is not configured", nil)
-		return
-	}
-
-	deviceID, ok := requireDeviceID(w, r)
-	if !ok {
-		return
-	}
-
-	var req appleSignInReq
-	if err := decodeJSON(r, &req); err != nil {
-		h.logger.Warn("invalid apple sign-in body", "error", err)
-		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body", nil)
-		return
-	}
-
-	if req.IdentityToken == "" {
-		writeError(w, http.StatusBadRequest, "invalid_body", "Identity token is required", nil)
-		return
-	}
-
-	// Rate limit per IP.
-	ip := h.clientIP(r)
-	if h.rateLimiter.Apple != nil && !h.rateLimiter.Apple.Allow(ip) {
-		h.logger.Warn("apple sign-in rate limited", "ip", ip)
-		writeError(w, http.StatusTooManyRequests, "rate_limited",
-			"Too many requests. Please try again later.", nil)
-		return
-	}
-
-	claims, err := h.appleVerifier.Verify(ctx, req.IdentityToken)
-	if err != nil {
-		h.logger.Warn("apple identity token verification failed", "error", err)
-		writeError(w, http.StatusUnauthorized, "invalid_apple_token",
-			"Invalid Apple identity token", nil)
-		return
-	}
-
-	user, err := h.store.UpsertUserByAppleSubject(ctx, claims.Sub, claims.Email)
-	if err != nil {
-		h.writeInternalError(w, r, "failed to upsert apple user", err)
-		return
-	}
-
-	// Issue tokens (same path as VerifyOTP). Apple users are email-verified.
-	h.issueTokens(ctx, w, r, user, true, deviceID)
-	h.logger.Info("apple user signed in", "userID", user.ID)
+	h.issueTokens(ctx, w, r, user, deviceID, time.Time{}, "")
 }
 
 // RefreshToken handles POST /api/v1/auth/refresh.
@@ -541,6 +815,31 @@ func (h *Handler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The account must still exist: a purged account's tokens authorize
+	// nothing. Missing users map to an ordinary authentication failure
+	// (invalid_refresh) — never to deletion proof, recovery, or revocation.
+	user, err := h.store.GetUserByID(ctx, storedToken.UserID)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			h.logger.Warn("refresh for purged account", "userID", storedToken.UserID)
+			writeError(w, http.StatusUnauthorized, "invalid_refresh", "Invalid refresh token", nil)
+			return
+		}
+		h.writeInternalError(w, r, "refresh user lookup failed", err)
+		return
+	}
+
+	// A set Apple consent cutoff ends every pre-cutoff session lineage.
+	// Only a completed fresh Apple authorization (matching current lineage)
+	// passes; pre-lineage tokens cannot bypass. Ordinary failure, no
+	// revocation, no recovery — the family is already dead.
+	if h.sessionCutByRevocation(storedToken.AuthTime, storedToken.AuthLineage, user) {
+		h.logger.Warn("refresh cut off by apple consent revocation", "userID", storedToken.UserID,
+			"deviceID", storedToken.DeviceID)
+		writeError(w, http.StatusUnauthorized, "invalid_refresh", "Invalid refresh token", nil)
+		return
+	}
+
 	// Check if revoked FIRST — before the TTL check — so a replayed revoked
 	// token always triggers per-device reuse revocation, even when its
 	// created_at is older than the refresh TTL (otherwise it would return
@@ -571,19 +870,62 @@ func (h *Handler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Look up user to get email.
+		// Re-check the account after the revocation write: a purge or consent
+		// cutoff that landed between the pre-check and this write must not
+		// mint a successor for a dead session.
 		user, err := h.store.GetUserByID(ctx, storedToken.UserID)
 		if err != nil {
+			if errors.Is(err, db.ErrNotFound) {
+				writeError(w, http.StatusUnauthorized, "invalid_refresh", "Invalid refresh token", nil)
+				return
+			}
 			h.writeInternalError(w, r, "failed to get user for token refresh", err)
+			return
+		}
+		if h.sessionCutByRevocation(storedToken.AuthTime, storedToken.AuthLineage, user) {
+			writeError(w, http.StatusUnauthorized, "invalid_refresh", "Invalid refresh token", nil)
 			return
 		}
 
 		// Generate new token pair; rotation stays within the device's family.
-		h.issueTokens(ctx, w, r, user, user.EmailVerified, storedToken.DeviceID)
+		// The successor inherits the predecessor's lineage (pre-lineage and
+		// email sessions carry empty lineage, unaffected by Apple cutoffs).
+		var authTime time.Time
+		var authLineage string
+		if storedToken.AuthTime != nil {
+			authTime = *storedToken.AuthTime
+		}
+		if storedToken.AuthLineage != nil {
+			authLineage = *storedToken.AuthLineage
+		}
+		h.issueTokens(ctx, w, r, user, storedToken.DeviceID, authTime, authLineage)
 		return
 	}
 
 	h.rotateWithRecovery(ctx, w, r, deviceID, tokenHash, storedToken, attemptHash)
+}
+
+// sessionCutByRevocation reports whether an Apple consent cutoff ends the
+// session that tokenAuth describes. No cutoff: always false (email sessions
+// and pre-revocation Apple sessions pass). Cutoff set: the session's own
+// original verified authorization time decides — a session authorized
+// before the cutoff predates revocation and is dead; a session authorized
+// at/after the event is a fresh re-authorization and survives, whatever the
+// account's current lineage is (a second post-revocation device sign-in
+// must not kill the first). Sessions without an Apple lineage (email-OTP or
+// pre-lineage tokens on a cutoff account) and lineaged sessions with no
+// recorded auth time fail closed: they cannot prove they postdate the event.
+func (h *Handler) sessionCutByRevocation(tokenAuthTime *time.Time, tokenLineage *string, user db.User) bool {
+	if user.AppleConsentCutoff == nil {
+		return false
+	}
+	if tokenLineage == nil || *tokenLineage == "" {
+		return true
+	}
+	if tokenAuthTime == nil {
+		return true
+	}
+	return tokenAuthTime.Before(*user.AppleConsentCutoff)
 }
 
 // revokeOnReuse burns the offending device's family after genuine reuse.
@@ -630,8 +972,16 @@ func (h *Handler) recoverRefresh(
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			// Unknown attempt replaying a revoked predecessor: genuine
-			// reuse — burn only that device's family.
-			h.revokeOnReuse(ctx, storedToken)
+			// reuse — burn only that device's family. The family dies
+			// with the account anyway, so a purge-time race needs no
+			// revocation side effect: skip the burn when the account is
+			// gone.
+			if _, uerr := h.store.GetUserByID(ctx, storedToken.UserID); uerr == nil {
+				h.revokeOnReuse(ctx, storedToken)
+			} else if !errors.Is(uerr, db.ErrNotFound) {
+				h.writeInternalError(w, r, "recovery user lookup failed", uerr)
+				return
+			}
 			writeError(w, http.StatusUnauthorized, "token_reuse", "Token has been revoked. Sign in again.", nil)
 			return
 		}
@@ -728,28 +1078,42 @@ func (h *Handler) serveRecovery(
 		return
 	}
 
+	// The account must still exist and the cutoff must not have passed
+	// since rotation: no valid successor session for a deleted account, and
+	// a post-rotation cutoff ends recovery without revocation or renewal.
 	user, err := h.store.GetUserByID(ctx, storedToken.UserID)
 	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			writeError(w, http.StatusUnauthorized, "invalid_refresh", "Invalid refresh token", nil)
+			return
+		}
 		h.writeInternalError(w, r, "failed to get user for token recovery", err)
 		return
 	}
+	if h.sessionCutByRevocation(storedToken.AuthTime, storedToken.AuthLineage, user) ||
+		h.sessionCutByRevocation(successor.AuthTime, successor.AuthLineage, user) {
+		writeError(w, http.StatusUnauthorized, "invalid_refresh", "Invalid refresh token", nil)
+		return
+	}
 
-	accessToken, err := h.tokenService.CreateAccessToken(user.ID, user.Email)
+	// The access token inherits the successor's lineage so the cutoff keeps
+	// applying to recovered sessions.
+	var authTime time.Time
+	var authLineage string
+	if successor.AuthTime != nil {
+		authTime = *successor.AuthTime
+	}
+	if successor.AuthLineage != nil {
+		authLineage = *successor.AuthLineage
+	}
+	accessToken, err := h.tokenService.CreateAccessTokenWithAuth(user.ID, user.Email, authTime, authLineage)
 	if err != nil {
 		h.writeInternalError(w, r, "failed to create access token", err)
 		return
 	}
 
 	h.logger.Info("refresh attempt recovered", "userID", storedToken.UserID, "deviceID", storedToken.DeviceID)
-	writeJSON(w, http.StatusOK, authResponse{
-		AccessToken:  accessToken,
-		RefreshToken: string(rawSuccessor),
-		User: userResponse{
-			ID:            user.ID,
-			Email:         user.Email,
-			EmailVerified: user.EmailVerified,
-		},
-	})
+	h.writeAuthResponse(w, r, user, accessToken, string(rawSuccessor))
 }
 
 // rotateWithRecovery performs the first rotation of a logical attempt: it
@@ -820,6 +1184,13 @@ func (h *Handler) rotateWithRecovery(
 		PruneConsumedBefore: time.Now().Add(-h.tokenService.RefreshTokenTTL),
 	})
 	if err != nil {
+		if errors.Is(err, db.ErrUserMissing) {
+			// A purge removed the account between the pre-check and the
+			// rotation write: ordinary authentication failure, no
+			// revocation side effects, nothing minted.
+			writeError(w, http.StatusUnauthorized, "invalid_refresh", "Invalid refresh token", nil)
+			return
+		}
 		if errors.Is(err, db.ErrAttemptExists) {
 			// A concurrent duplicate accepted the attempt first: serve
 			// the winner's successor. Classified exactly like the
@@ -879,27 +1250,41 @@ func (h *Handler) rotateWithRecovery(
 		return
 	}
 
+	// Re-check the account after rotation: a purge or cutoff that landed
+	// mid-rotation must not issue credentials for a dead session. The
+	// rotation itself already committed; the successor row is harmless
+	// (revoked-family semantics reject it on next use).
 	user, err := h.store.GetUserByID(ctx, storedToken.UserID)
 	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			writeError(w, http.StatusUnauthorized, "invalid_refresh", "Invalid refresh token", nil)
+			return
+		}
 		h.writeInternalError(w, r, "failed to get user for token refresh", err)
 		return
 	}
+	if h.sessionCutByRevocation(storedToken.AuthTime, storedToken.AuthLineage, user) {
+		writeError(w, http.StatusUnauthorized, "invalid_refresh", "Invalid refresh token", nil)
+		return
+	}
 
-	accessToken, err := h.tokenService.CreateAccessToken(user.ID, user.Email)
+	// The new access token inherits the predecessor's lineage (copied to
+	// the successor in-transaction), so the cutoff keeps applying.
+	var authTime time.Time
+	var authLineage string
+	if storedToken.AuthTime != nil {
+		authTime = *storedToken.AuthTime
+	}
+	if storedToken.AuthLineage != nil {
+		authLineage = *storedToken.AuthLineage
+	}
+	accessToken, err := h.tokenService.CreateAccessTokenWithAuth(user.ID, user.Email, authTime, authLineage)
 	if err != nil {
 		h.writeInternalError(w, r, "failed to create access token", err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, authResponse{
-		AccessToken:  accessToken,
-		RefreshToken: rawSuccessor,
-		User: userResponse{
-			ID:            user.ID,
-			Email:         user.Email,
-			EmailVerified: user.EmailVerified,
-		},
-	})
+	h.writeAuthResponse(w, r, user, accessToken, rawSuccessor)
 }
 
 // recoveryAADFor binds a sealed successor to its account, device,
@@ -941,8 +1326,16 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// meResponse is the GET /auth/me envelope: the profile, the current
+// account-status credential, and its expiry.
+type meResponse struct {
+	User                    userResponse `json:"user"`
+	AccountStatusCredential string       `json:"account_status_credential,omitempty"`
+	AccountStatusExpiresAt  string       `json:"account_status_expires_at,omitempty"`
+}
+
 // Me handles GET /api/v1/auth/me.
-// It returns the authenticated user profile.
+// It returns the authenticated user profile with deletion metadata.
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -954,17 +1347,37 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.store.GetUserByID(ctx, userID)
 	if err != nil {
+		// The middleware normally rejects purged accounts first; this maps
+		// the residual race to an ordinary authentication failure, never a
+		// spurious internal error.
+		if errors.Is(err, db.ErrNotFound) {
+			writeError(w, http.StatusUnauthorized, "unauthorized", "Invalid or expired access token", nil)
+			return
+		}
 		h.writeInternalError(w, r, "failed to get user for /me", err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]userResponse{
-		"user": {
-			ID:            user.ID,
-			Email:         user.Email,
-			EmailVerified: user.EmailVerified,
+	hasApple, required := h.deletionReadiness(ctx, user)
+	resp := meResponse{
+		User: userResponse{
+			ID:                                 user.ID,
+			Email:                              user.Email,
+			EmailVerified:                      user.EmailVerified,
+			HasAppleIdentity:                   hasApple,
+			AppleDeletionAuthorizationRequired: required,
 		},
-	})
+	}
+	if h.statusService != nil {
+		cred, exp, err := h.statusService.Mint(user.ID)
+		if err != nil {
+			h.writeInternalError(w, r, "failed to mint status credential", err)
+			return
+		}
+		resp.AccountStatusCredential = cred
+		resp.AccountStatusExpiresAt = exp.UTC().Format(time.RFC3339)
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // extractIP returns the direct TCP peer address from r.RemoteAddr, stripping

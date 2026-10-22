@@ -36,9 +36,14 @@ func newParityStore(t *testing.T) *PostgresStore {
 	}
 
 	// Truncate for isolation (migrations run once per DB via schema_migrations).
+	// The account-deletion tables carry cross-test state (the revocation
+	// outbox has no FK to users, so users CASCADE never clears it; a
+	// leftover job digest would fence the next test's signup), so they are
+	// truncated explicitly.
 	if _, err := store.DB().Exec(ctx, `
 		TRUNCATE entry_categories, entries, categories,
-		         refresh_recovery_receipts, refresh_tokens, otp_codes, users RESTART IDENTITY CASCADE
+		         refresh_recovery_receipts, refresh_tokens, otp_codes, users,
+		         apple_vault, apple_revocation_jobs, apple_notifications_seen RESTART IDENTITY CASCADE
 	`); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}

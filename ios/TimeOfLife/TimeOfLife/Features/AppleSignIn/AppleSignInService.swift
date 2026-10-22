@@ -22,16 +22,40 @@ enum AppleSignInError: Error, Equatable {
 }
 
 /// The Apple credential material we forward to the backend. Only `identityToken`
-/// is sent to `/auth/apple`; `user` and `email` are kept for future use (e.g.
-/// credential-state checks). Apple delivers `email`/`fullName` only on the
-/// first authorization, so `email` is optional.
+/// (and `authorizationCode` when present) is sent — `/auth/apple` on sign-in,
+/// `/auth/apple/deletion-credential` during explicit deletion for Apple
+/// accounts lacking a stored revocable credential. `user` is Apple's stable
+/// identifier (`sub`): it is preserved separately from the Lifio account UUID
+/// because `getCredentialState(forUserID:)` requires the native Apple user,
+/// never the Lifio UUID. `email` is kept for future use (Apple delivers
+/// `email`/`fullName` only on the first authorization, so it is optional).
+/// `authorizationCode` is Apple's single-use Data proof, UTF-8 decoded like
+/// the identity token; the server exchanges it for a revocable credential
+/// bound to the same Apple subject/audience. Official docs: AuthenticationServices
+/// `ASAuthorizationAppleIDCredential` (identityToken, authorizationCode, user),
+/// `ASAuthorizationAppleIDProvider.credentialState(forUserID:)` (async, iOS 13+),
+/// `credentialRevokedNotification`, `ASAuthorizationError.Code.canceled`
+/// (developer.apple.com/tutorials/data/documentation/authenticationservices/,
+/// pin iOS 18 SDK via Xcode 16+; Account.md/INTERACTIONS.md carry the full list).
 struct AppleCredential: Sendable, Equatable {
     /// The Apple identity-token JWT (RS256), UTF-8 decoded from `Data`.
     let identityToken: String
     /// Apple's stable user identifier (`sub`). Equals the JWT `sub` claim.
+    /// Required for native credential-state observation — never the Lifio UUID.
     let user: String
     /// The user's email (real or `*@privaterelay.appleid.com`). First auth only.
     let email: String?
+    /// Apple's single-use authorization code, UTF-8 decoded from `Data`.
+    /// Short-lived proof the server exchanges for a revocable credential.
+    /// Nil when Apple omits it (older flows) or in tests that predate it.
+    let authorizationCode: String?
+
+    init(identityToken: String, user: String, email: String? = nil, authorizationCode: String? = nil) {
+        self.identityToken = identityToken
+        self.user = user
+        self.email = email
+        self.authorizationCode = authorizationCode
+    }
 }
 
 /// Indirection over `ASAuthorizationAppleIDProvider` so the flow is testable
@@ -81,7 +105,18 @@ extension AppleIDAuthorizationProvider: ASAuthorizationControllerDelegate {
             resume(.failure(AppleSignInError.missingIdentityToken))
             return
         }
-        resume(.success(AppleCredential(identityToken: token, user: cred.user, email: cred.email)))
+        // The authorization code is a separate short-lived Data proof
+        // (official docs: `authorizationCode` on `ASAuthorizationAppleIDCredential`,
+        // UTF-8 decoded like the identity token). It may be absent on older
+        // flows — the backend keeps identity-token-only compatibility then.
+        let code: String?
+        if let codeData = cred.authorizationCode {
+            let decoded = String(data: codeData, encoding: .utf8)
+            code = (decoded?.isEmpty == false) ? decoded : nil
+        } else {
+            code = nil
+        }
+        resume(.success(AppleCredential(identityToken: token, user: cred.user, email: cred.email, authorizationCode: code)))
     }
 
     func authorizationController(

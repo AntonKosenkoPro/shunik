@@ -2037,7 +2037,7 @@ actor LocalStore {
             return
         }
         do {
-            try FileManager.default.removeItem(at: url)
+            try Self.removeDatabaseFiles(at: url)
             lastBoundURL = nil
         } catch let error as NSError
             where error.domain == NSCocoaErrorDomain && error.code == NSFileNoSuchFileError {
@@ -2048,6 +2048,79 @@ actor LocalStore {
             lastBoundURL = url
             throw error
         }
+    }
+
+    /// Deletes the database file of the EXPLICITLY identified account —
+    /// active or dormant — with its SQLite sidecars, and never touches any
+    /// other account's file or the stable device identity
+    /// (account-deletion spec: confirmed cleanup of exactly one UUID).
+    ///
+    /// When the target is the ACTIVE account, the queue is released first
+    /// (the caller's own shared handle must be gone before the exclusive
+    /// cross-process erase) and the store ends unbound — the file must not
+    /// be reopened or recreated afterwards. When the target is dormant, the
+    /// active store is left completely alone. A missing file (and missing
+    /// sidecars) is success. Failures propagate for a caller-side retry;
+    /// the active retry slot is recorded only when the target was active —
+    /// a dormant-erase failure never disturbs it.
+    ///
+    /// - Parameter baseURL: overrides the App Group container (tests pin a
+    ///   throwaway directory; production uses the shared container).
+    func eraseAccount(userID: String, in baseURL: URL? = nil) throws {
+        let sanitized = try Self.sanitizedUserID(userID)
+        let url = Self.databaseURL(userID: sanitized, in: baseURL)
+        // Capture whether the target is active BEFORE releasing anything: a
+        // dormant-erase failure must leave the active retry slot untouched,
+        // while an active-erase failure records this URL for retry.
+        let wasActive = (boundUserID == sanitized)
+        if wasActive {
+            // Active target: release our own handle before the erase.
+            dbQueue = nil
+            boundURL = nil
+            boundUserID = nil
+            undoPushInFlight = false
+        }
+        do {
+            try Self.removeDatabaseFiles(at: url)
+            if lastBoundURL == url { lastBoundURL = nil }
+        } catch let error as NSError
+            where error.domain == NSCocoaErrorDomain && error.code == NSFileNoSuchFileError {
+            // Already gone: the erase goal is met.
+            if lastBoundURL == url { lastBoundURL = nil }
+        } catch {
+            // Active target: the store is already unbound (a retry still
+            // never erases under a live writer), so record the URL for
+            // retry. Dormant target: leave the active retry slot alone.
+            if wasActive { lastBoundURL = url }
+            throw error
+        }
+    }
+
+    /// Removes a database file with its SQLite sidecars (`-wal`, `-shm`,
+    /// `-journal`). The main file may be absent while sidecars linger (or
+    /// vice versa) after a crash — every missing piece is success, and only
+    /// a genuine removal failure throws.
+    private static func removeDatabaseFiles(at url: URL) throws {
+        let fileManager = FileManager.default
+        // SQLite sidecars use dash-style names ("lifio_X.db-wal"), not
+        // dot extensions — build them explicitly from the full path.
+        let sidecars = ["-wal", "-shm", "-journal"].map { suffix in
+            URL(fileURLWithPath: url.path + suffix)
+        }
+        var firstError: Error?
+        for candidate in [url] + sidecars {
+            do {
+                try fileManager.removeItem(at: candidate)
+            } catch let error as NSError
+                where error.domain == NSCocoaErrorDomain && error.code == NSFileNoSuchFileError {
+                continue
+            } catch {
+                // Keep the first genuine failure but continue with the
+                // remaining pieces so a retry has less left to do.
+                if firstError == nil { firstError = error }
+            }
+        }
+        if let firstError { throw firstError }
     }
 
     // MARK: - Internals

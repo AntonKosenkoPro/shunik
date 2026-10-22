@@ -16,6 +16,18 @@ protocol KeychainStoring: AnyObject, Sendable {
     func loadSnapshot() async -> Result<CredentialSnapshot?, KeychainError>
     /// Best-effort removal (sign-out / confirmed revocation).
     func removeSnapshot() async
+    /// Persists one JSON-encoded account-deletion artifact (status-credential
+    /// map, pending intent, or cleanup markers) with one status-checked
+    /// write. A failing write preserves the last usable value.
+    func saveDeletionJSON(_ json: String, for key: KeychainKey) async -> Result<Void, KeychainError>
+    /// Loads one JSON-encoded account-deletion artifact. `.success(nil)`
+    /// means absent; `.failure` means storage is temporarily unreadable —
+    /// callers must distinguish the two (absent = nothing scheduled,
+    /// unavailable = keep retry intent, never wipe).
+    func loadDeletionJSON(for key: KeychainKey) async -> Result<String?, KeychainError>
+    /// Best-effort removal of one account-deletion artifact (explicit
+    /// sign-out/local erase or completed confirmed cleanup).
+    func removeDeletionJSON(for key: KeychainKey) async
 }
 
 /// Stable Keychain keys. Never put user-facing data here — secrets only.
@@ -25,6 +37,24 @@ enum KeychainKey: String, Sendable {
     /// Stable per-device identifier sent as `X-Device-Id` (device-sessions
     /// spec). Not a secret, but it must survive reinstalls like one.
     case deviceId = "com.timeoflife.device_id"
+    /// Native Apple user identifier (`ASAuthorizationAppleIDCredential.user`)
+    /// for the current Apple-authenticated session. Stored separately from
+    /// the Lifio account UUID: `getCredentialState(forUserID:)` requires the
+    /// native Apple user, never the Lifio UUID. Cleared on sign-out; absent
+    /// means the current session is not Apple-authenticated on this device.
+    case appleUserId = "com.timeoflife.apple_user_id"
+    /// Account-keyed status credentials (JSON-encoded
+    /// `[accountID: StoredStatusCredential]`). Never a login/refresh
+    /// snapshot: its only power is the read-only account-status check.
+    case accountStatusCredentials = "com.timeoflife.account_status_credentials"
+    /// Pending deletion intent (JSON-encoded `AccountDeletionIntent?`).
+    /// Persisted BEFORE the DELETE send so an ambiguous outcome stays
+    /// recoverable across restart.
+    case accountDeletionIntent = "com.timeoflife.account_deletion_intent"
+    /// Durable cleanup markers (JSON-encoded `[accountID]`). Confirmed
+    /// cleanup scheduled before auth artifacts are cleared; removed only
+    /// after the exact UUID's local cleanup succeeds.
+    case accountCleanupMarkers = "com.timeoflife.account_cleanup_markers"
 }
 
 /// One durable credential snapshot: the complete token pair plus the pending

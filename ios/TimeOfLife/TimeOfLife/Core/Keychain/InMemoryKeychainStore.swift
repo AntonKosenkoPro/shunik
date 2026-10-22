@@ -14,6 +14,27 @@ actor InMemoryKeychainStore: KeychainStoring {
     private(set) var failNextSaves = 0
     /// When set, `loadSnapshot` fails with this error instead of reading.
     private(set) var loadSnapshotError: KeychainError?
+    /// JSON artifact storage for the account-deletion lifecycle
+    /// (status-credential map, pending intent, cleanup markers).
+    private var deletionJSONStorage: [KeychainKey: String] = [:]
+    /// When set, `saveDeletionJSON` fails with this error instead of writing.
+    private var deletionJSONError: KeychainError?
+    /// When set, `loadDeletionJSON` fails with this error instead of reading.
+    private var deletionJSONLoadError: KeychainError?
+    /// Number of upcoming `saveDeletionJSON` calls that fail with
+    /// `deletionJSONError` (0 = never fail). Independent from the snapshot
+    /// `failNextSaves` counter: deletion artifacts and login snapshots fail
+    /// on separate schedules.
+    private var failNextDeletionJSONSaves = 0
+    /// When true, `saveDeletionJSON` suspends before writing until
+    /// `releaseDeletionJSONGate()`. Independent from the snapshot gate: a
+    /// held snapshot gate must never deadlock a deletion write (and vice
+    /// versa). Tests poll `deletionJSONGateEntered` to know the
+    /// interleaving point is reached (never sleep-and-hope).
+    var deletionJSONGateHeld = false
+    private var deletionJSONWaiters: [CheckedContinuation<Void, Never>] = []
+    /// Set when a deletion-JSON save first suspends on its gate.
+    private(set) var deletionJSONGateEntered = false
     /// When true, `saveSnapshot` suspends before writing until
     /// `releaseSaveGate()`. Lets tests interleave sign-out between a
     /// completed refresh response and its durable publish.
@@ -37,6 +58,41 @@ actor InMemoryKeychainStore: KeychainStoring {
 
     func setLoadSnapshotError(_ error: KeychainError?) {
         loadSnapshotError = error
+    }
+
+    /// Fault injection for the account-deletion JSON artifacts (storage
+    /// failure before DELETE, Keychain write failure during cleanup, and
+    /// unavailable-vs-absent resolution tests). `failNextSaves` bounds the
+    /// failures (0 = never fail); the counter is independent from the
+    /// snapshot one so the two records fail on separate schedules.
+    func setDeletionJSONSaveError(_ error: KeychainError?, failNextSaves count: Int = 0) {
+        deletionJSONError = error
+        failNextDeletionJSONSaves = count
+    }
+
+    func setDeletionJSONLoadError(_ error: KeychainError?) {
+        deletionJSONLoadError = error
+    }
+
+    /// Arms or disarms the deletion-JSON save gate (cross-actor mutation of
+    /// the flag above is not allowed, so tests go through this). Independent
+    /// from the snapshot gate: holding one never blocks the other.
+    func setDeletionJSONGateHeld(_ held: Bool) {
+        deletionJSONGateHeld = held
+    }
+
+    /// Resumes every `saveDeletionJSON` call suspended on its gate.
+    func releaseDeletionJSONGate() {
+        deletionJSONGateHeld = false
+        for waiter in deletionJSONWaiters { waiter.resume() }
+        deletionJSONWaiters = []
+    }
+
+    private func waitForDeletionJSONGateRelease() async {
+        await withCheckedContinuation { continuation in
+            deletionJSONGateEntered = true
+            deletionJSONWaiters.append(continuation)
+        }
     }
 
     /// Arms or disarms the save gate (cross-actor mutation of the flag
@@ -92,5 +148,28 @@ actor InMemoryKeychainStore: KeychainStoring {
 
     func removeSnapshot() async {
         snapshotStorage = nil
+    }
+
+    func saveDeletionJSON(_ json: String, for key: KeychainKey) async -> Result<Void, KeychainError> {
+        if deletionJSONGateHeld {
+            await waitForDeletionJSONGateRelease()
+        }
+        if failNextDeletionJSONSaves > 0, let error = deletionJSONError {
+            failNextDeletionJSONSaves -= 1
+            return .failure(error)
+        }
+        deletionJSONStorage[key] = json
+        return .success(())
+    }
+
+    func loadDeletionJSON(for key: KeychainKey) async -> Result<String?, KeychainError> {
+        if let error = deletionJSONLoadError {
+            return .failure(error)
+        }
+        return .success(deletionJSONStorage[key])
+    }
+
+    func removeDeletionJSON(for key: KeychainKey) async {
+        deletionJSONStorage.removeValue(forKey: key)
     }
 }

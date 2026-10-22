@@ -26,15 +26,22 @@ final class WelcomeViewModel: ObservableObject {
     }
 
     /// Initiates Sign in with Apple. Runs the Apple authorization, then exchanges
-    /// the identity token for a session via `AuthService`. Cancellation is silent
-    /// (no error banner); other failures surface `appleSignIn.error`.
+    /// the identity token (plus the short-lived authorization code when Apple
+    /// supplied one) for a session via `AuthService`. The native Apple user id
+    /// travels separately for credential-state observation — never the Lifio
+    /// UUID. Cancellation is silent (no error banner); other failures surface
+    /// `appleSignIn.error`.
     func signInWithApple() async {
         isLoading = true
         errorMessage = nil
 
         do {
             let credential = try await appleService.signIn()
-            try await service.signInWithApple(identityToken: credential.identityToken)
+            try await service.signInWithApple(
+                identityToken: credential.identityToken,
+                appleUserID: credential.user,
+                authorizationCode: credential.authorizationCode
+            )
         } catch AppleSignInError.canceled {
             // User dismissed the Apple sheet — no error.
         } catch let error as APIError {

@@ -1,6 +1,7 @@
 // swiftlint:disable file_length
 import Foundation
 import Combine
+import OSLog
 
 /// Orchestrates `AuthRepository` + `KeychainStoring` + `SessionCache` +
 /// `SessionStore`. Owns the token lifecycle: writes Keychain + cache on
@@ -54,19 +55,27 @@ final class AuthService: ObservableObject {
     /// Builds unpredictable refresh-attempt ids. Injected so tests can mint
     /// deterministic ids when needed.
     private let attemptIDGenerator: @Sendable () -> String
+    /// Durable account-deletion artifacts (status credentials, pending
+    /// intent, cleanup markers) in Keychain items separate from the login
+    /// snapshot. Shared with the deletion lifecycle coordinator.
+    let deletionStorage: AccountDeletionStorage
+
+    private static let logger = Logger(subsystem: "com.antonkosenko.timeoflifeapp", category: "auth")
 
     init(
         repository: AuthRepository,
         keychain: KeychainStoring,
         cache: SessionCache,
         sessionStore: SessionStore,
-        attemptIDGenerator: @escaping @Sendable () -> String = { RefreshAttempt.newID() }
+        attemptIDGenerator: @escaping @Sendable () -> String = { RefreshAttempt.newID() },
+        deletionStorage: AccountDeletionStorage? = nil
     ) {
         self.repository = repository
         self.keychain = keychain
         self.cache = cache
         self.sessionStore = sessionStore
         self.attemptIDGenerator = attemptIDGenerator
+        self.deletionStorage = deletionStorage ?? AccountDeletionStorage(keychain: keychain)
     }
 
     // MARK: - Public API (called by ViewModels / RootView)
@@ -88,13 +97,25 @@ final class AuthService: ObservableObject {
         let normalized = AuthValidator.normalize(email: email)
         let session = try await repository.verifyOtp(email: normalized, code: code)
         try await persistSignIn(session: session)
+        // Email-OTP sessions are never Apple-authenticated: clear any stale
+        // native Apple user id so credential-state observation stays scoped
+        // to the current authentication method.
+        await keychain.remove(key: .appleUserId)
     }
 
-    /// `POST /auth/apple`. Exchanges Apple's identity token for a session and
-    /// persists it (same path as `verifyOtp` → flips `SessionStore` → signed-in).
-    func signInWithApple(identityToken: String) async throws {
-        let session = try await repository.appleSignIn(identityToken: identityToken)
+    /// `POST /auth/apple`. Exchanges Apple's identity (plus the short-lived
+    /// authorization code when Apple supplied one) for a session and persists
+    /// it (same path as `verifyOtp` → flips `SessionStore` → signed-in). The
+    /// native Apple user id is preserved separately from the Lifio account
+    /// UUID: `getCredentialState(forUserID:)` requires the native Apple user,
+    /// never the Lifio UUID. Email OTP sign-in clears any stale Apple user
+    /// id, so native observation stays scoped to the current auth method.
+    func signInWithApple(identityToken: String, appleUserID: String?, authorizationCode: String? = nil) async throws {
+        let session = try await repository.appleSignIn(identityToken: identityToken, authorizationCode: authorizationCode)
         try await persistSignIn(session: session)
+        if let appleUserID, !appleUserID.isEmpty {
+            await keychain.setString(appleUserID, for: .appleUserId)
+        }
     }
 
     /// Reads snapshot + cache; if a refresh token exists, attempts `/me`.
@@ -149,7 +170,8 @@ final class AuthService: ObservableObject {
         // - 401 → the single owned refresh already ran inside APIClient (see
         //   performRefresh); clear only when it conclusively failed.
         do {
-            let user = try await repository.me()
+            let response = try await repository.me()
+            let user = response.user
             let updated = CachedSession(
                 id: user.id,
                 email: user.email,
@@ -157,6 +179,10 @@ final class AuthService: ObservableObject {
             )
             cache.save(updated)
             sessionStore.setSignedIn(updated)
+            // Renew the other-device deletion evidence while authenticated
+            // (best-effort: a failed write keeps the previous credential and
+            // never signs out or wipes).
+            saveStatusEvidence(response: response, accountID: user.id)
         } catch APIError.unauthorized, APIError.authenticationRejected {
             switch await keychain.loadSnapshot() {
             case .success(let current) where current?.refreshToken != entryRefresh:
@@ -206,7 +232,18 @@ final class AuthService: ObservableObject {
     /// Logout. Cancels any in-flight refresh (its completion is dropped by
     /// the generation guard), then clears local state always; best-effort
     /// server revoke.
+    ///
+    /// Explicit sign-out also clears this account's deletion monitoring state
+    /// (status credential, pending intent, native Apple user id): monitoring
+    /// belongs to the signed-in account, and a fresh sign-in re-establishes
+    /// it. Generic session locks (`clearLocal` from revocation/exhaustion)
+    /// deliberately RETAIN monitoring so another launch can resolve a
+    /// pending check.
     func logout() async {
+        let signedOutAccountID: String? = {
+            if case let .signedIn(current) = sessionStore.state { return current.id }
+            return nil
+        }()
         refreshTask?.cancel()
         do {
             try await repository.logout()
@@ -214,6 +251,14 @@ final class AuthService: ObservableObject {
             // Best-effort: ignore network/401 — we still clear local state.
         }
         await clearLocal()
+        if let signedOutAccountID {
+            await deletionStorage.removeStatusCredential(accountID: signedOutAccountID)
+            if case .success(let intent) = await deletionStorage.loadIntent(),
+               intent?.accountID == signedOutAccountID {
+                await deletionStorage.clearIntent()
+            }
+            await keychain.remove(key: .appleUserId)
+        }
     }
 
     // MARK: - Refresh lifecycle
@@ -364,6 +409,9 @@ final class AuthService: ObservableObject {
             )
             cache.save(cached)
             sessionStore.setSignedIn(cached)
+            // Refreshing renews the other-device deletion evidence
+            // (best-effort, same discipline as sign-in).
+            saveStatusEvidence(session: session)
         }
         return session.accessToken
     }
@@ -372,7 +420,9 @@ final class AuthService: ObservableObject {
 
     /// Sign-in persistence (verify / Apple): fails closed — nothing is
     /// published (no cache write, no signed-in flip) until the complete
-    /// snapshot is durably saved.
+    /// snapshot is durably saved. The fresh status credential is stored
+    /// separately afterwards (best-effort: it only powers future deletion
+    /// checks and never gates the sign-in itself).
     private func persistSignIn(session: AuthSession) async throws {
         sessionGeneration &+= 1
         let snapshot = CredentialSnapshot(
@@ -392,8 +442,42 @@ final class AuthService: ObservableObject {
             )
             cache.save(cached)
             sessionStore.setSignedIn(cached)
+            saveStatusEvidence(session: session)
         case .failure(let error):
             throw APIError.storage(underlying: error.localizedDescription)
+        }
+    }
+
+    /// Best-effort persist of the status credential from a sign-in or refresh
+    /// session. A failed write keeps any previous credential and never fails
+    /// the sign-in/refresh: without evidence the client preserves files
+    /// (lock-not-wipe) instead of confirming deletion.
+    private func saveStatusEvidence(session: AuthSession) {
+        guard let credential = session.accountStatusCredential, !credential.isEmpty else { return }
+        let storage = deletionStorage
+        let accountID = session.user.id
+        let expiresAt = session.accountStatusExpiresAt
+        Task {
+            let result = await storage.saveStatusCredential(credential, expiresAt: expiresAt, accountID: accountID)
+            if case .failure(let error) = result {
+                Self.logger.error("status credential persist failed: \(String(describing: error), privacy: .public)")
+            }
+        }
+    }
+
+    /// Best-effort persist of the status credential from `/me`.
+    private func saveStatusEvidence(response: MeResponse, accountID: String) {
+        guard let credential = response.accountStatusCredential, !credential.isEmpty else { return }
+        let storage = deletionStorage
+        Task {
+            let result = await storage.saveStatusCredential(
+                credential,
+                expiresAt: response.accountStatusExpiresAt,
+                accountID: accountID
+            )
+            if case .failure(let error) = result {
+                Self.logger.error("status credential persist failed: \(String(describing: error), privacy: .public)")
+            }
         }
     }
 

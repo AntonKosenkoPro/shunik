@@ -37,7 +37,7 @@ struct WelcomeViewModelTests {
 
         await vm.signInWithApple()
 
-        #expect(repo.calls == [.appleSignIn(identityToken: "id-token")])
+        #expect(repo.calls == [.appleSignIn(identityToken: "id-token", authorizationCode: nil)])
         #expect(vm.errorMessage == nil)
         #expect(vm.isLoading == false)
         if case .signedIn(let session) = store.state {
@@ -56,7 +56,7 @@ struct WelcomeViewModelTests {
 
         // The view disables the Apple button when offline, so the VM no longer
         // guards connectivity itself and should proceed with the backend call.
-        #expect(repo.calls == [.appleSignIn(identityToken: "id-token")])
+        #expect(repo.calls == [.appleSignIn(identityToken: "id-token", authorizationCode: nil)])
         #expect(vm.errorMessage == nil)
     }
 

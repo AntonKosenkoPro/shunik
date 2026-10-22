@@ -1,6 +1,11 @@
 package config
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
 	"testing"
 	"time"
 )
@@ -15,6 +20,8 @@ func TestConfig_Load_Branches(t *testing.T) {
 		"EMAIL_BACKEND": "console",
 		// 32-byte test key, hex-encoded (`openssl rand -hex 32` shape).
 		"REFRESH_RECOVERY_KEYS": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+		// Status secret: distinct from JWT_SECRET, same length class.
+		"ACCOUNT_STATUS_SECRET": "status-secret-key-at-least-32-bytes!",
 	}
 
 	setRequired := func(t *testing.T) {
@@ -101,7 +108,7 @@ func TestConfig_Load_Branches(t *testing.T) {
 	})
 
 	t.Run("missing required", func(t *testing.T) {
-		for _, missing := range []string{"DATABASE_URL", "JWT_SECRET", "EMAIL_BACKEND", "REFRESH_RECOVERY_KEYS"} {
+		for _, missing := range []string{"DATABASE_URL", "JWT_SECRET", "EMAIL_BACKEND", "REFRESH_RECOVERY_KEYS", "ACCOUNT_STATUS_SECRET"} {
 			setRequired(t)
 			t.Setenv(missing, "")
 			// godotenv.Load does not override set (even empty) vars, so the
@@ -144,6 +151,89 @@ func TestConfig_Load_Branches(t *testing.T) {
 		t.Setenv("JWT_SECRET", "too-short")
 		if _, err := Load(); err == nil {
 			t.Error("expected error for short JWT_SECRET, got nil")
+		}
+	})
+
+	t.Run("apple all or nothing", func(t *testing.T) {
+		p8 := testApplePrivateKey(t)
+		full := map[string]string{
+			"APPLE_CLIENT_ID":   "com.example.app",
+			"APPLE_TEAM_ID":     "TEAMID1234",
+			"APPLE_KEY_ID":      "KEYID12345",
+			"APPLE_PRIVATE_KEY": p8,
+			"APPLE_TOKEN_KEYS":  "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+		}
+		setAll := func(t *testing.T, vars map[string]string) {
+			t.Helper()
+			setRequired(t)
+			for _, name := range []string{"APPLE_CLIENT_ID", "APPLE_TEAM_ID", "APPLE_KEY_ID", "APPLE_PRIVATE_KEY", "APPLE_TOKEN_KEYS", "APPLE_REDIRECT_URI"} {
+				t.Setenv(name, "")
+			}
+			for k, v := range vars {
+				t.Setenv(k, v)
+			}
+		}
+		// Each single variable alone must fail (partial config fails fast).
+		for name, val := range full {
+			setAll(t, map[string]string{name: val})
+			if _, err := Load(); err == nil {
+				t.Errorf("expected error for partial apple config (%s only), got nil", name)
+			}
+		}
+		// APPLE_REDIRECT_URI alone must NOT enable the all-or-nothing set:
+		// it stays optional even though it is an APPLE_* variable.
+		setAll(t, map[string]string{"APPLE_REDIRECT_URI": "https://example.com/callback"})
+		redirectCfg, redirectErr := Load()
+		if redirectErr != nil {
+			t.Errorf("redirect-only apple config should keep Apple disabled, got error: %v", redirectErr)
+		} else if redirectCfg.AppleClientID != "" || len(redirectCfg.AppleTokenKeys) != 0 || redirectCfg.AppleRedirectURI != "https://example.com/callback" {
+			t.Errorf("redirect-only apple config misapplied: %+v", redirectCfg)
+		}
+		// The redirect URI is optional: the full five pass with or without it.
+		setAll(t, full)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("full apple config: %v", err)
+		}
+		if cfg.AppleClientID != "com.example.app" || cfg.AppleRedirectURI != "" || len(cfg.AppleTokenKeys) != 1 {
+			t.Errorf("apple config not applied: %+v", cfg)
+		}
+		vars := map[string]string{}
+		for k, v := range full {
+			vars[k] = v
+		}
+		vars["APPLE_REDIRECT_URI"] = "https://example.com/callback"
+		setAll(t, vars)
+		cfg, err = Load()
+		if err != nil {
+			t.Fatalf("full apple config with redirect: %v", err)
+		}
+		if cfg.AppleRedirectURI != "https://example.com/callback" {
+			t.Errorf("redirect URI not applied, got %q", cfg.AppleRedirectURI)
+		}
+		// Malformed key material fails fast without logging the key.
+		setAll(t, full)
+		t.Setenv("APPLE_PRIVATE_KEY", "not-a-pem")
+		if _, err := Load(); err == nil {
+			t.Error("expected error for malformed APPLE_PRIVATE_KEY, got nil")
+		}
+		setAll(t, full)
+		t.Setenv("APPLE_TOKEN_KEYS", "too-short")
+		if _, err := Load(); err == nil {
+			t.Error("expected error for malformed APPLE_TOKEN_KEYS, got nil")
+		}
+	})
+
+	t.Run("status secret rules", func(t *testing.T) {
+		setRequired(t)
+		t.Setenv("ACCOUNT_STATUS_SECRET", "too-short")
+		if _, err := Load(); err == nil {
+			t.Error("expected error for short ACCOUNT_STATUS_SECRET, got nil")
+		}
+		setRequired(t)
+		t.Setenv("ACCOUNT_STATUS_SECRET", "test-secret-key-at-least-32-bytes!!")
+		if _, err := Load(); err == nil {
+			t.Error("expected error for ACCOUNT_STATUS_SECRET equal to JWT_SECRET, got nil")
 		}
 	})
 
@@ -190,6 +280,21 @@ func TestParseCORSAllowedOrigins(t *testing.T) {
 	if got := ParseCORSAllowedOrigins(" , ,"); len(got) != 0 {
 		t.Errorf("expected empty for blank entries, got %+v", got)
 	}
+}
+
+// testApplePrivateKey generates a fresh P-256 .p8 for Apple-config tests.
+// The key is minted per test (never a fixture, never committed).
+func testApplePrivateKey(t *testing.T) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate test apple key: %v", err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatalf("marshal test apple key: %v", err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
 }
 
 func TestParseRecoveryKeys(t *testing.T) {

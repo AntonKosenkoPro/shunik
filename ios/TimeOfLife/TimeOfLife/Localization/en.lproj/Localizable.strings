@@ -27,6 +27,32 @@
 // Sign out confirmation
 "signOut.cancel" = "Cancel";
 
+// Account (Profile → Account; app-shell + account-deletion specs)
+"account.title" = "Account";
+"account.identitySection" = "Account";
+"account.identityFooter" = "Signing out keeps this device's data. Signing back in restores it.";
+"account.thisDeviceSection" = "This Device";
+"account.thisDeviceFooter" = "Removes only this account's data from this device and signs you out. Synced data stays on the relay.";
+"account.deleteLocalData" = "Delete local data";
+"account.signOutConfirmTitle" = "Sign out?";
+"account.signOutConfirmMessage" = "You will be signed out on this device. Your data stays on this device and on the relay.";
+"account.permanentSection" = "Permanent Deletion";
+"account.permanentFooter" = "Permanently deletes your Lifio account and synced data, plus this account's data on this device. Your other devices will be signed out.";
+"account.deleteTitle" = "Delete account and local data?";
+"account.deleteMessage" = "This permanently deletes your Lifio account and all synced entries, categories, and notes, and removes this account's data from this device. Your other devices will be signed out.";
+"account.deleteConfirm" = "Delete account and local data";
+"account.deletingProgress" = "Deleting account…";
+"account.deleteError" = "Could not delete your account. Please try again.";
+"account.deleteFailedTitle" = "Couldn't delete account";
+"account.deleteOffline" = "You are offline. Connect and try again.";
+"account.deleteOfflineTitle" = "You're offline";
+"account.stillExists" = "Your account still exists. No data was deleted.";
+"account.stillExistsTitle" = "Account still exists";
+"account.pendingAppleUnlink" = "Account deleted. Apple authorization unlinking is still in progress and completes automatically.";
+"account.cleanupRetryTitle" = "Finish account cleanup";
+"account.cleanupRetryMessage" = "Your account was deleted, but some local data could not be removed. Retry cleanup now.";
+"account.cleanupRetryConfirm" = "Clean up now";
+
 // Validation (unified messages — Requirements U2/U4: one merged message per field)
 "common.and" = "and";
 "validation.emailEmpty" = "Email is required.";
@@ -98,7 +124,7 @@
 "profile.onDeviceFooter" = "Categories and time entries are stored on this device. Sync is optional.";
 "profile.eraseLocalData" = "Erase local data";
 "profile.eraseLocalDataConfirmTitle" = "Erase local data?";
-"profile.eraseLocalDataConfirmMessage" = "This permanently deletes all categories, entries, and pending sync data on this device.";
+"profile.eraseLocalDataConfirmMessage" = "This permanently deletes all categories, entries, and pending sync data on this device, and signs you out.";
 "profile.eraseConfirm" = "Erase";
 "profile.eraseCancel" = "Cancel";
 // Build-configuration suffix for the Profile version row (universal

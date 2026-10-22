@@ -228,6 +228,32 @@ enum L10n: String, CaseIterable {
     // Sign out confirmation
     case signOutCancel = "signOut.cancel"
 
+    // Account (Profile → Account; app-shell + account-deletion specs)
+    case accountTitle = "account.title"
+    case accountIdentitySection = "account.identitySection"
+    case accountIdentityFooter = "account.identityFooter"
+    case accountThisDeviceSection = "account.thisDeviceSection"
+    case accountThisDeviceFooter = "account.thisDeviceFooter"
+    case accountDeleteLocalData = "account.deleteLocalData"
+    case accountSignOutConfirmTitle = "account.signOutConfirmTitle"
+    case accountSignOutConfirmMessage = "account.signOutConfirmMessage"
+    case accountPermanentSection = "account.permanentSection"
+    case accountPermanentFooter = "account.permanentFooter"
+    case accountDeleteTitle = "account.deleteTitle"
+    case accountDeleteMessage = "account.deleteMessage"
+    case accountDeleteConfirm = "account.deleteConfirm"
+    case accountDeletingProgress = "account.deletingProgress"
+    case accountDeleteError = "account.deleteError"
+    case accountDeleteFailedTitle = "account.deleteFailedTitle"
+    case accountDeleteOffline = "account.deleteOffline"
+    case accountDeleteOfflineTitle = "account.deleteOfflineTitle"
+    case accountStillExists = "account.stillExists"
+    case accountStillExistsTitle = "account.stillExistsTitle"
+    case accountPendingAppleUnlink = "account.pendingAppleUnlink"
+    case accountCleanupRetryTitle = "account.cleanupRetryTitle"
+    case accountCleanupRetryMessage = "account.cleanupRetryMessage"
+    case accountCleanupRetryConfirm = "account.cleanupRetryConfirm"
+
     /// Resolves the key via `NSLocalizedString` against `Localizable.strings`.
     var text: String {
         NSLocalizedString(rawValue, comment: "")

@@ -528,8 +528,12 @@ struct LogTimeViewModelTests {
     @Test("untouched save writes back the original sub-minute times")
     func grandfatheredSavePreservesOriginals() async throws {
         let store = try await makeStore()
-        let day = Calendar.current.startOfDay(for: Date())
-        let start = day.addingTimeInterval(2 * 3_600 + 35 * 60)
+        // Fixed past date, never "today": the LWW save guard compares the
+        // stored updated_at against wall-clock now, so a today-dated entry
+        // fails whenever the suite runs before 02:35 runner-local time
+        // (cloud-only red). The date value is irrelevant to the behavior
+        // under test (untouched sub-minute prefill writes back originals).
+        let start = Date(timeIntervalSinceReferenceDate: 2 * 3_600 + 35 * 60)
         let entry = storedEntry(start: start, duration: 33)
         try await store.createEntry(entry)
         try? await store.createCategory(Category(id: "c1", name: "Work", icon: CatalogIcon.briefcase.rawValue))

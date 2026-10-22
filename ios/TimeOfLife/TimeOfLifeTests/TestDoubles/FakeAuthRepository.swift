@@ -11,10 +11,13 @@ final class FakeAuthRepository: AuthRepository, @unchecked Sendable {
     enum Call: Equatable {
         case requestOtp(email: String)
         case verifyOtp(email: String, code: String)
-        case appleSignIn(identityToken: String)
+        case appleSignIn(identityToken: String, authorizationCode: String?)
         case refresh(refreshToken: String, attemptId: String)
         case logout
         case me
+        case deleteAccount
+        case fetchAccountStatus
+        case acquireAppleDeletionCredential(identityToken: String, authorizationCode: String?)
     }
 
     // MARK: - State
@@ -62,7 +65,14 @@ final class FakeAuthRepository: AuthRepository, @unchecked Sendable {
     )
 
     /// Result returned by `me` when no error is set.
-    var meResult = UserDTO(id: "u1", email: "a@b.com", emailVerified: true)
+    var meResult = MeResponse(
+        user: UserDTO(id: "u1", email: "a@b.com", emailVerified: true)
+    )
+
+    /// Result returned by `deleteAccount` when no error is set.
+    var deleteAccountResult: AccountDeletionOutcome = .completed
+    /// Result returned by `fetchAccountStatus` when no error is set.
+    var accountStatusResult = AccountStatusResponse(accountID: "u1", state: .active)
 
     // MARK: - Per-method errors
 
@@ -78,6 +88,12 @@ final class FakeAuthRepository: AuthRepository, @unchecked Sendable {
     var logoutError: Error?
     /// If set, `me` throws this error.
     var meError: Error?
+    /// If set, `deleteAccount` throws this error.
+    var deleteAccountError: Error?
+    /// If set, `fetchAccountStatus` throws this error.
+    var accountStatusError: Error?
+    /// If set, `acquireAppleDeletionCredential` throws this error.
+    var deletionCredentialError: Error?
     /// Hook run inside `me()` before it returns/throws. Tests use it to
     /// simulate a transparent refresh having landed (rotating the Keychain
     /// snapshot) before a retry-401 surfaces.
@@ -176,7 +192,7 @@ final class FakeAuthRepository: AuthRepository, @unchecked Sendable {
         let successor = AuthSession(
             accessToken: "rec-at-\(successorIndex)",
             refreshToken: "rec-rt-\(successorIndex)",
-            user: meResult
+            user: meResult.user
         )
         for id in attemptRecords.keys where attemptRecords[id]?.successor.refreshToken == refreshToken {
             attemptRecords[id]?.consumed = true
@@ -211,12 +227,14 @@ final class FakeAuthRepository: AuthRepository, @unchecked Sendable {
                 id: otpVerifyResult.user.id,
                 email: email,
                 emailVerified: otpVerifyResult.user.emailVerified
-            )
+            ),
+            accountStatusCredential: otpVerifyResult.accountStatusCredential,
+            accountStatusExpiresAt: otpVerifyResult.accountStatusExpiresAt
         )
     }
 
-    func appleSignIn(identityToken: String) async throws -> AuthSession {
-        record(.appleSignIn(identityToken: identityToken))
+    func appleSignIn(identityToken: String, authorizationCode: String? = nil) async throws -> AuthSession {
+        record(.appleSignIn(identityToken: identityToken, authorizationCode: authorizationCode))
         if let e = appleSignInError { throw e }
         return appleSignInResult
     }
@@ -253,7 +271,7 @@ final class FakeAuthRepository: AuthRepository, @unchecked Sendable {
         if let e = logoutError { throw e }
     }
 
-    func me() async throws -> UserDTO {
+    func me() async throws -> MeResponse {
         record(.me)
         if meDelayNanoseconds > 0 {
             try await Task.sleep(nanoseconds: meDelayNanoseconds)
@@ -261,6 +279,23 @@ final class FakeAuthRepository: AuthRepository, @unchecked Sendable {
         await meHook?()
         if let e = meError { throw e }
         return meResult
+    }
+
+    func deleteAccount() async throws -> AccountDeletionOutcome {
+        record(.deleteAccount)
+        if let e = deleteAccountError { throw e }
+        return deleteAccountResult
+    }
+
+    func fetchAccountStatus(statusCredential: String) async throws -> AccountStatusResponse {
+        record(.fetchAccountStatus)
+        if let e = accountStatusError { throw e }
+        return accountStatusResult
+    }
+
+    func acquireAppleDeletionCredential(identityToken: String, authorizationCode: String?) async throws {
+        record(.acquireAppleDeletionCredential(identityToken: identityToken, authorizationCode: authorizationCode))
+        if let e = deletionCredentialError { throw e }
     }
 
 }

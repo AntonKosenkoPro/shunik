@@ -82,15 +82,23 @@ When a screen’s main purpose is to collect input from a single field (email, O
 
 ### Sign Out
 
-- Sign Out is a destructive, low-frequency account action owned by Profile.
-- The Track toolbar does not expose account actions as a peer to capture.
-- Tapping Sign Out signs the user out with no confirmation (local account files are kept; only the session is cleared). Sign Out must work offline by clearing the local session.
+- Sign Out is a destructive, low-frequency account action owned by Account (Profile → Account).
+- The Track toolbar and Profile do not expose Sign out as a peer to capture or sync.
+- Tapping Sign Out signs the user out after one confirmation (local account files are kept; the id stays `ProfileSignOutButton`). Sign Out must work offline by clearing the local session.
 
 ### Profile destination
 
 - The person control opens Profile for the signed-in user — sign-in is the mandatory launch gate (`RootView` renders the auth flow full-screen when signed out), so Profile is unreachable unsigned.
-- The account section shows sync status ("Last synced"/"Syncing…"/error) and a manual "Sync now" action, plus sign-out. There is no "Enable Sync" row or auth-flow sheet anywhere: the optional-sync presentation was removed with the mandatory gate.
-- "Erase local data" is a destructive, confirmed action that deletes only the active account file (state + outbox + undo buffer + sync cursors); dormant account files are kept.
+- Profile shows sync status ("Last synced"/"Syncing…"/error) and a manual "Sync now" action directly, plus `Account >` (`ProfileAccountRow`) and `Categories >` navigation and the version footer. There is no "Enable Sync" row or auth-flow sheet anywhere: the optional-sync presentation was removed with the mandatory gate.
+- Profile owns no destructive actions: Sign out, Delete local data, and Delete account and local data live only in Account (see `SCREENS/Account.md`). "Erase local data" is renamed **Delete local data** with the move; its single-confirmation, server-untouched scope is unchanged — it deletes only the active account's local file (state + outbox + undo buffer + sync cursors) and keeps dormant account files.
+
+### Account deletion (irreversible, online-only)
+
+- Account → **Delete account and local data** presents exactly ONE confirmation alert (title and destructive button both name account + local data; Cancel sends nothing). No second deletion-confirmation alert exists. A native Apple authorization sheet that appears for Apple-created accounts without a stored revocable credential is authentication for the same identity, not a confirmation — dismissing it sends no request, and email-only accounts never see it.
+- While a deletion submission is in flight, the destructive button shows progress (`AccountDeletionProgress`), duplicate submissions are disabled, and conflicting account actions (Sign out, Delete local data, this account's Sync now) are unavailable. An error/result notice afterward is information, never another confirmation.
+- Resolution after send is status-checked, never assumed: if delivery is ambiguous, the client queries the read-only account-status capability for the original account UUID. `deleted` resumes local cleanup without another alert or login; `active` offers explicit retry through the same single-alert interaction (no automatic replay). Generic 401s, missing-user middleware rejections, expired/missing status evidence, and offline/5xx NEVER count as deletion proof — they lock with files intact.
+- Versus the neighboring actions: Sign out keeps the session-clearing, file-preserving semantics behind one confirmation; Delete local data keeps its own single confirmation and removes only this account's on-device file while the relay account survives. Only confirmed permanent deletion purges the relay account (identity, sessions, entries, joins, categories, tombstones) with automatic Apple unlinking, and only independently confirmed deletion schedules the account-scoped local cleanup on other devices.
+- External Apple Settings revocation is sign-out-only: it ends sessions but preserves the Lifio identity, server data, and local files, and reauthorizing the same Apple identity returns to the existing account. It is never interpreted as account deletion.
 
 ### Auth transitions
 
@@ -124,7 +132,7 @@ D1 (OpenSpec change `redesign-track-experience`). The root is a three-tab shell,
 - **Switching destinations never changes timer state** and never discards the previous destination's state.
 - **The app launches into the auth flow when signed out and into Track when signed in**; sign-in is mandatory before any Track/History/Insights use. There is no anonymous use and no optional "Enable Sync" action — the launch gate owns authentication.
 - **A running timer stays globally accessible.** While running, History and Insights show the compact timer immediately above the tab bar (`.safeAreaInset(edge: .bottom)`). Its main area returns to Track; its Stop button saves in place and keeps the current destination selected. Track does not duplicate it.
-- **Sign Out is owned by Profile**, not the Track toolbar. Tapping Sign Out signs the user out with no confirmation (account files are kept). Sign Out must work offline by clearing the local session.
+- **Sign Out is owned by Account**, not the Track toolbar or Profile root. Tapping Sign Out asks once, then signs the user out (account files are kept). Sign Out must work offline by clearing the local session.
 - The hierarchy maps to a future macOS sidebar without changing meaning (Track/History/Insights primary; profile-owned features secondary).
 
 ## Accessibility identifiers

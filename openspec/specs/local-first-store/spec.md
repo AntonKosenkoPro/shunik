@@ -95,24 +95,27 @@ The system SHALL hold deletions in a durable `undo_buffer` table (not in-memory)
 - **THEN** the undo is refused with the existing persistence error; the push completes and drops the row, or fails and leaves the row undoable for the next cycle
 
 ### Requirement: Sign-out preserves local data
-The system SHALL NOT wipe any per-account local database, outbox, or undo buffer when the user signs out. All per-account files — including the dormant file of the signed-out account and its pending dirty outbox — SHALL be kept on disk; re-signing in as the same account SHALL reopen its file and resume (drain the outbox, continue sync cursors, and resume a dormant running timer draft). The user's local data persists across sign-out. An explicit per-account "Erase local data" action is available in Profile for shared-device or privacy cases and SHALL delete only the active account's local file (with its associated keychain and cache entries); it MUST NOT touch other accounts' dormant files. Confirming "Erase local data" SHALL additionally reset the auth navigation so the auth gate starts over from its first step. The Profile "Erase local data" row SHALL present as destructive: its icon and title render in the danger token and its control carries destructive button semantics, so its appearance warns before the confirmation alert.
+The system SHALL NOT wipe any per-account local database, outbox, or undo buffer when the user signs out. All per-account files, including the dormant file of the signed-out account and its pending dirty outbox, SHALL be kept on disk; re-signing in as the same existing account SHALL reopen its file and resume draining the outbox, continuing sync cursors, and resuming a dormant running timer draft. The user's local data persists across sign-out, including externally revoked Apple consent. An explicit per-account Delete local data action SHALL be available in Profile → Account for shared-device or privacy cases and SHALL delete only the active account's local file with its associated session Keychain/cache entries; it MUST NOT touch other accounts' dormant files, delete the server account, or remove synced server data. Confirming Delete local data SHALL additionally sign out and reset auth navigation to its first step with no previous address. The Account Delete local data row SHALL present with a danger-styled icon/title and destructive semantics. Explicit account deletion and independently confirmed account-deletion cleanup are separate operations defined by `account-deletion`, not sign-out side effects.
 
 #### Scenario: Sign out keeps data
 - **WHEN** the user signs out
-- **THEN** the signed-out account's local database file is kept with its outbox intact, no other account's data is affected, and re-signing in as that account resumes from the dormant file
+- **THEN** the signed-out account's local database file is kept with its outbox intact, no other account's data is affected, and re-signing in as that existing account resumes from the dormant file
 
 #### Scenario: Explicit erase
-- **WHEN** the user taps "Erase local data" in Profile and confirms
-- **THEN** only the active account's local database file is wiped (with its outbox, undo buffer, and associated keychain and cache entries); other accounts' dormant files are not touched, and the action is destructive and irreversible
+- **WHEN** the user taps Delete local data in Account and confirms
+- **THEN** only the active account's local database file and associated outbox/undo/session-cache artifacts are removed; unrelated dormant files and relay account/data remain untouched, and the action is destructive and irreversible locally
 
 #### Scenario: Erase row warns as destructive
-- **WHEN** the user views the Profile "On This Device" section
-- **THEN** the "Erase local data" row shows a danger-styled trash icon and danger-styled title and exposes destructive button semantics, visually distinct from the regular Categories row beside it
+- **WHEN** the user views Account's device-only section
+- **THEN** Delete local data shows a danger-styled trash icon/title and destructive semantics with helper text explaining that relay data is retained
 
 #### Scenario: Erase resets auth flow
-- **WHEN** the erase is confirmed
-- **THEN** the auth navigation resets so the launch gate starts at email entry with no previous address
+- **WHEN** local-only deletion succeeds
+- **THEN** the user is signed out and auth navigation starts at its first step with no previously entered email
 
+#### Scenario: Local erase fails
+- **WHEN** removing the account-local file fails before local-only erase completes
+- **THEN** the app reports a retryable error instead of claiming success or silently signing out as though cleanup succeeded
 ### Requirement: Local deletion tombstone reads
 
 The local store SHALL expose read-only tombstone queries over the existing outbox and undo-buffer tables (no schema change): whether `(resource, record_id)` has a pending outbox DELETE, whether it sits in a buffered deletion snapshot (activity snapshots cover their entries' ids), and the combined exclusion used by the sync client.

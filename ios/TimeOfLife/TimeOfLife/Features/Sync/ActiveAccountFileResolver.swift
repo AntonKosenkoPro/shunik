@@ -61,10 +61,17 @@ struct ActiveAccountFileResolver {
         appGroupBase().appendingPathComponent(sessionFileName)
     }
 
+    /// Reads the shared-session user id (file-first, defaults fallback)
+    /// without resolving a file. Used by deletion cleanup to clear the
+    /// cross-process marker ONLY when it still names the deleted UUID —
+    /// never when another account is active.
+    func readSessionUserID(base: URL? = nil) -> String? {
+        readSessionFile(base: base) ?? readSessionDefaults()
+    }
+
     /// Resolves the active account's file URL inside the App Group container
     /// (or `base` in tests/previews). Never creates anything.
-    func resolve(base: URL? = nil) -> Resolution {
-        let userID = readSessionFile(base: base) ?? readSessionDefaults()
+    func resolve(base: URL? = nil) -> Resolution {        let userID = readSessionFile(base: base) ?? readSessionDefaults()
         guard let userID, !userID.isEmpty else {
             return .locked
         }

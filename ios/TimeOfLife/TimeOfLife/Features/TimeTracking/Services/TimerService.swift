@@ -107,6 +107,18 @@ final class TimerService: ObservableObject {
         BackgroundReapScheduler.cancelReapCheck()
     }
 
+    /// Discards the running draft WITHOUT saving an entry, ends live
+    /// activities immediately with no Saved card, and cancels the background
+    /// reap chain (account-deletion cleanup: the deleted account's timer
+    /// ends silently — no stop-created entry, no outbox mutation, no Saved
+    /// face). The caller gates this on the deleted account: it must never
+    /// run while another account is active.
+    func discardTimerDraftForDeletedAccount() async {
+        try? await store.clearTimerDraft()
+        await liveActivities.endOrphanedActivities(knownDurationSeconds: nil)
+        BackgroundReapScheduler.cancelReapCheck()
+    }
+
     /// Re-mirrors an already-persisted run on the Live Activity without
     /// touching the draft (cold-start/restore path: `load()` revives
     /// `.running` from storage, and a fresh `request()` is the only thing

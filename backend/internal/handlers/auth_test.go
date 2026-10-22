@@ -76,6 +76,7 @@ func newTestHandlerWithDependencies(
 		OTPRequest: ratelimit.NewTokenBucket(100, 100, time.Minute),
 		OTPVerify:  ratelimit.NewTokenBucket(100, 100, time.Minute),
 		Apple:      ratelimit.NewTokenBucket(100, 100, time.Minute),
+		Status:     ratelimit.NewTokenBucket(100, 100, time.Minute),
 	}
 	config := HandlerConfig{}
 	return NewHandler(store, tokenService, otpService, emailSender, rateLimiter, verifier, config, logger, testRecoveryKeyring())

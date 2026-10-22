@@ -46,6 +46,25 @@ info:
     - **Refresh TTL** — a device family's refresh tokens expire 7 days after issue;
       refresh attempts after that are rejected as unauthorized.
 
+    ## Account deletion (explicit, in-app)
+    - **Delete** — `DELETE /api/v1/auth/account` with a Bearer access token
+      and `X-Device-Id`. Self-only; purges the account and all associated
+      operational rows atomically. Apple accounts additionally revoke Apple
+      authorization (204 complete, 202 pending with `account_deleted` +
+      `apple_revocation_pending`); missing revocable material is 409
+      `apple_credential_required` (obtain it via
+      `POST /api/v1/auth/apple/deletion-credential` first).
+    - **Status** — every session response carries a narrow
+      `account_status_credential` (+ `account_status_expires_at`, 30 days).
+      `POST /api/v1/auth/account/status` with that credential alone reports
+      `active`/`deleted` for its own UUID — the only proof another device
+      accepts for cleanup. Status never renews itself; generic 401/404s
+      never count as deletion.
+    - **Apple notifications** — `POST /api/v1/auth/apple/notifications`
+      (verified Apple JWS). `consent-revoked` signs out pre-event sessions
+      and preserves the account and data; reauthorization returns to the
+      existing account. It is sign-out, never deletion.
+
     ## Security
     - No passwords. OTP codes and refresh tokens are stored only as SHA-256 hashes.
       The sole recoverable server-side refresh credential is the pending successor in
@@ -292,15 +311,42 @@ paths:
                       code: invalid_request
                       message: X-Device-Id header is required
         "401":
-          description: Apple identity token failed verification
+          description: |
+            Apple identity token or authorization failed verification
+            (`invalid_apple_token`): invalid identity token, Apple-rejected
+            authorization code, code-exchange identity mismatch, or an
+            authorization that predates the account's Apple consent cutoff
+            (the client must re-authorize with Apple).
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-              example:
-                error:
-                  code: invalid_apple_token
-                  message: Invalid Apple identity token
+              examples:
+                invalid_identity_token:
+                  summary: Identity token failed verification
+                  value:
+                    error:
+                      code: invalid_apple_token
+                      message: Invalid Apple identity token
+                invalid_authorization_code:
+                  summary: Authorization code rejected or mismatched
+                  value:
+                    error:
+                      code: invalid_apple_token
+                      message: Invalid Apple authorization code
+                stale_authorization:
+                  summary: Authorization predates consent revocation
+                  description: Re-authorize with Apple; the token verifies but its authorization is older than the cutoff.
+                  value:
+                    error:
+                      code: invalid_apple_token
+                      message: This Apple authorization predates revocation. Re-authorize with Apple.
+                email_in_use:
+                  summary: Apple email already belongs to another account
+                  value:
+                    error:
+                      code: apple_email_in_use
+                      message: This email is already registered. Sign in with email instead.
         "429":
           description: Rate limited (per IP)
           content:
@@ -312,15 +358,41 @@ paths:
                   code: rate_limited
                   message: Too many requests. Please try again later.
         "503":
-          description: Sign in with Apple is not configured on the server
+          description: |
+            Sign in with Apple is not configured on the server
+            (`apple_not_configured`), or a pending Apple revocation fences
+            this subject's signup (`apple_revocation_pending` — retryable;
+            the code was not consumed and no session was created).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                apple_not_configured:
+                  summary: Sign in with Apple is not configured
+                  value:
+                    error:
+                      code: apple_not_configured
+                      message: Sign in with Apple is not configured
+                apple_revocation_pending:
+                  summary: Signup fenced by pending Apple revocation
+                  value:
+                    error:
+                      code: apple_revocation_pending
+                      message: Apple unlinking is still in progress. Please retry shortly.
+        "409":
+          description: |
+            The Apple identity's email already belongs to a different account
+            (`apple_email_in_use`). Sign in with email instead; identities are
+            never merged.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
               example:
                 error:
-                  code: apple_not_configured
-                  message: Sign in with Apple is not configured
+                  code: apple_email_in_use
+                  message: This email is already registered. Sign in with email instead.
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -494,24 +566,20 @@ paths:
       operationId: getCurrentUser
       summary: Get current user
       description: |
-        Returns the authenticated user's profile.
-        Requires a valid Bearer access token.
+        Returns the authenticated user's profile with the current
+        account-status credential, its expiry, and server-truth Apple
+        deletion-readiness metadata. Requires a valid Bearer access token.
       tags:
         - Auth
       security:
         - BearerAuth: []
       responses:
         "200":
-          description: User profile
+          description: User profile with status evidence and deletion metadata
           content:
             application/json:
               schema:
-                type: object
-                required:
-                  - user
-                properties:
-                  user:
-                    $ref: "#/components/schemas/User"
+                $ref: "#/components/schemas/MeResponse"
         "401":
           description: Missing or invalid access token
           content:
@@ -522,6 +590,301 @@ paths:
                 error:
                   code: unauthorized
                   message: Invalid or expired access token
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/auth/account:
+    delete:
+      operationId: deleteAccount
+      summary: Delete the authenticated account
+      description: |
+        Explicit, permanent, self-only account deletion. Targets the
+        authenticated account only — no request-selected user id exists. The
+        purge removes the account identity and all associated operational
+        relay rows (OTPs, all-device sessions and recovery receipts, entries,
+        joins, categories, tombstones, Apple-vault data) atomically.
+
+        Apple-created accounts additionally unlink Apple authorization:
+        a stored revocable credential is revoked inline (204) or moved to a
+        durable revocation job with bounded retry (202 with
+        `account_deleted: true` and `apple_revocation_pending: true` — both
+        reliable deletion acknowledgments; 202 never claims Apple unlinking
+        completed). Without a stored credential the purge does not run: 409
+        `apple_credential_required` (obtain same-subject authorization first).
+        Unconfigured Apple revocation is a 503 deployment blocker, never a
+        silent skip. Email-only deletions need no Apple work.
+
+        After a lost response, POST /api/v1/auth/account/status with the
+        pre-stored status credential resolves the outcome without a new login
+        or another confirmation. Generic 401/404 responses are never deletion
+        proof and authorize no local erasure.
+      tags:
+        - Auth
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/DeviceIdHeader"
+      responses:
+        "204":
+          description: Account purged; Apple revocation complete or not applicable.
+        "202":
+          description: Account purged; Apple unlinking durably pending.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountDeletionPendingResponse"
+        "400":
+          description: Missing X-Device-Id header
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_request
+                  message: X-Device-Id header is required
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Apple account without a stored revocable credential — no purge ran.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: apple_credential_required
+                  message: Fresh Apple authorization is required before deleting this account
+        "503":
+          description: Apple revocation is not configured on the server (deployment blocker).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: apple_not_configured
+                  message: Apple unlinking is not configured; account deletion is unavailable
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/auth/account/status:
+    post:
+      operationId: accountStatus
+      summary: Check whether the credential's account still exists
+      description: |
+        Read-only, narrowly scoped deletion evidence. Authenticates with the
+        dedicated account-status credential (HS256, separate signing key,
+        `aud=account-status`, exact account-UUID subject, 30-day expiry) —
+        access tokens are rejected here and status credentials are rejected
+        everywhere else. Returns the verified subject's existence only:
+        `active` (including revoked-but-present accounts) or `deleted`. Only
+        a `deleted` verdict authorizes another device's cleanup. Responses
+        carry `Cache-Control: no-store`, are rate-limited, and never renew
+        the credential. Invalid credentials return generic 401 with no
+        existence disclosure; storage failures return 5xx, never `deleted`.
+      tags:
+        - Auth
+      security:
+        - StatusAuth: []
+      responses:
+        "200":
+          description: Scoped existence verdict for the credential's own account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountStatusResponse"
+        "401":
+          description: Missing, invalid, or expired status credential (no existence disclosure).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired status credential
+        "429":
+          description: Rate limited (per IP).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: rate_limited
+                  message: Too many requests. Please try again later.
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/auth/apple/deletion-credential:
+    post:
+      operationId: storeAppleDeletionCredential
+      summary: Store an Apple revocable credential for explicit deletion
+      description: |
+        For an existing Apple account with no stored revocable credential
+        (identity-token-only history): verifies the presented identity token,
+        requires the SAME Apple subject as the authenticated account, exchanges
+        the fresh authorization code with Apple, and seals the refresh token.
+        Never creates a user, a Lifio session, or touches another account.
+        Wrong identities fail safely; email-only accounts are rejected.
+      tags:
+        - Auth
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/DeviceIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppleDeletionCredentialRequest"
+      responses:
+        "200":
+          description: Apple credential stored.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - stored
+                properties:
+                  stored:
+                    type: boolean
+                    enum: [true]
+              example:
+                stored: true
+        "400":
+          description: Invalid body or email-only account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                invalid_body:
+                  summary: Identity token or code missing
+                  value:
+                    error:
+                      code: invalid_body
+                      message: Identity token and authorization code are required
+                invalid_request:
+                  summary: Account has no Apple identity
+                  value:
+                    error:
+                      code: invalid_request
+                      message: Account has no Apple identity
+        "401":
+          description: Identity or code failed verification, or the subject differs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_apple_token
+                  message: Apple identity does not match this account
+        "503":
+          description: Apple not configured, or temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                apple_not_configured:
+                  summary: Apple revocation not configured
+                  value:
+                    error:
+                      code: apple_not_configured
+                      message: Sign in with Apple is not configured
+                apple_unavailable:
+                  summary: Apple temporarily unavailable
+                  value:
+                    error:
+                      code: apple_unavailable
+                      message: Apple is temporarily unavailable. Please retry.
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/auth/apple/notifications:
+    post:
+      operationId: appleNotifications
+      summary: Receive Apple server-to-server notifications
+      description: |
+        Apple's server-to-server endpoint (verified JWS payload, no bearer).
+        `consent-revoked` ends the affected account's pre-event Lifio sessions
+        across devices and closes their recoveries while preserving the
+        account, data, files, and cursors; reauthorizing the same Apple
+        subject returns to the existing account. `consent-revoked` requires
+        the documented `events.event_time` — undated revocations are rejected
+        with 400 and change nothing (arrival time is never substituted, so a
+        delayed undated event cannot kill a newer reauthorization). The cutoff
+        is applied before its delivery id is recorded, so a transient failure
+        never loses the revocation on retry. Every other event type
+        (email-enabled/disabled, whole-Apple-Account deletion, unknown future
+        types) is a verified no-op: never a deletion, never an upsert, never
+        a session end. Missing users are idempotent no-ops; replays
+        (duplicate `jti`) are idempotent 200s; invalid payloads are 401 with
+        no state change.
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppleNotificationRequest"
+          application/x-www-form-urlencoded:
+            description: |
+              Apple's actual delivery media type: the signed JWS arrives as a
+              single `payload` form value. The handler accepts both media
+              types; form takes precedence when both are present.
+            schema:
+              type: object
+              required:
+                - payload
+              properties:
+                payload:
+                  type: string
+                  description: Apple-signed notification JWS.
+                  example: eyJraWQiOi...notification...
+      responses:
+        "200":
+          description: Notification accepted (processed or idempotent no-op).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AcceptedResponse"
+        "400":
+          description: Invalid request body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_body
+                  message: Invalid request body
+        "401":
+          description: Notification signature or claims failed verification.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_notification
+                  message: Invalid Apple notification
+        "429":
+          description: Notification intake rate limited (per IP; high ceiling — Apple's delivery retries are never throttled in practice).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: rate_limited
+                  message: Too many requests. Please try again later.
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -1025,6 +1388,16 @@ components:
       description: |
         JWT access token obtained from `/api/v1/auth/otp/verify`, `/api/v1/auth/apple`, or `/api/v1/auth/refresh`.
         Format: `Authorization: Bearer <token>`
+    StatusAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Narrow account-status credential issued alongside every session
+        (`account_status_credential` on auth responses and `/me`). Accepted
+        solely by `POST /api/v1/auth/account/status` to prove whether the
+        credential's own account still exists; accepted nowhere else, and
+        never confused with a login credential (separate signing key).
 
   responses:
     # ---------- Shared error responses (catalog/entries) ----------
@@ -1189,6 +1562,12 @@ components:
       description: |
         Request body for Sign in with Apple. The `identity_token` is the JWT Apple's
         `ASAuthorizationAppleIDCredential.identityToken` returns (RS256, signed by Apple).
+        Updated clients also send the single-use `authorization_code` from the same
+        authorization; the server validates it with Apple and seals the returned
+        revocable credential for automatic unlinking on explicit account deletion.
+        Identity-token-only requests from prior clients keep their legacy sign-in
+        behaviour (no stored credential — explicit deletion then requires fresh
+        same-subject authorization first).
       required:
         - identity_token
       properties:
@@ -1196,16 +1575,64 @@ components:
           type: string
           description: Apple identity-token JWT.
           example: eyJraWQiOi...id-token...
+        authorization_code:
+          type: string
+          description: |
+            Single-use authorization code from the native Apple authorization (5 min
+            lifetime). Optional for rollout compatibility; required for the server
+            to retain a revocable credential.
+          example: c6d3...auth-code...
+
+    AppleDeletionCredentialRequest:
+      type: object
+      description: |
+        Request body for storing an Apple revocable credential for an existing
+        Apple account that has none. The identity token must verify to the SAME
+        Apple subject as the authenticated account; the code is exchanged with
+        Apple and the refresh token sealed. Never creates a user or session.
+      required:
+        - identity_token
+        - authorization_code
+      properties:
+        identity_token:
+          type: string
+          description: Apple identity-token JWT for the account's Apple subject.
+        authorization_code:
+          type: string
+          description: Fresh single-use authorization code for the same subject.
+
+    AppleNotificationRequest:
+      type: object
+      description: |
+        Apple server-to-server notification delivery. `payload` is the
+        Apple-signed JWS whose `events.type` dispatches handling
+        (`consent-revoked` ends pre-event sessions; every other type is a
+        verified no-op). Replays (duplicate `jti`) are idempotent no-ops.
+      required:
+        - payload
+      properties:
+        payload:
+          type: string
+          description: Apple-signed notification JWS.
+          example: eyJraWQiOi...notification...
 
     # ---------- Response schemas ----------
 
     AuthResponse:
       type: object
-      description: Successful authentication response with tokens and user info.
+      description: |
+        Successful authentication response with tokens and user info. The
+        `account_status_credential` is the narrow read-only deletion-evidence
+        credential (fixed 30-day expiry in `account_status_expires_at`); the
+        client stores it separately from the session before any deletion
+        request. The `user` carries server-truth provider metadata, never
+        inferred from an email suffix.
       required:
         - access_token
         - refresh_token
         - user
+        - account_status_credential
+        - account_status_expires_at
       properties:
         access_token:
           type: string
@@ -1217,6 +1644,19 @@ components:
           example: a1b2c3d4e5f6...
         user:
           $ref: "#/components/schemas/User"
+        account_status_credential:
+          type: string
+          description: |
+            Narrow HS256 deletion-evidence credential (dedicated signing key,
+            `aud=account-status`, exact account UUID subject, 30-day expiry).
+            Accepted solely by POST /auth/account/status; never a login,
+            refresh, sync, or deletion credential.
+          example: eyJhbGciOiJIUzI1NiIs...
+        account_status_expires_at:
+          type: string
+          format: date-time
+          description: Expiry of the account-status credential (RFC 3339, 30 days after issuance).
+          example: "2026-11-20T12:00:00Z"
 
     User:
       type: object
@@ -1225,6 +1665,8 @@ components:
         - id
         - email
         - email_verified
+        - has_apple_identity
+        - apple_deletion_authorization_required
       properties:
         id:
           type: string
@@ -1240,6 +1682,83 @@ components:
           type: boolean
           description: Whether the user's email has been verified via OTP
           example: true
+        has_apple_identity:
+          type: boolean
+          description: |
+            Server truth for provider handling: the account was created via
+            Sign in with Apple. Never inferred from an email suffix.
+          example: false
+        apple_deletion_authorization_required:
+          type: boolean
+          description: |
+            An Apple account with no stored revocable credential: explicit
+            deletion first needs same-subject authorization via
+            POST /auth/apple/deletion-credential (or fails with
+            apple_credential_required). Always false for email-only accounts.
+          example: false
+
+    MeResponse:
+      type: object
+      description: |
+        Authenticated profile with the current account-status credential and
+        its expiry (same contract as AuthResponse's status fields; status
+        requests never renew their own lifetime).
+      required:
+        - user
+        - account_status_credential
+        - account_status_expires_at
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        account_status_credential:
+          type: string
+          description: Narrow read-only deletion-evidence credential (30-day expiry).
+        account_status_expires_at:
+          type: string
+          format: date-time
+          description: Expiry of the account-status credential (RFC 3339).
+
+    AccountStatusResponse:
+      type: object
+      description: |
+        Scoped existence verdict for the status credential's own account UUID.
+        Only a `deleted` verdict authorizes another device's cleanup; `active`
+        (including revoked-but-present accounts) preserves local files.
+      required:
+        - account_id
+        - state
+      properties:
+        account_id:
+          type: string
+          format: uuid
+          description: Exact echo of the verified credential subject.
+        state:
+          type: string
+          enum: [active, deleted]
+          description: Whether the account UUID still exists on the relay.
+      example:
+        account_id: 550e8400-e29b-41d4-a716-446655440000
+        state: deleted
+
+    AccountDeletionPendingResponse:
+      type: object
+      description: |
+        Committed account deletion with durable pending Apple unlinking. Both
+        flags are reliable deletion acknowledgments; the result never claims
+        Apple revocation completed.
+      required:
+        - account_deleted
+        - apple_revocation_pending
+      properties:
+        account_deleted:
+          type: boolean
+          enum: [true]
+        apple_revocation_pending:
+          type: boolean
+          enum: [true]
+      example:
+        account_deleted: true
+        apple_revocation_pending: true
 
     AcceptedResponse:
       type: object

@@ -10,9 +10,10 @@ TabView (Track | History | Insights)
   ├─ History    — retrospective review (SCREENS/History.md; entry-form push, Log Time sheet, pull-to-refresh)
   └─ Insights   — analysis: period breakdown with hero total (SCREENS/Insights.md)
 Profile (pushed page, top-trailing person control on every tab; signed-in only — unreachable until the launch gate signs the user in)
-  ├─ Account    — account + sync management (sync status, "Sync now", Sign Out)
-  ├─ Library    — Manage Categories
-  └─ App        — Erase local data (active account file only)
+  ├─ Account >          (pushed page on the same tab path: read-only email, Sign out, Delete local data, Delete account and local data — full spec: SCREENS/Account.md)
+  ├─ Sync status / Sync now   (stays directly on Profile — convenient, no Account entry needed)
+  ├─ Categories >             (Manage Categories — stays on Profile)
+  └─ Version                  (trailing diagnostic footer — stays on Profile)
 ```
 
 - Each tab owns its own `NavigationStack` path (`trackPath` / `historyPath` / `insightsPath`, per-tab-navigation-paths): entry taps append to the History path only, Profile pushes per-tab — opening Profile on one tab never pre-pushes it on another. Destinations live next to their stack (History's entry-form + Profile destinations render inside `HistoryView`).
@@ -41,7 +42,7 @@ Profile (pushed page, top-trailing person control on every tab; signed-in only �
 - Switching destinations never changes timer state and never discards the previous destination's state (tab state is preserved by `TabView`).
 - The app launches into the auth flow when signed out (the auth flow is the root until sign-in completes) and into Track when signed in; there is no unsigned use and no "Enable Sync" action.
 - Insights shows a mirror-only breakdown of committed time (full spec: `SCREENS/Insights.md`): a `Today | This week | All time` period switch (default `This week`), a hero period total, a `By category | By text` lens toggle (default `By category`), and proportional rows with max-scaled bars. Category rows attribute the full duration to every attached category (rows may sum above the hero) with a one-line footnote naming the rule; rows are not tappable; empty periods show a one-line sentence, and the true-zero state keeps the honest placeholder.
-- Profile is signed-in-only and shows the active account and sync state. Dismissing Profile restores the previously selected destination and its state.
+- Profile is signed-in-only and shows sync state plus navigation. Dismissing Profile restores the previously selected destination and its state. Profile owns NO destructive actions directly: Sign out, Delete local data (renamed from "Erase local data"), and Delete account and local data live only in Account — no duplicates on Profile, no placeholder rows (full spec: `SCREENS/Account.md`).
 - The compact timer's main area returns to Track; its Stop button saves in place and keeps the current destination selected.
 
 ### Accessibility

@@ -26,6 +26,9 @@ final class AppContainer: ObservableObject {
     let authService: AuthService
     let appleService: AppleSignInService
     let timerService: TimerService
+    /// Owns the account-deletion lifecycle (submit, status resolution,
+    /// scoped cleanup). Wired with the same graph pieces as everything else.
+    let deletionCoordinator: AccountDeletionCoordinator
     /// The active account's local store. UNBOUND until `openLocalStore()`
     /// runs on sign-in/restored session; before that every tracker operation
     /// fails with `LocalStore.LocalStoreError.notBound`.
@@ -62,7 +65,8 @@ final class AppContainer: ObservableObject {
         localStore: LocalStore,
         undoBuffer: UndoBufferStore,
         syncController: SyncController,
-        clientHolder: APIClientHolder? = nil
+        clientHolder: APIClientHolder? = nil,
+        deletionCoordinator: AccountDeletionCoordinator? = nil
     ) {
         self.baseURL = baseURL
         self.apiClient = apiClient
@@ -79,6 +83,20 @@ final class AppContainer: ObservableObject {
         self.undoBuffer = undoBuffer
         self.syncController = syncController
         self.clientHolder = clientHolder
+        self.deletionCoordinator = deletionCoordinator ?? AccountDeletionCoordinator(
+            repository: repository,
+            deletionStorage: authService.deletionStorage,
+            keychain: keychain,
+            sessionStore: sessionStore,
+            cache: sessionCache,
+            syncController: syncController,
+            localStore: localStore,
+            timerService: timerService,
+            navigation: navigation,
+            connectivity: connectivity,
+            appleService: appleService,
+            authService: authService
+        )
         registerReapCheck()
         observeExternalStopSignal()
     }

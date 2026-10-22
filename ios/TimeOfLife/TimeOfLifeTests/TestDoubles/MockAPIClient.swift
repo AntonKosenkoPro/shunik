@@ -13,6 +13,9 @@ final class MockAPIClient: APISending, @unchecked Sendable {
         let path: String
         let requiresAuth: Bool
         let body: Data?
+        /// Explicit Bearer token for status-scheme endpoints (nil = session
+        /// token or unauthenticated).
+        let customBearer: String?
     }
 
     // MARK: - State
@@ -40,6 +43,12 @@ final class MockAPIClient: APISending, @unchecked Sendable {
     /// Canned result for `sendVoid`.
     var sendVoidHandler: ((APIEndpoint) throws -> Void)?
 
+    /// Canned raw result for `sendRaw`: the body with its HTTP status code.
+    var sendRawHandler: ((APIEndpoint) throws -> (data: Data, statusCode: Int))?
+
+    /// Number of times `sendRaw` was called.
+    private(set) var sendRawCallCount = 0
+
     // MARK: - Recording
 
     private func record(_ endpoint: APIEndpoint) {
@@ -49,7 +58,8 @@ final class MockAPIClient: APISending, @unchecked Sendable {
                 method: endpoint.method,
                 path: endpoint.path,
                 requiresAuth: endpoint.requiresAuth,
-                body: endpoint.body
+                body: endpoint.body,
+                customBearer: endpoint.customBearer
             )
         )
         lock.unlock()
@@ -93,6 +103,29 @@ final class MockAPIClient: APISending, @unchecked Sendable {
 
         do {
             try sendVoidHandler?(endpoint)
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw APIError.transport(underlying: String(describing: error))
+        }
+    }
+
+    func sendRaw(_ endpoint: APIEndpoint) async throws -> (data: Data, statusCode: Int) {
+        record(endpoint)
+        sendRawCallCount += 1
+
+        if let throwError {
+            if let apiError = throwError as? APIError {
+                throw apiError
+            }
+            throw APIError.transport(underlying: String(describing: throwError))
+        }
+
+        do {
+            guard let result = try sendRawHandler?(endpoint) else {
+                throw APIError.unexpected
+            }
+            return result
         } catch let error as APIError {
             throw error
         } catch {

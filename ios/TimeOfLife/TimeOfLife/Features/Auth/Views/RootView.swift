@@ -34,6 +34,13 @@ struct RootView: View {
     /// (preload failure) — the shell still mounts and `TrackViewModel`
     /// loads on appear with the recoverable error path.
     @State private var launchSnapshot: TrackSnapshot?
+    /// Auth-gate deletion state: the one-time pending-Apple-unlink notice
+    /// (set when a submit completes with durable pending revocation) and the
+    /// account id offered confirmed-cleanup retry after a post-purge local
+    /// failure. Loaded when the signed-out branch appears; dismissing either
+    /// never touches another account.
+    @State private var showPendingUnlinkNotice = false
+    @State private var cleanupRetryAccountID: String?
 
     var body: some View {
         Group {
@@ -148,6 +155,27 @@ struct RootView: View {
             }
         case .signedOut:
             AuthFlowView()
+                .task { await loadGateDeletionState() }
+                .overlay(alignment: .top) {
+                    if showPendingUnlinkNotice {
+                        pendingUnlinkBanner
+                    }
+                }
+                .alert(
+                    L10n.accountCleanupRetryTitle.text,
+                    isPresented: Binding(
+                        get: { cleanupRetryAccountID != nil },
+                        set: { if !$0 { cleanupRetryAccountID = nil } }
+                    )
+                ) {
+                    Button(L10n.accountCleanupRetryConfirm.text) {
+                        Task { await retryGateCleanup() }
+                    }
+                    .accessibilityIdentifier("GateCleanupRetryButton")
+                    Button(L10n.commonOk.text, role: .cancel) { cleanupRetryAccountID = nil }
+                } message: {
+                    Text(L10n.accountCleanupRetryMessage.text)
+                }
         }
         }
     }
@@ -172,6 +200,12 @@ struct RootView: View {
     private func beginSignIn(userID: String) {
         lifecycleTask?.cancel()
         lifecycleTask = Task {
+            if Task.isCancelled { return }
+            // Deletion-lifecycle resume: finishes another account's delayed
+            // cleanup (exact UUID only), re-fences our own pending intent,
+            // and (re)starts native Apple observation. Never touches the
+            // newly active account's files or session.
+            await container.deletionCoordinator.resume(accountID: userID)
             if Task.isCancelled { return }
             let ready = await container.prepareAccountStore(userID: userID)
             if Task.isCancelled { return }
@@ -198,6 +232,43 @@ struct RootView: View {
         }
     }
 
+    /// Loads auth-gate deletion state when the signed-out branch appears:
+    /// the pending-unlink notice (if the last submit completed with durable
+    /// pending Apple revocation) and cleanup retry (if a confirmed deletion
+    /// left a local marker behind).
+    private func loadGateDeletionState() async {
+        showPendingUnlinkNotice = container.deletionCoordinator.lastOutcomeWasPendingRevocation
+        let markers = await container.deletionCoordinator.pendingCleanupAccounts()
+        cleanupRetryAccountID = markers.first
+    }
+
+    /// One-time pending Apple-unlink notice: informational only, never a
+    /// confirmation. Dismissing clears it without touching any account.
+    private var pendingUnlinkBanner: some View {
+        HStack {
+            Text(L10n.accountPendingAppleUnlink.text)
+                .font(.footnote)
+                .foregroundStyle(Theme.textSecondary)
+            Spacer()
+            Button(L10n.commonOk.text) {
+                container.deletionCoordinator.dismissPendingUnlinkNotice()
+                showPendingUnlinkNotice = false
+            }
+        }
+        .padding()
+        .background(Theme.backgroundPrimary)
+        .accessibilityIdentifier("GatePendingUnlinkBanner")
+    }
+
+    /// Retries confirmed cleanup for the exact UUID from the gate, then
+    /// reloads the remaining markers: a second pending account is offered
+    /// next instead of hiding until the gate re-appears.
+    private func retryGateCleanup() async {
+        guard let accountID = cleanupRetryAccountID else { return }
+        _ = await container.deletionCoordinator.retryCleanup(accountID: accountID)
+        cleanupRetryAccountID = await container.deletionCoordinator.pendingCleanupAccounts().first
+    }
+
     /// Tears down the signed-in lifecycle on every transition to `.signedOut`
     /// (plain logout and server-driven revocation alike): stops sync, clears
     /// stale auth routes so the gate never reopens on a pre-filled OTP
@@ -222,6 +293,12 @@ struct RootView: View {
         container.localStoreOpenError = nil
         lifecycleTask?.cancel()
         lifecycleTask = Task {
+            // Other-device deletion check: after a generic session rejection
+            // the monitor confirms deletion with the original UUID's own
+            // valid status credential, or locks with files intact. Explicit
+            // sign-outs cleared their monitoring in `AuthService.logout`, so
+            // this is a no-op for them.
+            _ = await container.deletionCoordinator.handleSessionRejection()
             await waitForSyncShutdown()
             guard !Task.isCancelled else { return }
             // Rapid re-login flips the state before the close runs: skip it.

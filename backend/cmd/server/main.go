@@ -73,8 +73,14 @@ func run() int {
 
 	slog.Info("migrations applied successfully")
 
-	deps := server.NewDefaultDependencies(cfg, store)
+	deps := server.NewDefaultDependencies(ctx, cfg, store)
 	srv := server.New(deps)
+
+	// The Apple revocation worker drains the durable revocation outbox
+	// (explicit deletion's post-purge Apple work) until shutdown.
+	workerCtx, stopWorkers := context.WithCancel(context.Background())
+	srv.StartWorkers(workerCtx)
+	defer stopWorkers()
 
 	httpServer := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

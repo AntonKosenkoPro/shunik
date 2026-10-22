@@ -158,6 +158,46 @@ func truncateSentryMessage(msg string) string {
 	return msg[:cut] + "… (truncated)"
 }
 
+// ReportBackground captures a background-worker failure (no HTTP request
+// in scope) with the underlying error attached. It is a no-op unless Sentry
+// is enabled, so workers call it unconditionally next to their slog line.
+// The event carries only allowlisted tags (service, operation) plus the
+// caller-supplied PII-free details — never request data, user identifiers,
+// tokens, or secrets. The fingerprint is the stable op segment, so one
+// stuck-job class files one Sentry issue however many jobs queue behind it;
+// the job id rides in context, never in the fingerprint. Error strings are
+// bounded by the same central truncation as ReportError.
+// Do not pass a fabricated *http.Request to ReportError to reuse it: it
+// dereferences the request (method, route context) and would panic on nil.
+func ReportBackground(op string, err error, details map[string]string) {
+	if !sentryEnabled.Load() {
+		return
+	}
+	if op == "" {
+		op = "background"
+	}
+	hub := sentry.CurrentHub().Clone()
+	hub.WithScope(func(scope *sentry.Scope) {
+		scope.SetTag("service.name", sentryServiceName)
+		scope.SetTag("operation", op)
+		scope.SetLevel(sentry.LevelError)
+		scope.SetFingerprint([]string{"{{ default }}", op})
+		bg := make(map[string]any, len(details)+1)
+		bg["op"] = op
+		for k, v := range details {
+			bg[k] = v
+		}
+		scope.SetContext("background", bg)
+		if err == nil {
+			hub.CaptureMessage("background failure: " + op)
+			return
+		}
+		msg := truncateSentryMessage(err.Error())
+		scope.SetContext("error", map[string]any{"message": msg, "op": op})
+		hub.CaptureException(err)
+	})
+}
+
 // captureSentryPanic captures a recovered panic value as a fatal event.
 func captureSentryPanic(r *http.Request, rec any) {
 	err, ok := rec.(error)

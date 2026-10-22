@@ -99,6 +99,61 @@ actor KeychainStore: KeychainStoring {
         SecItemDelete(query as CFDictionary)
     }
 
+    /// Saves one JSON account-deletion artifact with the same status-checked
+    /// discipline as the snapshot: update the existing item, or add it when
+    /// absent. The existing item is never deleted first, so a failing write
+    /// preserves the last usable value.
+    func saveDeletionJSON(_ json: String, for key: KeychainKey) async -> Result<Void, KeychainError> {
+        guard let data = json.data(using: .utf8) else {
+            return .failure(.storageUnavailable(underlying: "deletion json encode failed"))
+        }
+        let query = baseQuery(for: key)
+        let attributes: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        ]
+        var status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound {
+            var add = query
+            add[kSecValueData as String] = data
+            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            status = SecItemAdd(add as CFDictionary, nil)
+        }
+        guard status == errSecSuccess else {
+            return .failure(.storageUnavailable(underlying: "save OSStatus \(status)"))
+        }
+        return .success(())
+    }
+
+    /// Loads one JSON account-deletion artifact, distinguishing absence
+    /// (`errSecItemNotFound` → `.success(nil)`) from temporary failures (any
+    /// other `OSStatus` → `.failure`). A corrupt item is reported as
+    /// unavailable, never as absent.
+    func loadDeletionJSON(for key: KeychainKey) async -> Result<String?, KeychainError> {
+        var query = baseQuery(for: key)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        switch status {
+        case errSecSuccess:
+            guard let data = result as? Data,
+                  let json = String(data: data, encoding: .utf8) else {
+                return .failure(.storageUnavailable(underlying: "deletion json data missing"))
+            }
+            return .success(json)
+        case errSecItemNotFound:
+            return .success(nil)
+        default:
+            return .failure(.storageUnavailable(underlying: "load OSStatus \(status)"))
+        }
+    }
+
+    func removeDeletionJSON(for key: KeychainKey) async {
+        let query = baseQuery(for: key)
+        SecItemDelete(query as CFDictionary)
+    }
+
     private func baseQuery(for key: KeychainKey) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,

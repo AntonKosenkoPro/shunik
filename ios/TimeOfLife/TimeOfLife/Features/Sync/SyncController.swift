@@ -93,6 +93,47 @@ final class SyncController: ObservableObject {
     /// shutdown wait.
     var isCycleLive: Bool { cycleRunning }
 
+    /// Accounts with an unresolved or cleaning deletion lifecycle
+    /// (account-deletion spec). While fenced, triggers and manual syncs for
+    /// the account are refused and in-flight cycles abort at the next stage
+    /// guard — local storage must never be touched by sync while a deletion
+    /// outcome is unresolved or cleanup is removing it. A timeout never
+    /// lifts the fence: only a scoped verdict or explicit cancel does.
+    private var deletionFencedUserIDs: Set<String> = []
+
+    /// Fences (`true`) or releases (`false`) sync for one account. Fencing is
+    /// owned by the account-deletion lifecycle: set before DELETE is sent
+    /// and held through ambiguous-outcome resolution and confirmed cleanup.
+    /// Releasing after an `active` verdict resumes normal sync without
+    /// forking another owner.
+    func setDeletionFence(userID: String, fenced: Bool) {
+        if fenced {
+            deletionFencedUserIDs.insert(userID)
+        } else {
+            deletionFencedUserIDs.remove(userID)
+        }
+    }
+
+    /// Test observability for the deletion fence.
+    var deletionFencedAccounts: Set<String> { deletionFencedUserIDs }
+
+    /// Whether sync is currently fenced for this account.
+    func isDeletionFenced(userID: String) -> Bool {
+        deletionFencedUserIDs.contains(userID)
+    }
+
+    /// Refuses a cycle at entry while the account is deletion-fenced. Parks
+    /// as `.inactive` with the same generation discipline as an aborted
+    /// cycle so the release path can re-`activate` cleanly.
+    private func refuseWhenFenced(userID: String, generation: Int) -> Bool {
+        guard isDeletionFenced(userID: userID) else { return false }
+        Self.logger.error("sync cycle skipped: deletion fence")
+        if cycleGeneration == generation, boundUserID == userID {
+            status = .inactive
+        }
+        return true
+    }
+
     /// Cycle diagnostics (Console): secret-free strings only — the same codes
     /// and messages surfaced in UI. Never tokens, bodies, or emails.
     private static let logger = Logger(subsystem: "com.antonkosenko.timeoflifeapp", category: "sync")
@@ -230,7 +271,7 @@ final class SyncController: ObservableObject {
     /// and the attach) degrades to a cheap fresh cycle — cursors just
     /// advanced, so it is a no-op round-trip.
     func syncNow(userID: String) async {
-        guard isBound(to: userID), status != .inactive else { return }
+        guard isBound(to: userID), status != .inactive, !isDeletionFenced(userID: userID) else { return }
         if let inFlight = cycleTask {
             await inFlight.value
             return
@@ -247,7 +288,7 @@ final class SyncController: ObservableObject {
 
     /// Foreground / connectivity-restored trigger.
     func trigger(userID: String) {
-        guard isBound(to: userID), status != .inactive else { return }
+        guard isBound(to: userID), status != .inactive, !isDeletionFenced(userID: userID) else { return }
         guard cycleTask == nil else { return }
         cycleGeneration += 1
         let generation = cycleGeneration
@@ -302,6 +343,13 @@ final class SyncController: ObservableObject {
             return
         }
         activeCycleUserID = userID
+        // Deletion fence at cycle entry: an account whose deletion outcome
+        // is unresolved (or whose cleanup is removing it) runs no drain and
+        // no pull. Park as `.inactive` (aborted-cycle discipline) so the
+        // release path can `activate` exactly one sync owner again.
+        if refuseWhenFenced(userID: userID, generation: generation) {
+            return
+        }
         guard connectivity.isConnected else {
             Self.logger.error("sync cycle skipped: offline")
             status = .error("offline")
@@ -408,12 +456,20 @@ final class SyncController: ObservableObject {
 
     /// Runs one cycle stage, aborting (with `CancellationError`) when the
     /// account changed mid-cycle: the still-bound id must match the session's
-    /// user id, otherwise nothing further is drained or applied.
+    /// user id, otherwise nothing further is drained or applied. A deletion-
+    /// fenced account aborts the same way: while a deletion outcome is
+    /// unresolved or cleanup is removing the account, sync must not drain or
+    /// merge anything for it (late responses never resurrect a deleted
+    /// account or modify another one).
     private func guardedStage(
         userID: String,
         _ stage: () async throws -> Void
     ) async throws {
         guard sessionUserIDProvider() == userID else {
+            throw CancellationError()
+        }
+        guard !isDeletionFenced(userID: userID) else {
+            Self.logger.error("sync stage aborted: deletion fence")
             throw CancellationError()
         }
         try await stage()

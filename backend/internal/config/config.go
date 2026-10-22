@@ -5,10 +5,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/antonkosenko/time-of-life/backend/internal/apple"
 	"github.com/joho/godotenv"
 )
 
@@ -61,6 +63,31 @@ type Config struct {
 	// Keys[0] is the primary sealing key; the rest are retired keys kept
 	// for decrypting receipts sealed before rotation.
 	RecoveryKeys [][]byte
+	// AccountStatusSecret signs the narrow account-status credentials
+	// (explicit account deletion evidence). It must be at least 32 random
+	// bytes and MUST differ from JWT_SECRET: a status credential must never
+	// validate as a normal access token and vice versa.
+	AccountStatusSecret string
+	// AppleTeamID is the Apple Developer Team ID issuing the Sign in with
+	// Apple client secret (the `iss` of the ES256 client-secret JWT).
+	AppleTeamID string
+	// AppleKeyID is the Key ID of the Sign in with Apple private key (the
+	// `kid` header of the client-secret JWT).
+	AppleKeyID string
+	// ApplePrivateKey is the raw PEM-encoded Sign in with Apple private key
+	// (.p8, PKCS#8 ECDSA P-256). It never leaves the server: it signs Apple
+	// client secrets and never enters logs or the app bundle.
+	ApplePrivateKey string
+	// AppleTokenKeys holds the parsed APPLE_TOKEN_KEYS keyring: AES-256 keys
+	// sealing stored Apple refresh credentials and durable revocation jobs
+	// at rest. Keys[0] seals; the rest decrypt receipts sealed before
+	// rotation. It is a separate keyring from REFRESH_RECOVERY_KEYS with its
+	// own domain-bound associated data.
+	AppleTokenKeys [][]byte
+	// AppleRedirectURI is the optional redirect URI bound into Apple
+	// authorization-code exchanges. It is sent only when set and must match
+	// the URI used in the native authorization request, if any.
+	AppleRedirectURI string
 }
 
 // Load reads configuration from the environment (.env first, non-fatal if missing).
@@ -185,10 +212,9 @@ func Load() (*Config, error) {
 		}
 	}
 
-	// Optional: Sign in with Apple. Empty APPLE_CLIENT_ID leaves verification
-	// disabled; the registered /auth/apple route returns 503. When enabled, the
-	// Apple identity token's `aud` claim for a native iOS app is the Bundle ID.
-	cfg.AppleClientID = os.Getenv("APPLE_CLIENT_ID")
+	// Optional: Sign in with Apple JWKS override. The Apple identity
+	// variables themselves (APPLE_CLIENT_ID and the revocation set) are
+	// validated in the all-or-nothing Apple block below.
 	cfg.AppleJWKSURL = os.Getenv("APPLE_JWKS_URL")
 	if cfg.AppleJWKSURL == "" {
 		cfg.AppleJWKSURL = "https://appleid.apple.com/auth/keys"
@@ -223,14 +249,86 @@ func Load() (*Config, error) {
 	}
 	cfg.RecoveryKeys = keys
 
+	// Required: ACCOUNT_STATUS_SECRET — signs the narrow account-status
+	// credentials that prove explicit account deletion to other devices. It
+	// must be at least 32 random bytes and MUST differ from JWT_SECRET so a
+	// status credential can never pass normal access-token validation.
+	cfg.AccountStatusSecret = os.Getenv("ACCOUNT_STATUS_SECRET")
+	if cfg.AccountStatusSecret == "" {
+		return nil, requiredFieldError("ACCOUNT_STATUS_SECRET")
+	}
+	if len(cfg.AccountStatusSecret) < 32 {
+		return nil, &configError{msg: "ACCOUNT_STATUS_SECRET must be at least 32 bytes long"}
+	}
+	if cfg.AccountStatusSecret == cfg.JWTSecret {
+		return nil, &configError{msg: "ACCOUNT_STATUS_SECRET must differ from JWT_SECRET (separate purpose, separate key)"}
+	}
+
+	// Apple revocation configuration (explicit account deletion with
+	// automatic Apple unlinking). All-or-nothing: when ANY of the five Apple
+	// variables is set, ALL five are required and startup fails fast on a
+	// partial set — a relay must never run Apple sign-in without the
+	// revocation material that explicit deletion depends on. When NONE is
+	// set, Sign in with Apple stays disabled and OTP keeps working.
+	cfg.AppleClientID = os.Getenv("APPLE_CLIENT_ID")
+	cfg.AppleTeamID = os.Getenv("APPLE_TEAM_ID")
+	cfg.AppleKeyID = os.Getenv("APPLE_KEY_ID")
+	cfg.ApplePrivateKey = os.Getenv("APPLE_PRIVATE_KEY")
+	cfg.AppleRedirectURI = os.Getenv("APPLE_REDIRECT_URI")
+	appleTokenKeysRaw := os.Getenv("APPLE_TOKEN_KEYS")
+	appleVars := map[string]string{
+		"APPLE_CLIENT_ID":   cfg.AppleClientID,
+		"APPLE_TEAM_ID":     cfg.AppleTeamID,
+		"APPLE_KEY_ID":      cfg.AppleKeyID,
+		"APPLE_PRIVATE_KEY": cfg.ApplePrivateKey,
+		"APPLE_TOKEN_KEYS":  appleTokenKeysRaw,
+	}
+	anyApple := false
+	var missingApple []string
+	for name, val := range appleVars {
+		if strings.TrimSpace(val) != "" {
+			anyApple = true
+		} else {
+			missingApple = append(missingApple, name)
+		}
+	}
+	if anyApple {
+		if len(missingApple) > 0 {
+			sort.Strings(missingApple)
+			return nil, &configError{msg: "partial Apple configuration: when any APPLE_* variable is set, all five are required (APPLE_CLIENT_ID, APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_PRIVATE_KEY, APPLE_TOKEN_KEYS); missing: " + strings.Join(missingApple, ", ")}
+		}
+		tokenKeys, err := ParseKeyring("APPLE_TOKEN_KEYS", appleTokenKeysRaw)
+		if err != nil {
+			return nil, err
+		}
+		if len(tokenKeys) == 0 {
+			return nil, requiredFieldError("APPLE_TOKEN_KEYS")
+		}
+		cfg.AppleTokenKeys = tokenKeys
+		// Fail fast on unusable Apple signing material (never log the key):
+		// a relay that cannot mint client secrets must not boot into a
+		// state where explicit Apple deletion 503s after users signed in.
+		if _, err := apple.ParsePrivateKey([]byte(cfg.ApplePrivateKey)); err != nil {
+			return nil, invalidFieldError("APPLE_PRIVATE_KEY", "valid PKCS#8 ECDSA P-256 PEM (.p8 contents)")
+		}
+	}
+
 	return cfg, nil
 }
 
-// ParseRecoveryKeys parses a comma-separated list of hex-encoded 32-byte
+// ParseRecoveryKeys parses the REFRESH_RECOVERY_KEYS keyring (see
+// ParseKeyring). Kept as the named entry point for refresh recovery.
+func ParseRecoveryKeys(raw string) ([][]byte, error) {
+	return ParseKeyring("REFRESH_RECOVERY_KEYS", raw)
+}
+
+// ParseKeyring parses a comma-separated list of hex-encoded 32-byte
 // (AES-256) keys into raw key bytes. The first key is the primary sealing
 // key; the rest are retired keys. Empty entries are ignored; an empty input
-// yields no keys. Any malformed entry (non-hex or wrong length) is an error.
-func ParseRecoveryKeys(raw string) ([][]byte, error) {
+// yields no keys. Any malformed entry (non-hex or wrong length) or the
+// all-zero placeholder is an error naming the owning variable, so an
+// operator always inspects the right keyring.
+func ParseKeyring(name, raw string) ([][]byte, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, nil
@@ -241,7 +339,7 @@ func ParseRecoveryKeys(raw string) ([][]byte, error) {
 		if part == "" {
 			continue
 		}
-		key, err := parseRecoveryKey(i+1, part)
+		key, err := parseRecoveryKey(name, i+1, part)
 		if err != nil {
 			return nil, err
 		}
@@ -254,15 +352,15 @@ func ParseRecoveryKeys(raw string) ([][]byte, error) {
 // 1-based index names the failing entry without ever logging the key
 // material itself. The all-zero key is rejected: it is a plausible
 // placeholder mistake, and sealing under a guessable key would defeat the
-// confidentiality the receipts exist to protect (`openssl rand -hex 32`
+// confidentiality the keyrings protect (`openssl rand -hex 32`
 // never emits it, so there is no false-positive risk).
-func parseRecoveryKey(index int, hexKey string) ([]byte, error) {
+func parseRecoveryKey(name string, index int, hexKey string) ([]byte, error) {
 	key, err := hex.DecodeString(hexKey)
 	if err != nil || len(key) != 32 {
-		return nil, fmt.Errorf("invalid REFRESH_RECOVERY_KEYS entry %d: expected 64 hex chars: %w", index, errOrLength(err, len(key)))
+		return nil, fmt.Errorf("invalid %s entry %d: expected 64 hex chars: %w", name, index, errOrLength(err, len(key)))
 	}
 	if isZeroKey(key) {
-		return nil, invalidFieldError("REFRESH_RECOVERY_KEYS", "non-trivial 32-byte key (all-zero key rejected; generate with `openssl rand -hex 32`)")
+		return nil, invalidFieldError(name, "non-trivial 32-byte key (all-zero key rejected; generate with `openssl rand -hex 32`)")
 	}
 	return key, nil
 }

@@ -113,9 +113,11 @@ The backend deploys to a **GCP Compute Engine VM** (`timeoflife-backend`, us-eas
 
 **Landing + privacy**: `https://lifio.antonkosenko.pro` (static site in `web/`, Cloudflare Pages Git integration on `main`, no build step). Privacy policy: `https://lifio.antonkosenko.pro/privacy` — the support + privacy URLs for external TestFlight review.
 
+**Account deletion rollout**: see [`docs/account-deletion-operations.md`](docs/account-deletion-operations.md) for required signing/encryption/status secrets, Apple notification registration, pending-unlink recovery, backup-restore restrictions, and signed-device release gates. Local implementation or passing fixture tests do not prove production provisioning or authorize publishing the new privacy claims ahead of the matching app/backend.
+
 ## Deferred / out of scope
 
-- **Sign in with Apple follow-ups** — account-deletion token revocation via Apple `/auth/revoke`, nonce replay defense, credential-state observation, identity merging between email-OTP and Apple accounts (kept separate by design for now).
+- **Sign in with Apple follow-ups** — active `add-account-deletion` change implements account-deletion token revocation via Apple `/auth/revoke` (durable encrypted job + status-verified local cleanup), credential-state/revocation observation with sign-out-only external-revocation semantics, and the Profile → Account surface. Remaining deferred: nonce replay defense (`harden-apple-signin` planned), identity merging between email-OTP and Apple accounts (kept separate by design), and localized copy for Apple-path server error codes (currently falling back to the generic banner).
 - **History filtering** — deferred; the live follow-ups live in `docs/history-roadmap.md`.
 - **Shake-to-undo polish + bulk-delete cap; lock-screen ControlWidget toggle** — entry and category deletions undo through the DEFAULT system Undo confirmation (archived `unify-catalog-deletion`); remaining deferred: supersession UX polish and the bulk-delete cap. Live Activities (Dynamic Island + Lock Screen banner) are shipped — only the ControlWidget toggle itself is still deferred. **Device quota counting + 6th-device picker (#46)** is a pre-release blocker on top of the per-device session foundation; a multi-session device switcher is future work (one active session per device; switching re-authenticates).
 - **Kafka** — deferred (S1 names it; not needed yet). **Rate-limit store** — in-memory; Redis before multi-instance.

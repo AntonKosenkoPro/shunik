@@ -22,7 +22,7 @@
 
   <main>
     <h1>Privacy Policy</h1>
-    <p>Last updated: October 19, 2026.</p>
+    <p>Last updated: October 21, 2026.</p>
 
     <h2>What Lifio collects</h2>
     <ul>
@@ -35,7 +35,7 @@
     <h2>Where your data lives</h2>
     <ul>
       <li><strong>On your device first.</strong> Entries, categories, and the running timer live in a per-account database on your iPhone and work fully offline.</li>
-      <li><strong>On the relay server.</strong> A server hosted in the European Union stores your synced account, entries, and categories so the app can sign you in and sync across devices.</li>
+      <li><strong>On the relay server.</strong> Your synced account, entries, and categories live on the Lifio relay in the United States (N. Virginia): a managed Postgres database as the system of record, fronted by the Lifio API server, so the app can sign you in and sync across devices.</li>
     </ul>
 
     <h2>What Lifio never does</h2>
@@ -45,13 +45,16 @@
     </ul>
 
     <h2>Deletion</h2>
+    <p>You delete data yourself in the app under Profile → Account. The three actions do different things:</p>
     <ul>
-      <li><strong>On-device data:</strong> Profile → Erase local data removes the account's data from that device.</li>
-      <li><strong>Full deletion including the server:</strong> email <a href="mailto:me@antonkosenko.pro">me@antonkosenko.pro</a> from your login address and your account and synced data will be deleted. In-app full account deletion is on the roadmap and this policy will be updated when it ships.</li>
+      <li><strong>Sign Out</strong> ends the session on this device only. All data — on this device and on the relay — is kept, and signing back in restores it.</li>
+      <li><strong>Delete local data</strong> removes only this account's data from this device (entries, categories, pending sync state) and signs you out. Your synced account and other devices are untouched.</li>
+      <li><strong>Delete account and local data</strong> permanently deletes your Lifio account and all synced entries, categories, and notes, removes this account's data from this device, and signs out your other devices. If you signed up with Apple, Lifio also automatically unlinks Sign in with Apple authorization; if Apple is momentarily unreachable, unlinking is retried automatically and only a minimal encrypted revocation record is kept until Apple confirms.</li>
     </ul>
+    <p><strong>Limits worth knowing.</strong> Your other devices erase this account's local copy only after they obtain valid confirmation of deletion. An offline device keeps its copy until it reconnects and verifies; if confirmation is unavailable or has expired, the copy stays locked rather than being erased on assumption. A failed sign-in alone never wipes anything. Backups follow a configured 30-day retention policy and expire through scheduled rotation rather than being immediately rewritten. Deletion removes your live data; a backup must not be restored into live service without reconciling account deletions. If you revoke Lifio in your Apple Settings (Apple Account → Sign in with Apple) instead, that only signs you out: your Lifio account, synced data, and local files are preserved. Signing in again with the same login email returns you to the same Lifio account and data.</p>
 
     <h2>Security</h2>
-    <p>Traffic between the app and the relay uses TLS. Login codes and session tokens are stored server-side only as hashes, and app sessions live in the iOS Keychain on your device.</p>
+    <p>Traffic between the app and the relay uses TLS. Login codes and Lifio refresh-token authentication records are stored server-side as hashes. An encrypted, temporary refresh-recovery record lets the app recover an interrupted sign-in session without storing its credential in plaintext. Apple tokens needed for automatic authorization revocation are encrypted separately, including minimal pending revocation work after account deletion, and removed when revocation completes. App credentials and deletion-recovery information live in the iOS Keychain on your device.</p>
 
     <h2>Changes to this policy</h2>
     <p>Material changes will be reflected here with a new date. Continued use of Lifio after a change means you accept the updated policy.</p>

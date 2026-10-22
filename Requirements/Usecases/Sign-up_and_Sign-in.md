@@ -15,3 +15,11 @@
       2. When the code is resent, the user gets an appropriate feedback message.
     5. If the code is valid and accepted by the server, the user is signed in; `SyncController` activates and the app shell (Track) remains the root.
 6. If the user chooses **Sign in with Apple** on the welcome screen, the native Apple authorization sheet appears. On success, the user is signed in; `SyncController` activates and the app shell (Track) remains the root.
+
+## Account page and deletion (add-account-deletion change — planned, not yet implemented)
+
+7. The signed-in user opens Profile (top-trailing person control on any tab) → **Account**. Account shows the cached account email read-only (works offline; an Apple relay address displays as-is), Sign out (one confirmation), Delete local data (this account's on-device file only, relay untouched), and the visually separate **Delete account and local data**.
+8. If the user taps **Delete account and local data**, exactly one confirmation alert names both consequences and offers Cancel (Cancel sends nothing). Apple-created accounts without a stored revocable credential first complete the native Apple authorization sheet for the same identity; dismissing it cancels with no request. Email-only accounts skip that step.
+9. On confirm, the app purges the relay account and its synced data, automatically revokes Apple authorization for Apple-created accounts (retrying a durable encrypted revocation job if Apple is momentarily unavailable), ends the matching Live Activity, removes this account's local copy, and returns to the auth gate. If delivery is ambiguous the app resolves via the read-only account-status check before announcing anything — success is never assumed from accepting the alert.
+10. Another device of the same account learns of the deletion only through status-verified proof for the original account UUID; generic sign-in rejection locks it with files intact. An offline device keeps its local copy until it can verify. A later signup with the same email or Apple identity creates a new account (new UUID) with none of the deleted content.
+11. Revoking Lifio in the Apple Settings (Apple ID → Sign in with Apple) is sign-out-only: sessions end but the Lifio identity, server data, and local files are preserved, and reauthorizing the same Apple identity returns to the existing account.
