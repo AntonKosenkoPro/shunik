@@ -157,7 +157,16 @@ jobs:
             AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
             AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
             AWS_REGION=${{ vars.AWS_REGION }}
-            SES_FROM=${{ vars.SES_FROM }}
+            # Single-quoted: SES_FROM routinely carries a display name
+            # ("Lifio <noreply@...>" — spaces + angle brackets), which the
+            # `set -a; . ./.env` sourcing below would otherwise parse as
+            # redirections (observed: `.env: line 7: syntax error near
+            # unexpected token 'newline'`). Single (not double) quotes so
+            # `$`/backticks also survive untouched; godotenv parses both
+            # quote styles, so the app sees the bare value. Constraint
+            # (same rule as the key lines below): the value must never
+            # contain a single quote — sender addresses never do.
+            SES_FROM='${{ vars.SES_FROM }}'
             APPLE_CLIENT_ID=${{ secrets.APPLE_CLIENT_ID }}
             APPLE_JWKS_URL=${{ vars.APPLE_JWKS_URL }}
             TRUSTED_PROXIES=${{ vars.TRUSTED_PROXIES }}
@@ -267,6 +276,19 @@ jobs:
               : "${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY required when EMAIL_BACKEND=ses}"
               : "${AWS_REGION:?AWS_REGION required when EMAIL_BACKEND=ses}"
               : "${SES_FROM:?SES_FROM required when EMAIL_BACKEND=ses}"
+              # Shape check (fail loud, not silent): quoting keeps sourcing
+              # safe, but a pathological value (stray quote) still breaks the
+              # source above — after sourcing, the value must still look like
+              # a sender address or the deploy stops here instead of shipping
+              # a corrupted From to SES send time. The value itself is never
+              # echoed: a quote-folded assignment can swallow following .env
+              # lines (including secrets) into SES_FROM, so printing it on
+              # failure could leak them into the log — read vars.SES_FROM in
+              # the GitHub UI instead.
+              case "$SES_FROM" in
+                *"@"*) ;;
+                *) echo "SES_FROM failed validation (value withheld — inspect vars.SES_FROM)"; exit 1 ;;
+              esac
             fi
             # DATABASE_URL selects the database: empty keeps VM-local Postgres;
             # a set value must be a TLS-only hosted URL (fail loudly otherwise).
