@@ -163,6 +163,11 @@ targets:
         # normalizes every com.apple.* entry generically.
         com.apple.BackgroundModes:
           enabled: 1
+        # Associated Domains (Hide My Email attribution fix): enables
+        # webcredentials for antonkosenko.pro; the postGenCommand hook
+        # normalizes every com.apple.* entry generically.
+        com.apple.AssociatedDomains:
+          enabled: 1
     dependencies:
       # Embeds the Live Activities widget extension (live-activities
       # change): XcodeGen creates the Embed App Extensions phase from an
