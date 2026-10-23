@@ -538,6 +538,12 @@ struct TrackContent: View {
                 ) { vm.select($0) }
             }
         }
+        // Full-width slot: when recents are empty the hint text is short and
+        // the stack would otherwise hug its content and center under the
+        // outer center-aligned containers (header drifted to x=0.193 instead
+        // of the 0.060 content edge). Non-empty state already spans full
+        // width via the chips viewport, so this only pins the empty state.
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
