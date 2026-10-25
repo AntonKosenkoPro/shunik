@@ -150,9 +150,11 @@ func TestSQLiteDomain_PetCRUDAndSince(t *testing.T) {
 	if all, err := store.ListPetsChangedSince(ctx, hid, &tomorrow); err != nil || len(all) != 0 {
 		t.Fatalf("expected none since tomorrow, got %+v, %v", all, err)
 	}
-	// Nothing is strictly newer than the row's own stamp.
-	if all, err := store.ListPetsChangedSince(ctx, hid, &got.UpdatedAt); err != nil || len(all) != 0 {
-		t.Fatalf("expected none since own stamp, got %+v, %v", all, err)
+	// Bounds are inclusive: a cursor at the row's own stamp re-fetches it
+	// (idempotent upserts make this safe), so same-precision writes can
+	// never fall through the cracks between pulls.
+	if all, err := store.ListPetsChangedSince(ctx, hid, &got.UpdatedAt); err != nil || len(all) != 1 {
+		t.Fatalf("expected self since own stamp, got %+v, %v", all, err)
 	}
 	zero := time.Time{}
 	if all, err := store.ListPetsChangedSince(ctx, hid, &zero); err != nil || len(all) != 1 {
@@ -828,8 +830,8 @@ func TestSQLiteDomain_HouseholdDeletions(t *testing.T) {
 	}
 	cursor := base.Add(time.Second)
 	got, err := store.ListHouseholdDeletions(ctx, hid, &cursor)
-	if err != nil || len(got) != 1 || got[0].ID != "rec-c" {
-		t.Fatalf("expected only rec-c after cursor, got %+v, %v", got, err)
+	if err != nil || len(got) != 2 || got[0].ID != "rec-b" || got[1].ID != "rec-c" {
+		t.Fatalf("expected rec-b+rec-c at cursor (inclusive bounds), got %+v, %v", got, err)
 	}
 	zero := time.Time{}
 	if got, err := store.ListHouseholdDeletions(ctx, hid, &zero); err != nil || len(got) != 3 {

@@ -26,18 +26,23 @@ final class AppContainer: ObservableObject {
     /// Owns the account-deletion lifecycle (submit, status resolution,
     /// scoped cleanup). Wired with the same graph pieces as everything else.
     let deletionCoordinator: AccountDeletionCoordinator
-    /// The active account's local store. UNBOUND until `openLocalStore()`
+    /// The active household's local store. UNBOUND until `openHouseholdStore()`
     /// runs on sign-in/restored session; before that every tracker operation
     /// fails with `LocalStore.LocalStoreError.notBound`.
     let localStore: LocalStore
     let undoBuffer: UndoBufferStore
     let syncController: SyncController
-    /// The last `openLocalStore` failure (disk-full, corrupt file, migration
+    /// Resolves the signed-in user's household (GET /mine, cached per user
+    /// for offline returns) and mirrors the household sidecar/defaults that
+    /// `ActiveAccountFileResolver` reads. Built in `production()`; injected
+    /// in tests.
+    let householdService: HouseholdService
+    /// The last `openHouseholdStore` failure (disk-full, corrupt file, migration
     /// error — and, as of the complexity-reduction pass, integrity failures
     /// too: an `invalidUserID`/`accountMismatch` bind leaves the store
     /// cleanly unbound and surfaces here instead of crashing on sign-in; the
     /// gate stays up with the error and the next sign-in retries the bind).
-    /// `openLocalStore` stays non-throwing because `RootView` awaits it
+    /// `openHouseholdStore` stays non-throwing because `RootView` awaits it
     /// inline during startup.
     @Published var localStoreOpenError: Error?
     /// Strong reference to the holder that wires the API client's refresh hook
@@ -61,6 +66,7 @@ final class AppContainer: ObservableObject {
         localStore: LocalStore,
         undoBuffer: UndoBufferStore,
         syncController: SyncController,
+        householdService: HouseholdService,
         clientHolder: APIClientHolder? = nil,
         deletionCoordinator: AccountDeletionCoordinator? = nil
     ) {
@@ -77,6 +83,7 @@ final class AppContainer: ObservableObject {
         self.localStore = localStore
         self.undoBuffer = undoBuffer
         self.syncController = syncController
+        self.householdService = householdService
         self.clientHolder = clientHolder
         self.deletionCoordinator = deletionCoordinator ?? AccountDeletionCoordinator(
             repository: repository,
@@ -94,9 +101,9 @@ final class AppContainer: ObservableObject {
     }
 
     /// Default production graph wired against `AppConfig.baseURL`. The local
-    /// store is built unbound; call `openLocalStore(userID:)` once the
+    /// store is built unbound; call `openHouseholdStore(userID:)` once the
     /// session resolves (restore on launch, verify/apple on login) and
-    /// `closeLocalStore()` on sign-out — account-bound-store spec.
+    /// `closeLocalStore()` on sign-out — one file per household.
     static func production() -> AppContainer {
         let baseURL = AppConfig.baseURL
         let keychain = KeychainStore()
@@ -138,6 +145,10 @@ final class AppContainer: ObservableObject {
             return session.id
         }
 
+        let householdService = Self.makeHouseholdSync(
+            client: client, syncController: syncController
+        )
+
         return AppContainer(
             baseURL: baseURL,
             apiClient: client,
@@ -152,36 +163,57 @@ final class AppContainer: ObservableObject {
             localStore: localStore,
             undoBuffer: undoBuffer,
             syncController: syncController,
+            householdService: householdService,
             clientHolder: clientHolder
         )
     }
+    /// Builds the household sync pair: the relay shares the authenticated
+    /// client and is wired into the controller here (nil elsewhere keeps
+    /// the no-op behavior for tests that don't set it).
+    private static func makeHouseholdSync(
+        client: APIClient,
+        syncController: SyncController
+    ) -> HouseholdService {
+        let relay = SyncRelayRepository(client: client)
+        syncController.relay = relay
+        return HouseholdService(
+            relay: relay,
+            defaults: UserDefaults(suiteName: LocalStore.appGroupID),
+            sidecarURL: ActiveAccountFileResolver.householdSessionFileURL()
+        )
+    }
 
-    // MARK: - Account-bound store lifecycle (account-bound-store spec)
+    // MARK: - Household-bound store lifecycle
 
-    /// Binds the local store to the signed-in account: opens (creating if
-    /// needed) `shunik_<userId>.db` in the App Group. Called by the signed-in
-    /// path in `RootView` — restore-on-launch and both sign-in flows — and
-    /// awaited before any store operation (undo commitAll, seeding, first
-    /// sync cycle) touches the file.
+    /// Binds the local store to the signed-in user's household: resolves the
+    /// household id (`GET /mine`, cached per user for offline returns), then
+    /// opens (creating if needed) that household's `shunik_<householdId>.db`
+    /// file in the App Group. Called by the signed-in path in `RootView` —
+    /// restore-on-launch and both sign-in flows — and awaited before any
+    /// store operation touches the file.
     ///
-    /// Every failure (integrity or retryable) is logged and surfaced via
-    /// `localStoreOpenError` instead of crashing on sign-in: the store stays
-    /// cleanly unbound and the gate stays up with the error.
+    /// Every failure (offline without cache, integrity, migration, disk) is
+    /// logged and surfaced via `localStoreOpenError` instead of crashing on
+    /// sign-in: the store stays cleanly unbound and the gate stays up with
+    /// the error. Offline-without-cache surfaces through the same generic
+    /// persistence copy — the user is told something is wrong and retrying
+    /// online resolves it.
     ///
-    /// Returns whether the store is bound afterwards. The caller (`RootView`
-    /// `beginSignIn`) MUST check this: a failed open leaves the store cleanly
-    /// unbound, so mounting the shell on `false` would run every tracker read
-    /// against `notBound`. The error is cleared on entry so a retry never sees
-    /// a stale failure.
+    /// Returns whether the household is bound afterwards. The caller
+    /// (`RootView` `beginSignIn`) MUST check this: a failed open leaves the
+    /// store cleanly unbound, so mounting the shell on `false` would run
+    /// every tracker read against `notBound`. The error is cleared on entry
+    /// so a retry never sees a stale failure.
     @discardableResult
-    func openLocalStore(userID: String) async -> Bool {
+    func openHouseholdStore(userID: String) async -> Bool {
         localStoreOpenError = nil
         do {
-            try await localStore.openAccount(userID: userID)
+            let householdID = try await householdService.resolveHousehold(userID: userID)
+            try await localStore.openHousehold(householdID: householdID)
             return true
         } catch {
             localStoreOpenError = error
-            Self.logger.error("LocalStore account binding failed: \(String(describing: error), privacy: .public)")
+            Self.logger.error("LocalStore household binding failed: \(String(describing: error), privacy: .public)")
             // Sync-distress breadcrumb (observability Stage 0): fixed
             // string only — the error can carry file paths.
             SentryReporter.addSyncDistressBreadcrumb("local store open failed")
@@ -197,11 +229,11 @@ final class AppContainer: ObservableObject {
     }
 
     // swiftlint:disable:next todo
-    // SHUNIK-TODO: scaffold — opens the account file and commits buffered
+    // SHUNIK-TODO: scaffold — opens the household file and commits buffered
     // deletions before the shell reveals. Pet-care seeding will hook in here.
     @discardableResult
     func prepareAccountStore(userID: String) async -> Bool {
-        let opened = await openLocalStore(userID: userID)
+        let opened = await openHouseholdStore(userID: userID)
         guard opened else { return false }
         // Best-effort like before: a commit failure must not block reveal —
         // the buffer retries on the next launch.

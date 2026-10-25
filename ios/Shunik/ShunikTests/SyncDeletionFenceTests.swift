@@ -28,7 +28,7 @@ struct SyncDeletionFenceTests {
     private func temporaryStoreURL() -> URL {
         URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString)
-            .appendingPathComponent(LocalStore.databaseFileName(userID: "u1"))
+            .appendingPathComponent(LocalStore.databaseFileName(householdID: "u1"))
     }
 
     private func waitUntil(timeout: TimeInterval = 5, _ condition: @escaping () -> Bool) async {

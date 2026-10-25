@@ -24,14 +24,14 @@ extension AppContainer {
         let sessionStore = SessionStore()
         let navigation = AppNavigationStack()
         let connectivity = MockConnectivity(connected: true)
-        // The UI-testing graph pins a per-user test file (account-bound-store
-        // spec shape): `shunik_<userId>.db` under a throwaway temp directory,
-        // opened already bound so every screen reads one account's data. A
+        // The UI-testing graph pins a per-household test file
+        // (`shunik_<householdId>.db`) under a throwaway temp directory,
+        // opened already bound so every screen reads one household's data. A
         // file failure must never crash the loop: fall back to an unbound
         // store (screens render empty) instead of `try!`.
         let localStore = (try? LocalStore(
-            url: temporaryStoreURL(userID: "ui-test"),
-            userID: "ui-test"
+            url: temporaryStoreURL(householdID: "ui-test"),
+            householdID: "ui-test"
         )) ?? LocalStore()
         let repository = UITestingAuthRepository()
         let authService = AuthService(
@@ -65,6 +65,11 @@ extension AppContainer {
             localStore: localStore,
             undoBuffer: undoBuffer,
             syncController: syncController,
+            householdService: HouseholdService(
+                relay: StubHouseholdRelay(),
+                defaults: nil,
+                sidecarURL: nil
+            ),
             clientHolder: nil
         )
 
@@ -86,10 +91,10 @@ extension AppContainer {
         seedDeletionEvidence(keychain: keychain)
     }
 
-    private static func temporaryStoreURL(userID: String) -> URL {
+    private static func temporaryStoreURL(householdID: String) -> URL {
         URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString)
-            .appendingPathComponent(LocalStore.databaseFileName(userID: userID))
+            .appendingPathComponent(LocalStore.databaseFileName(householdID: householdID))
     }
 
     /// Places the app on a specific screen for inspection.
@@ -252,3 +257,27 @@ final class UITestingAuthRepository: AuthRepository, @unchecked Sendable {
     }
 }
 #endif
+
+/// UI-testing household relay: never hits the network.
+private final class StubHouseholdRelay: SyncRelay, @unchecked Sendable {
+    func fetchHousehold() async throws -> HouseholdWithMembers {
+        throw APIError.offline
+    }
+    func listPets(since: String?) async throws -> PetListResponse { PetListResponse(pets: [], cursor: "") }
+    func createPet(_ pet: PetRecord) async throws -> PetRecord { pet }
+    func updatePet(id: String, body: PetUpdateBody) async throws -> PetRecord { throw APIError.offline }
+    func deletePet(id: String) async throws {}
+    func listEvents(since: String?, petID: String?) async throws -> EventListResponse { EventListResponse(events: [], cursor: "") }
+    func createEvent(_ event: EventRecord) async throws -> EventRecord { event }
+    func updateEvent(id: String, body: EventUpdateBody) async throws -> EventRecord { throw APIError.offline }
+    func deleteEvent(id: String) async throws {}
+    func listIntakes(since: String?, courseID: String?) async throws -> IntakeListResponse { IntakeListResponse(intakes: [], cursor: "") }
+    func createIntake(_ intake: IntakeRecord) async throws -> IntakeRecord { intake }
+    func updateIntake(id: String, body: IntakeUpdateBody) async throws -> IntakeRecord { throw APIError.offline }
+    func deleteIntake(id: String) async throws {}
+    func listDocuments(since: String?) async throws -> DocumentListResponse { DocumentListResponse(documents: [], cursor: "") }
+    func createDocument(_ doc: DocumentRecord) async throws -> DocumentRecord { doc }
+    func updateDocument(id: String, body: DocumentUpdateBody) async throws -> DocumentRecord { throw APIError.offline }
+    func deleteDocument(id: String) async throws {}
+    func listDeletions(since: String?) async throws -> DeletionListResponse { DeletionListResponse(deletions: [], cursor: "") }
+}

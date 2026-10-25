@@ -25,6 +25,7 @@ import os
 /// pull/merge/remap/parent-heal and no activity tombstones. Tombstones and
 /// delete-wins are scoped to entries and categories only. In-progress drafts
 /// never enter the outbox, so nothing about the running timer is synced.
+
 @MainActor
 final class SyncController: ObservableObject {
     /// Sync status surfaced in Settings (sync-client spec).
@@ -39,20 +40,20 @@ final class SyncController: ObservableObject {
         case error(String)
     }
 
-    @Published private(set) var status: SyncStatus = .inactive
+    @Published var status: SyncStatus = .inactive
 
-    private let store: LocalStore
+    let store: LocalStore
     private let connectivity: Connectivity
     /// Reads the authenticated session's `userId` at guard time (the session
     /// itself is not retained — no cycle). Production wires `SessionStore`;
     /// tests inject a swappable closure to simulate an account swap mid-cycle.
-    private let sessionUserIDProvider: () -> String?
+    let sessionUserIDProvider: () -> String?
     /// The account the sync client is bound to. Recorded at `activate()` from
     /// the session that mounted the signed-in shell; every cycle start (and
     /// every cycle stage boundary) verifies the still-current session user
     /// against it, so a token swap mid-flight can never push A's outbox under
     /// B's token (sync-client same-account guard).
-    private var boundUserID: String?
+    var boundUserID: String?
 
     /// The account id the in-flight cycle was started for (nil when no cycle
     /// runs). Recorded at cycle entry and cleared by the owning generation's
@@ -71,7 +72,7 @@ final class SyncController: ObservableObject {
     /// cancelled predecessor finishing after `deactivate()` →
     /// `activate(newUser)` must never wipe the NEW cycle's handle (defeats
     /// single-flight) or its same-account guard.
-    private var cycleGeneration = 0
+    var cycleGeneration = 0
 
     /// Whether a cycle body is actually executing. Tail-owned: set at cycle
     /// start (by a generation-current cycle only), cleared ONLY by the
@@ -82,7 +83,7 @@ final class SyncController: ObservableObject {
     /// every tail transition wakes settled waiters.
     /// Guard/generation semantics are otherwise untouched: `cycleTask`
     /// remains the single-flight handle for trigger/syncNow.
-    @Published private(set) var cycleRunning = false
+    @Published var cycleRunning = false
 
     /// Whether a cycle body is actually executing (the tail-owned running
     /// flag, not the single-flight handle — which `deactivate()` nils while
@@ -123,7 +124,7 @@ final class SyncController: ObservableObject {
     /// Refuses a cycle at entry while the account is deletion-fenced. Parks
     /// as `.inactive` with the same generation discipline as an aborted
     /// cycle so the release path can re-`activate` cleanly.
-    private func refuseWhenFenced(userID: String, generation: Int) -> Bool {
+    func refuseWhenFenced(userID: String, generation: Int) -> Bool {
         guard isDeletionFenced(userID: userID) else { return false }
         Self.logger.error("sync cycle skipped: deletion fence")
         if cycleGeneration == generation, boundUserID == userID {
@@ -134,7 +135,7 @@ final class SyncController: ObservableObject {
 
     /// Cycle diagnostics (Console): secret-free strings only — the same codes
     /// and messages surfaced in UI. Never tokens, bodies, or emails.
-    private static let logger = Logger(subsystem: "com.antonkosenko.shunik", category: "sync")
+    static let logger = Logger(subsystem: "com.antonkosenko.shunik", category: "sync")
 
     // swiftlint:disable:next todo
     // SHUNIK-TODO: scaffold — the pet-care relay client will be wired here.
@@ -303,35 +304,13 @@ final class SyncController: ObservableObject {
         return true
     }
 
-    // MARK: - Cycle (scaffold)
+    /// The household relay client. Nil until the gate wires the real
+    /// implementation — with no relay the cycle is a successful no-op
+    /// (keeps pre-sync tests and the unsigned shell working).
+    var relay: (any SyncRelay)?
+    // MARK: - Cycle (implementation lives in SyncController+Cycle.swift)
 
-    // swiftlint:disable:next todo
-    // SHUNIK-TODO: the pet-care drain/pull goes here. The scaffold cycle
-    // verifies the same-account guard and the deletion fence, then reports
-    // success — triggers, join-in-flight, and status publishing keep working.
-    private func runCycle(firstSync: Bool, generation: Int) async {
-        guard cycleGeneration == generation else { return }
-        cycleRunning = true
-        defer { finishCycleTail(generation: generation) }
-        guard let userID = boundUserID else {
-            Self.logger.error("sync cycle skipped: no bound account")
-            status = .inactive
-            return
-        }
-        guard sessionUserIDProvider() == userID else {
-            Self.logger.error("sync cycle aborted: account changed mid-cycle")
-            if cycleGeneration == generation, boundUserID == userID {
-                status = .inactive
-            }
-            return
-        }
-        if refuseWhenFenced(userID: userID, generation: generation) { return }
-        if cycleGeneration == generation, boundUserID == userID {
-            status = .idle(Date())
-        }
-    }
-
-    private func finishCycleTail(generation: Int) {
+    func finishCycleTail(generation: Int) {
         if cycleGeneration == generation {
             cycleTask = nil
             activeCycleUserID = nil

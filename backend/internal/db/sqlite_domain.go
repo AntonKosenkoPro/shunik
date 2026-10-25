@@ -15,7 +15,7 @@ import (
 //   - Placeholders are `?`; times are TEXT via fmtTime / parseTime.
 //   - Server stamps updated_at with datetime('now'); client timestamps are
 //     never trusted for updated_at.
-//   - changed-since lists use WHERE updated_at > ? ORDER BY updated_at ASC
+//   - changed-since lists use WHERE updated_at >= ? ORDER BY updated_at ASC
 //     (nil/zero since = all), with id as a deterministic tiebreak.
 //   - Optimistic writes compare baseUpdatedAt with the stored updated_at via
 //     .Equal(); mismatch returns bare ErrConflict with the row untouched.
@@ -147,7 +147,7 @@ func (s *SQLiteStore) ListPetsChangedSince(ctx context.Context, householdID stri
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+sqlitePetColumns+`
 		FROM pets
-		WHERE household_id = ? AND (? IS NULL OR updated_at > ?)
+		WHERE household_id = ? AND (? IS NULL OR updated_at >= ?)
 		ORDER BY updated_at ASC, id ASC
 	`, householdID, sinceArg, sinceArg)
 	if err != nil {
@@ -575,7 +575,7 @@ func (s *SQLiteStore) ListEventsChangedSince(ctx context.Context, householdID st
 	query := `
 		SELECT ` + sqliteEventBaseColumns + `
 		FROM event_base
-		WHERE household_id = ? AND (? IS NULL OR updated_at > ?)
+		WHERE household_id = ? AND (? IS NULL OR updated_at >= ?)
 	`
 	args := []any{householdID, sinceArg, sinceArg}
 	if petID != "" {
@@ -834,7 +834,7 @@ func (s *SQLiteStore) ListIntakesChangedSince(ctx context.Context, householdID, 
 	query := `
 		SELECT ` + sqliteIntakeColumns + `
 		FROM med_intakes
-		WHERE household_id = ? AND (? IS NULL OR updated_at > ?)
+		WHERE household_id = ? AND (? IS NULL OR updated_at >= ?)
 	`
 	args := []any{householdID, sinceArg, sinceArg}
 	if courseID != "" {
@@ -1057,7 +1057,7 @@ func (s *SQLiteStore) ListDocumentsChangedSince(ctx context.Context, householdID
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+sqliteDocumentColumns+`
 		FROM documents
-		WHERE household_id = ? AND ready = true AND (? IS NULL OR updated_at > ?)
+		WHERE household_id = ? AND ready = true AND (? IS NULL OR updated_at >= ?)
 		ORDER BY updated_at ASC, id ASC
 	`, householdID, sinceArg, sinceArg)
 	if err != nil {
@@ -1306,7 +1306,7 @@ func (s *SQLiteStore) ListHouseholdDeletions(ctx context.Context, householdID st
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT resource, record_id, deleted_at
 		FROM tombstones
-		WHERE household_id = ? AND (? IS NULL OR deleted_at > ?)
+		WHERE household_id = ? AND (? IS NULL OR deleted_at >= ?)
 		ORDER BY deleted_at ASC, record_id ASC
 	`, householdID, sinceArg, sinceArg)
 	if err != nil {

@@ -173,29 +173,20 @@ struct AuthGateTests {
 
     // MARK: - Failed bind keeps the gate up (Wave 5 re-review finding 1)
 
-    @Test("a failed store bind reports failure without mounting (gate stays up)")
+    @Test("a failed household resolve reports failure without mounting (gate stays up)")
     func failedBindReportsWithoutMounting() async throws {
         let userID = "wave5-\(UUID().uuidString.lowercased())"
-        let prodURL = LocalStore.databaseURL(userID: userID)
-        // A corrupt file the open cannot migrate: a retryable (non-fatal)
-        // failure, so `openLocalStore` reports instead of crashing.
-        try Data("not-a-database".utf8).write(to: prodURL)
-        defer {
-            try? FileManager.default.removeItem(at: prodURL)
-            for ext in ["-wal", "-shm"] {
-                try? FileManager.default.removeItem(at: URL(fileURLWithPath: prodURL.path + ext))
-            }
-        }
         let container = makeContainer()
 
-        let opened = await container.openLocalStore(userID: userID)
+        // Offline relay with an empty cache: resolution fails openly.
+        let ready = await container.prepareAccountStore(userID: userID)
 
         // The bind failed openly: no shell mount (`RootView` checks this
-        // flag before setting its boundUserID), error surfaced for the gate.
-        #expect(!opened)
+        // flag before setting its boundHouseholdID), error surfaced for the gate.
+        #expect(!ready)
         #expect(container.localStoreOpenError != nil)
-        // The store is cleanly unbound: boundUserID nil, every op notBound.
-        #expect(await container.localStore.boundUserID == nil)
+        // The store is cleanly unbound: no household, every op notBound.
+        #expect(await container.localStore.boundHouseholdID == nil)
         await #expect(throws: LocalStore.LocalStoreError.notBound) {
             try await container.localStore.outboxRows()
         }
@@ -232,7 +223,8 @@ struct AuthGateTests {
             syncController: SyncController(
                 store: localStore,
                 connectivity: connectivity
-            ) { nil }
+            ) { nil },
+            householdService: makeOfflineHouseholdService()
         )
     }
 }

@@ -32,9 +32,11 @@
 
 ## 5. iOS — store, sync, household gate
 
-- [ ] 5.1 `LocalStore` new tables + single-chokepoint writes; file `shunik_<householdId>.db`; gate order sign-in → resolve/create household → open store → shell
-- [ ] 5.2 `SyncController` resource list rewritten (pets → events/courses/intakes → documents metadata; bytes excluded); link handling for `document_pets` (ID links, no name healing)
-- [ ] 5.3 Undo buffer + tombstone flow for new resources (buffered delete pushes before drain, in-flight undo guard)
+- [x] 5.1 `LocalStore` new tables + single-chokepoint writes; file `shunik_<householdId>.db`; gate order sign-in → resolve/create household → open store → shell
+- [x] 5.2 `SyncController` resource list rewritten (pets → events/courses/intakes → documents metadata; bytes excluded); link handling for `document_pets` (ID links, no name healing)
+- [x] 5.3 Undo buffer + tombstone flow for new resources (buffered delete pushes before drain, in-flight undo guard)
+- iOS detail: `SyncModels.swift` (one Codable per wire shape, RFC3339-ms strings, inclusive-cursor norm); `SyncRelayRepository` + `ConflictError` (409 server copy; 404-on-delete swallows); `HouseholdService` (GET /mine, per-user cache + sidecar, offlineNoCache); cycle = push-buffered → pull-merge → tombstones → drain (update 404 resurrect-once, 409 rebase-once then adopt, 422 loud-keep; recreation-wins kept without push); resolver + gate + coordinator all household-scoped (`eraseFile(at:)` exact-file erase); inclusive `>=` pull bounds backend-wide (sqlite+pg) with test updates; flat event detail + singular tombstone resources in `openapi.yaml` (contract green).
+- Verified: `swiftlint --strict` clean, `xcodebuild test` 360/360 green (incl. new `LocalStoreDomainTests`/`SyncRelayTests`/`SyncHouseholdTests`/`SyncCycleTests`/`UndoBufferDomainTests` + rewritten resolver/lifecycle/erase suites), backend `gofmt`/`go vet`/`golangci-lint` clean, `go test ./...` green incl. live PG18, `openspec validate --all --strict` green.
 
 ## 6. iOS — domain features
 

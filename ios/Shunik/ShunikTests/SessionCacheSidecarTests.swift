@@ -43,24 +43,31 @@ struct SessionCacheSidecarTests {
         let dir = try temporaryDirectory()
         // swiftlint:disable:next force_try
         let store = try! LocalStore(
-            url: dir.appendingPathComponent(LocalStore.databaseFileName(userID: "u1")),
-            userID: "u1"
+            url: dir.appendingPathComponent(LocalStore.databaseFileName(householdID: "u1")),
+            householdID: "u1"
         )
         _ = store
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
         let cache = SessionCache(
-            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            defaults: defaults,
             sessionFileURL: dir.appendingPathComponent(ActiveAccountFileResolver.sessionFileName)
         )
         cache.save(CachedSession(id: "u1", email: "a@b.c", emailVerified: true))
-
-        let resolver = ActiveAccountFileResolver(
-            sessionDefaults: UserDefaults(suiteName: UUID().uuidString)!
+        // Household resolution (GET /mine) mirrors the household id exactly
+        // like the session cache mirrors the user id: defaults + sidecar.
+        defaults.set("u1", forKey: "com.shunik.session.householdID")
+        try "u1".write(
+            to: dir.appendingPathComponent(ActiveAccountFileResolver.householdSessionFileName),
+            atomically: true,
+            encoding: .utf8
         )
+
+        let resolver = ActiveAccountFileResolver(sessionDefaults: defaults)
         guard case let .ready(url) = resolver.resolve(base: dir) else {
             Issue.record("expected ready, got \(resolver.resolve(base: dir))")
             return
         }
-        #expect(url == dir.appendingPathComponent(LocalStore.databaseFileName(userID: "u1")))
+        #expect(url == dir.appendingPathComponent(LocalStore.databaseFileName(householdID: "u1")))
     }
 
     private func temporaryDirectory() throws -> URL {

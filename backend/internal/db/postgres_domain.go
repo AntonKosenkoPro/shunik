@@ -91,7 +91,7 @@ func (s *PostgresStore) ListPetsChangedSince(ctx context.Context, householdID st
 	rows, err := s.pool.Query(ctx, `
 		SELECT `+pgPetColumns+`
 		FROM pets
-		WHERE household_id = $1 AND ($2::timestamptz IS NULL OR updated_at > $2)
+		WHERE household_id = $1 AND ($2::timestamptz IS NULL OR updated_at >= $2)
 		ORDER BY updated_at ASC, id ASC
 	`, householdID, pgNormSince(since))
 	if err != nil {
@@ -535,7 +535,7 @@ func (s *PostgresStore) ListEventsChangedSince(ctx context.Context, householdID 
 	}
 	rows, err := s.pool.Query(ctx, pgEventSelect+`
 		WHERE b.household_id = $1
-		  AND ($2::timestamptz IS NULL OR b.updated_at > $2)
+		  AND ($2::timestamptz IS NULL OR b.updated_at >= $2)
 		  AND ($3::uuid IS NULL OR b.pet_id = $3::uuid)
 		ORDER BY b.updated_at ASC, b.id ASC
 	`, householdID, pgNormSince(since), petArg)
@@ -719,7 +719,7 @@ func (s *PostgresStore) ListIntakesChangedSince(ctx context.Context, householdID
 		FROM med_intakes
 		WHERE household_id = $1
 		  AND ($2::uuid IS NULL OR course_id = $2::uuid)
-		  AND ($3::timestamptz IS NULL OR updated_at > $3)
+		  AND ($3::timestamptz IS NULL OR updated_at >= $3)
 		ORDER BY updated_at ASC, id ASC
 	`, householdID, courseArg, pgNormSince(since))
 	if err != nil {
@@ -942,7 +942,7 @@ func (s *PostgresStore) ListDocumentsChangedSince(ctx context.Context, household
 		SELECT `+pgDocColumns+`
 		FROM documents
 		WHERE household_id = $1 AND ready = true
-		  AND ($2::timestamptz IS NULL OR updated_at > $2)
+		  AND ($2::timestamptz IS NULL OR updated_at >= $2)
 		ORDER BY updated_at ASC, id ASC
 	`, householdID, pgNormSince(since))
 	if err != nil {
@@ -1159,7 +1159,7 @@ func (s *PostgresStore) ListHouseholdDeletions(ctx context.Context, householdID 
 	rows, err := s.pool.Query(ctx, `
 		SELECT resource, record_id, deleted_at
 		FROM tombstones
-		WHERE household_id = $1 AND ($2::timestamptz IS NULL OR deleted_at > $2)
+		WHERE household_id = $1 AND ($2::timestamptz IS NULL OR deleted_at >= $2)
 		ORDER BY deleted_at ASC, record_id ASC
 	`, householdID, pgNormSince(since))
 	if err != nil {

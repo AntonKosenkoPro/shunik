@@ -2,11 +2,12 @@ import Testing
 import Foundation
 @testable import Shunik
 
-/// Account-scoped file deletion (account-bound-store + account-deletion
-/// specs): `eraseAccount(userID:)` removes exactly one account's database
-/// with its SQLite sidecars — active or dormant — and never touches other
-/// accounts' files or the stable device identity. `eraseAll` keeps its
-/// active-file-only contract and now covers sidecars too.
+/// Household-scoped file deletion (account-deletion spec): `eraseHousehold`
+/// removes exactly one household's database with its SQLite sidecars —
+/// active or dormant — and never touches other households' files.
+/// `eraseAccount(userID:)` keeps its coordinator contract (active file when
+/// bound, legacy per-account debris otherwise). `eraseAll` keeps its
+/// active-file-only contract and covers sidecars too.
 @Suite("LocalStore eraseAccount")
 struct LocalStoreEraseAccountTests {
 
@@ -27,23 +28,23 @@ struct LocalStoreEraseAccountTests {
     func erasesActiveAccount() async throws {
         let dir = temporaryBase()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let url = LocalStore.databaseURL(userID: "erase-active-a", in: dir)
-        let bound = try LocalStore(url: url, userID: "erase-active-a")
+        let url = LocalStore.databaseURL(householdID: "erase-active-a", in: dir)
+        let bound = try LocalStore(url: url, householdID: "erase-active-a")
         _ = try await bound.outboxRows()
-        try await bound.eraseAccount(userID: "erase-active-a", in: dir)
+        try await bound.eraseHousehold(householdID: "erase-active-a", in: dir)
         #expect(!fileExists(url))
     }
 
     @Test("erases a dormant account without touching the active store")
     func erasesDormantAccount() async throws {
         let base = temporaryBase()
-        let activeURL = LocalStore.databaseURL(userID: "erase-dorm-a", in: base)
-        let dormantURL = LocalStore.databaseURL(userID: "erase-dorm-b", in: base)
-        let active = try LocalStore(url: activeURL, userID: "erase-dorm-a")
-        let dormant = try LocalStore(url: dormantURL, userID: "erase-dorm-b")
+        let activeURL = LocalStore.databaseURL(householdID: "erase-dorm-a", in: base)
+        let dormantURL = LocalStore.databaseURL(householdID: "erase-dorm-b", in: base)
+        let active = try LocalStore(url: activeURL, householdID: "erase-dorm-a")
+        let dormant = try LocalStore(url: dormantURL, householdID: "erase-dorm-b")
         _ = try await active.outboxRows()
         _ = try await dormant.outboxRows()
-        try await active.eraseAccount(userID: "erase-dorm-b", in: base)
+        try await active.eraseHousehold(householdID: "erase-dorm-b", in: base)
         #expect(!fileExists(dormantURL))
         #expect(fileExists(activeURL))
         // The active store still serves its own account.
@@ -54,13 +55,13 @@ struct LocalStoreEraseAccountTests {
     func removesSidecars() async throws {
         let base = temporaryBase()
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        let url = LocalStore.databaseURL(userID: "erase-side-a", in: base)
-        let store = try LocalStore(url: url, userID: "erase-side-a")
+        let url = LocalStore.databaseURL(householdID: "erase-side-a", in: base)
+        let store = try LocalStore(url: url, householdID: "erase-side-a")
         _ = try await store.outboxRows()
         for sidecar in sidecars(of: url) {
             FileManager.default.createFile(atPath: sidecar.path, contents: Data("x".utf8))
         }
-        try await store.eraseAccount(userID: "erase-side-a", in: base)
+        try await store.eraseHousehold(householdID: "erase-side-a", in: base)
         #expect(!fileExists(url))
         for sidecar in sidecars(of: url) {
             #expect(!fileExists(sidecar))
@@ -92,15 +93,15 @@ struct LocalStoreEraseAccountTests {
     func eraseAllRemovesSidecars() async throws {
         let dir = temporaryBase()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let url = dir.appendingPathComponent(LocalStore.databaseFileName(userID: "erase-all-a"))
+        let url = dir.appendingPathComponent(LocalStore.databaseFileName(householdID: "erase-all-a"))
         // eraseAll targets boundURL/lastBoundURL: bind by opening through
         // the account path, then close so lastBoundURL retains it.
-        _ = try LocalStore(url: url, userID: "erase-all-a")
+        _ = try LocalStore(url: url, householdID: "erase-all-a")
         for sidecar in sidecars(of: url) {
             FileManager.default.createFile(atPath: sidecar.path, contents: Data("x".utf8))
         }
         // Reopen as the active store via the same file, then erase.
-        let store = try LocalStore(url: url, userID: "erase-all-a")
+        let store = try LocalStore(url: url, householdID: "erase-all-a")
         try await store.eraseAll()
         #expect(!fileExists(url))
         for sidecar in sidecars(of: url) {

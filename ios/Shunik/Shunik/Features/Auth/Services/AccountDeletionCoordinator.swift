@@ -490,7 +490,22 @@ final class AccountDeletionCoordinator: ObservableObject {
             return false
         }
         do {
-            try await localStore.eraseAccount(userID: accountID, in: fileBaseURL)
+            if isTargetActive {
+                // Active target: erase exactly the file the household
+                // resolver selects (v1 files are household-scoped; the user
+                // id cannot name them). No resolved file (never resolved
+                // online) falls back to legacy per-account debris removal.
+                if case let .ready(url) = markerResolver.resolve(base: fileBaseURL) {
+                    try await localStore.eraseFile(at: url)
+                } else {
+                    try await localStore.eraseAccount(userID: accountID, in: fileBaseURL)
+                }
+            } else {
+                // Dormant target while another household is active: never
+                // touch the bound file — remove only legacy per-account
+                // debris for this user id, if any.
+                try await localStore.eraseAccount(userID: accountID, in: fileBaseURL)
+            }
         } catch {
             Self.logger.error("cleanup erase failed: \(String(describing: error), privacy: .public)")
             return false
@@ -524,6 +539,7 @@ final class AccountDeletionCoordinator: ObservableObject {
         if markerResolver.readSessionUserID(base: fileBaseURL) == accountID {
             cache.clear()
         }
+        markerResolver.clearHouseholdSession(base: fileBaseURL)
         switch await keychain.loadSnapshot() {
         case .success(let snapshot) where snapshot?.accountId == accountID:
             await keychain.removeSnapshot()

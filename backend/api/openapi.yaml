@@ -3108,23 +3108,6 @@ components:
         info_ref:
           type: string
 
-    EventDetail:
-      type: object
-      description: |
-        Exactly one member is present, matching the base row's kind:
-        vaccination -> VaccDetail, grooming -> GroomDetail, weight ->
-        WeightDetail, med_course -> MedCourse. Clients ignore unknown
-        members but still list the base row.
-      properties:
-        vaccination:
-          $ref: "#/components/schemas/VaccDetail"
-        grooming:
-          $ref: "#/components/schemas/GroomDetail"
-        weight:
-          $ref: "#/components/schemas/WeightDetail"
-        course:
-          $ref: "#/components/schemas/MedCourse"
-
     Event:
       type: object
       description: One timeline row with its kind detail joined.
@@ -3134,7 +3117,6 @@ components:
         - kind
         - occurred_at
         - title
-        - detail
         - created_at
         - updated_at
         - updated_by
@@ -3160,8 +3142,14 @@ components:
           description: Next due date (vaccination/grooming reminders).
         title:
           type: string
-        detail:
-          $ref: "#/components/schemas/EventDetail"
+        vaccination:
+          $ref: "#/components/schemas/VaccDetail"
+        grooming:
+          $ref: "#/components/schemas/GroomDetail"
+        weight:
+          $ref: "#/components/schemas/WeightDetail"
+        course:
+          $ref: "#/components/schemas/MedCourse"
         created_at:
           type: string
           format: date-time
@@ -3182,7 +3170,6 @@ components:
         - kind
         - occurred_at
         - title
-        - detail
       properties:
         id:
           type: string
@@ -3201,8 +3188,14 @@ components:
           format: date-time
         title:
           type: string
-        detail:
-          $ref: "#/components/schemas/EventDetail"
+        vaccination:
+          $ref: "#/components/schemas/VaccDetail"
+        grooming:
+          $ref: "#/components/schemas/GroomDetail"
+        weight:
+          $ref: "#/components/schemas/WeightDetail"
+        course:
+          $ref: "#/components/schemas/MedCourse"
 
     EventUpdate:
       type: object
@@ -3212,7 +3205,6 @@ components:
         - kind
         - occurred_at
         - title
-        - detail
       properties:
         base_updated_at:
           type: string
@@ -3231,8 +3223,14 @@ components:
           nullable: true
         title:
           type: string
-        detail:
-          $ref: "#/components/schemas/EventDetail"
+        vaccination:
+          $ref: "#/components/schemas/VaccDetail"
+        grooming:
+          $ref: "#/components/schemas/GroomDetail"
+        weight:
+          $ref: "#/components/schemas/WeightDetail"
+        course:
+          $ref: "#/components/schemas/MedCourse"
 
     EventList:
       type: object
@@ -3509,7 +3507,7 @@ components:
       properties:
         resource:
           type: string
-          enum: [pets, events, intakes, documents]
+          enum: [pet, event, intake, document]
         record_id:
           type: string
           format: uuid
