@@ -1,30 +1,23 @@
 # Shunik
 
-A personal time-tracking app for iOS — minimal-effort tracking of where your time goes (widgets, shortcuts, integrations). **Local-first and account-bound:** sign in once (mandatory), then your device is the source of truth; the Go backend is the identity + optional sync relay.
+A pet-care iOS app (SwiftUI, iOS 18+) with a Go backend acting as identity + sync relay. **Local-first:** sign in once (mandatory), then your device is the source of truth and the backend relays sync between your devices and household.
 
-Current scope: **auth MVP** (mandatory passwordless email-OTP or Sign in with Apple, per-device sessions) and the **Track experience** — a three-tab shell (Track/History/Insights) with a centered numeric timer, a plain-text name field with exact-text Recents chips, a live tag selector while running, a Profile destination, and a compact cross-tab running timer. There is no activity entity: entries own their text, ordered categories, and notes.
+Current state is the **auth scaffold** forked from Lifio: passwordless email-OTP + Sign in with Apple, account deletion, per-device sessions, and an auth-gated profile shell. The pet domain (household sharing, pets, vaccinations, medications, weight, grooming, documents, reminders) is defined in the active OpenSpec change `shunik-v1-foundation` and lands next.
 
 | Doc | What it's for |
 |---|---|
 | [`docs/project-context.md`](docs/project-context.md) | Canonical architecture + repo context (for AI agents, S7) |
 | [`AGENTS.md`](AGENTS.md) | Concise AI-agent entrypoint |
-| [`Requirements/FURPS/`](Requirements/FURPS/) | Requirements (FURPS+ table + use cases) |
-| [`Design/`](Design/) | Text-based design system (colors, components, screens) |
-| [`backend/api/openapi.yaml`](backend/api/openapi.yaml) | Authoritative API contract (OpenAPI 3.0, S10) |
+| [`openspec/`](openspec/) | Spec-driven change workflow (active: `shunik-v1-foundation`) |
+| [`backend/api/openapi.yaml`](backend/api/openapi.yaml) | Authoritative API contract (OpenAPI 3.0, S10 — auth-only for now) |
 
 ## The app in one minute
 
-1. **Log in** — the app launches into the auth flow (email OTP or Sign in with Apple); no anonymous use exists. After sign-in you land in Track.
-2. **Name it** — type a name or tap a recent chip (exact match inherits that entry's categories; typing never starts timing).
-3. **Start** — the centered numeric timer counts up while the device stays awake.
-4. **Stop** — saves the entry to the local GRDB database and enqueues an outbox row; the `SyncController` drains the outbox and pulls deltas on foreground/connectivity/manual "Sync now" — and works fully offline when the tunnel drops.
-5. **Switch tabs freely** — a running timer stays visible above the tab bar on History and Insights with return-to-Track and in-place Stop.
+1. **Log in** — the app launches into the auth flow (email OTP or Sign in with Apple); no anonymous use exists. After sign-in you land in the profile shell.
+2. **Stay signed in on every device** — sessions are per-device (`X-Device-Id`); a revoked session locks to the auth gate without wiping local data.
+3. **Sync** — the `SyncController` drains the outbox and pulls deltas on foreground/connectivity/manual "Sync now", and works fully offline when the tunnel drops. (No domain resources exist yet — sync is a wired-up no-op.)
 
-Entries, categories, the running timer state, the outbox, and the undo buffer live in the App Group shared container (`group.com.antonkosenko.shunik`), ready for future cross-process system integrations.
-
-### Local-first architecture (account-bound)
-
-The app requires sign-in before any tracking use; after that the device is the source of truth and everything works offline. Local data is **per-account**: one SQLite file per account (`shunik_<userId>.db` in the App Group), one active file at a time; dormant files are kept (never wiped by logout or revocation), and re-login as the same account reopens and resumes — outbox drains, cursors continue, a running timer draft resumes. Sessions are **per-device**: a stable Keychain UUID travels as `X-Device-Id`, refresh families and logout/reuse revocation are scoped to one device, the refresh TTL is enforced, and a revoked/exhausted session **locks to the auth gate without wiping local data**. Writes go through a transactional **outbox** (deletes are first-class), deletions sit in a durable **undo buffer** restorable until the app restarts (committed on cold launch), and `SyncController` syncs via `?modified_since=` delta pulls with last-write-wins on `updated_at` — guarded to the same account it was activated under. Specs: `openspec/specs/` baselines (24 incl. `account-bound-store` / `device-sessions` / `apple-signin` / `backend-database` / `email-otp-auth` / `observability` / `relay-cors`) plus the archived `2026-10-02-reduce-codebase-complexity` change (wording-only docs-contract sync, folded into the baselines). Categories seed **per account file** on first open and are managed from Profile; entry and category deletions share the editor-Delete + shake-to-undo system confirmation grammar. The iOS 18 lock-screen ControlWidget toggle remains **incomplete**; device quota + picker (#46) is a pre-release blocker — see `docs/project-context.md` → "Incomplete / deferred".
+Local data is **per-account**: one SQLite file per account (`shunik_<userId>.db` in the App Group `group.com.antonkosenko.shunik`); dormant files are kept (never wiped by logout or revocation); only the explicit per-account Erase deletes the active file. This rekeys to per-household files when household sharing lands. Writes go through a transactional **outbox**; deletions sit in a durable **undo buffer** restorable until the app restarts.
 
 ## Security (R1)
 
@@ -56,12 +49,12 @@ XcodeGen-managed: edit `project.yml`, run `xcodegen generate` — never hand-edi
 ```bash
 cd ios/Shunik
 xcodegen generate
-open TimeOfLife.xcodeproj
+open Shunik.xcodeproj
 ```
 
-- `API_BASE_URL` is injected per build configuration: Debug → `http://127.0.0.1:8080` (local backend; ATS allows plain HTTP only to `127.0.0.1`), Release → `https://shunik-api.antonkosenko.pro`. On a physical device, use your LAN IP instead.
-- Code signing is split per configuration: **Debug stays unsigned** (simulator/CI need no Apple Developer account); **Release signs** with team `7923U48U87` (development identity; archives sign distribution automatically) and carries the Sign in with Apple entitlement (App ID `com.antonkosenko.shunik` must have the SIWA capability enabled in the Apple Developer portal). The backend needs `APPLE_CLIENT_ID=com.antonkosenko.shunik` set or `/auth/apple` returns 503.
-- Releases (TestFlight): cut via the manual **release** workflow (Actions → `release` → Run workflow, `version` = `X.Y.Z`, e.g. `1.0.0`) — it validates the version is strictly greater than current on `main`, bumps `project.yml` (marketing version, build auto-+1, `Info.plist` mirrored), commits, and pushes annotated tag `vX.Y.Z`. Pushing the tag triggers the **Xcode Cloud** workflow (tag pattern `v*`), which runs `ci_post_clone.sh` (`xcodegen generate`, since the `.xcodeproj` is gitignored), archives the Release configuration, and uploads to TestFlight automatically. Symbolication rides the same signed archive: `ci_post_xcodebuild.sh` uploads its dSYMs (`$CI_ARCHIVE_PATH/dSYMs`) to the Sentry staging + release projects, skipping gracefully when secrets are absent. Profile shows the built commit in a trailing row (`1.0.0 (a1b2c3d)`; `1.0.0 (a1b2c3d) • Debug` on Debug builds) so testers can report the exact commit. The integer build (auto-+1) survives solely as the App Store Connect upload identifier and is no longer displayed. The tag-triggered Cloud Test→Archive run is the post-bump verification — do not distribute the TestFlight build until it is green.
+- `API_BASE_URL` is injected per build configuration: Debug → `http://127.0.0.1:8080` (local backend; ATS allows plain HTTP only to `127.0.0.1`), Release → `https://shunik-api.antonkosenko.pro` (reserved — backend not yet deployed). On a physical device, use your LAN IP instead.
+- Code signing is split per configuration: **Debug stays unsigned** (simulator/CI need no Apple Developer account); **Release signs** with team `7923U48U87` and carries the Sign in with Apple entitlement (App ID `com.antonkosenko.shunik` must have the SIWA capability enabled in the portal). The backend needs `APPLE_CLIENT_ID=com.antonkosenko.shunik` set or `/auth/apple` returns 503. Before TestFlight, also bind `7923U48U87.com.antonkosenko.shunik` in the `apple-app-site-association` file on `antonkosenko.pro`.
+- Releases (TestFlight): cut via the manual **release** workflow (Actions → `release` → Run workflow, `version` = `X.Y.Z`) — validates strictly-greater-than-current on `main`, bumps `project.yml` (marketing version, build auto-+1, `Info.plist` mirrored), commits, pushes annotated tag `vX.Y.Z`. Profile shows the built commit in a trailing row so testers can report the exact commit.
 - Tests & lint:
 
 ```bash
@@ -73,53 +66,38 @@ xcodebuild test -scheme Shunik \
 
 Warnings are treated as errors on the app and test targets through `project.yml`. Do not pass the flags globally on the command line; that also applies them to GRDB, which uses `-suppress-warnings`.
 
-Unit tests cover the auth flow (validators, API client incl. 401→refresh→retry, repositories, auth service + view models) and the local-first layer (GRDB `LocalStore`, `UndoBufferStore`, `SyncController`, provenance). Out of scope: SwiftUI snapshot and on-device keychain tests.
+Unit tests cover the auth flow (validators, API client incl. 401→refresh→retry, repositories, auth service + view models) and the local-first layer (GRDB `LocalStore`, `UndoBufferStore`, sync skeleton). Out of scope: SwiftUI snapshot and on-device keychain tests.
 
 ### Sign in with Apple — manual smoke checklist
 
 Unit tests fake the Apple authorization (`AppleAuthorizationProviding`), and Apple's identity-token JWKS is only fetched for real with `APPLE_CLIENT_ID` configured — so the following must be verified manually on a **real device** (the entitlement has no effect in the simulator):
 
-Prerequisites: Release build installed on the device (`Product → Destination → your device`, Release scheme archive or Run with Release config), backend reachable with `APPLE_CLIENT_ID=com.antonkosenko.shunik` (local or production), a sandbox/production Apple ID.
+Prerequisites: Release build installed on the device, backend reachable with `APPLE_CLIENT_ID=com.antonkosenko.shunik` (local or production), a sandbox/production Apple ID.
 
 1. [ ] **Sheet presents** — launch the app (signed-out, the auth flow is the root screen) → tap *Sign in with Apple*; Apple's native authorization sheet appears (not an error).
 2. [ ] **Sign-in succeeds** — complete the sheet (try a *Hide My Email* address); the app lands in the shell; Profile shows the session and "Sync now".
 3. [ ] **Backend verified the token** — backend log shows the Apple sign-in line for the user (JWKS fetched, `aud` matched); the relay address `*@privaterelay.appleid.com` is stored as the email with `email_verified=true`.
-4. [ ] **Sync works** — start/stop a timer, run "Sync now"; the entry appears on the relay (check via a second sign-in on another device/simulator, or the backend DB).
-5. [ ] **Per-user resume** — with entries + a running timer on device A, log out and log back in as the **same** account: the file reopens and resumes (entries list intact, timer draft resumes, outbox drains without a re-pull). Logging in as a **different** account opens that account's own file (no cross-account data). Log out and confirm the dormant file is kept (no wipe); only the explicit per-account Erase deletes the active file.
-6. [ ] **Revoked session locks, never wipes** — force a server-side revocation of device A's refresh family (reuse detection via a replayed refresh token, a TTL-expired refresh, or a logout-revoked token): the app returns to the auth gate; all local data (entries, categories, timer draft, outbox) is intact. Re-authenticating reopens and resumes the same account file. Logging out of device B must **not** lock or affect device A's session (per-device logout).
-7. [ ] **Cancel is silent** — start the Apple flow, dismiss the sheet; no error banner appears.
-8. [ ] **Offline gates the button** — airplane mode on; the Apple button is disabled (dimmed); the email path still navigates.
-9. [ ] **Idempotent re-sign-in** — sign out, sign in with Apple again; same user (the same account file reattaches, no duplicate account or duplicate seeded categories).
-10. [ ] **Hide My Email attribution (email-OTP path)** — on Continue with Email, the system Hide My Email sheet attributes to Shunik (never a numeric PID); the saved alias label in Settings → Apple Account → iCloud → Hide My Email agrees. Requires the `webcredentials:antonkosenko.pro` association verified (`swcd`).
-
-### Live Activities — manual smoke checklist
-
-Live Activities need a real device with Dynamic Island (the simulator shows the Lock Screen banner only) and a signed-in account with at least one category.
-
-1. [ ] **Island appears** — start a timer on Track; the Dynamic Island shows the compact face (first-category icon + ticking elapsed).
-2. [ ] **Expanded card** — long-press the Island; the expanded card shows the exact name, icon, elapsed, Stop, and Go-to-Track.
-3. [ ] **Go to Track** — tap the compact face (or the Go row); the app opens on the Track tab with the timer running.
-4. [ ] **Stop from the Island** — stop from the expanded card or the Lock Screen banner; the entry saves as `manual` (no "via" label), the banner shows the Saved card with the final duration, then dismisses within seconds and the Island collapses.
-5. [ ] **Minimal face** — with music (or another Live Activity) active, the timer collapses to the icon-only minimal face without layout breakage.
-6. [ ] **Lock Screen banner** — lock the device while running; the banner shows icon + name + ticking elapsed + Stop.
-7. [ ] **Dismissal delay** — confirm the Saved card lingers long enough to read but never minutes; record the final seconds in the change's spec delta (task 5.1).
+4. [ ] **Per-user resume** — sign out and sign back in as the **same** account: the file reopens and resumes (outbox drains without a re-pull). Signing in as a **different** account opens that account's own file (no cross-account data). Log out and confirm the dormant file is kept (no wipe); only the explicit per-account Erase deletes the active file.
+5. [ ] **Revoked session locks, never wipes** — force a server-side revocation of device A's refresh family (reuse detection, TTL expiry, or logout-revoked token): the app returns to the auth gate; local data is intact. Re-authenticating reopens and resumes the same account file. Logging out of device B must **not** affect device A (per-device logout).
+6. [ ] **Cancel is silent** — start the Apple flow, dismiss the sheet; no error banner appears.
+7. [ ] **Offline gates the button** — airplane mode on; the Apple button is disabled (dimmed); the email path still navigates.
+8. [ ] **Idempotent re-sign-in** — sign out, sign in with Apple again; the same account file reattaches (no duplicate account).
+9. [ ] **Hide My Email attribution (email-OTP path)** — on Continue with Email, the system sheet attributes to Shunik (never a numeric PID). Requires the `webcredentials:antonkosenko.pro` association verified (`swcd`) **and** the new app ID bound in the site's `apple-app-site-association`.
 
 ## CI (S6)
 
-`.github/workflows/backend.yml` (gofmt, go vet, golangci-lint, test + coverage) and the Xcode Cloud `iOS PR Checks` workflow (xcodegen, SwiftLint, warning-as-error build, test) are **mandatory PR checks**. See [`docs/ci.md`](docs/ci.md) for the full pipeline guide.
+`.github/workflows/backend.yml` (gofmt, go vet, golangci-lint, test + coverage) and the Xcode Cloud `iOS PR Checks` workflow (xcodegen, SwiftLint, warning-as-error build, test) are **mandatory PR checks**. `.github/workflows/openspec.yml` enforces `openspec validate --all --strict` on every PR. See [`docs/ci.md`](docs/ci.md) for the full pipeline guide.
 
 ## Deployment (S4)
 
-The backend deploys to a **GCP Compute Engine VM** (`shunik-backend`, us-east1-b) via Docker Compose: PostgreSQL 15, the Go backend, and Nginx (Let's Encrypt SSL). Every push to `main` touching `backend/` lints, tests, builds, and deploys automatically. Manual deploys use the `backend` GitHub Actions workflow dispatch. Production URL: `https://shunik-api.antonkosenko.pro`.
+Backend deploys to a **GCP Compute Engine VM** (`shunik-backend`, us-east1-b) via Docker Compose: PostgreSQL 15, the Go backend, and Nginx (Let's Encrypt SSL) — **not yet provisioned**. Every push to `main` touching `backend/` will lint, test, build, and deploy automatically once the VM exists. Production URL (reserved, DNS pending): `https://shunik-api.antonkosenko.pro`. Manual deploys use the `backend` GitHub Actions workflow dispatch.
 
-**Landing + privacy**: `https://lifio.antonkosenko.pro` (static site in `web/`, Cloudflare Pages Git integration on `main`, no build step). Privacy policy: `https://lifio.antonkosenko.pro/privacy` — the support + privacy URLs for external TestFlight review.
-
-**Account deletion rollout**: see [`docs/account-deletion-operations.md`](docs/account-deletion-operations.md) for required signing/encryption/status secrets, Apple notification registration, pending-unlink recovery, backup-restore restrictions, and signed-device release gates. Local implementation or passing fixture tests do not prove production provisioning or authorize publishing the new privacy claims ahead of the matching app/backend.
+**Account deletion rollout**: see [`docs/account-deletion-operations.md`](docs/account-deletion-operations.md) for required signing/encryption/status secrets, Apple notification registration, pending-unlink recovery, backup-restore restrictions, and signed-device release gates. Local implementation or passing fixture tests do not prove production provisioning.
 
 ## Deferred / out of scope
 
-- **Sign in with Apple follow-ups** — active `add-account-deletion` change implements account-deletion token revocation via Apple `/auth/revoke` (durable encrypted job + status-verified local cleanup), credential-state/revocation observation with sign-out-only external-revocation semantics, and the Profile → Account surface. Remaining deferred: nonce replay defense (`harden-apple-signin` planned), identity merging between email-OTP and Apple accounts (kept separate by design), and localized copy for Apple-path server error codes (currently falling back to the generic banner).
-- **History filtering** — deferred; the live follow-ups live in `docs/history-roadmap.md`.
-- **Shake-to-undo polish + bulk-delete cap; lock-screen ControlWidget toggle** — entry and category deletions undo through the DEFAULT system Undo confirmation (archived `unify-catalog-deletion`); remaining deferred: supersession UX polish and the bulk-delete cap. Live Activities (Dynamic Island + Lock Screen banner) are shipped — only the ControlWidget toggle itself is still deferred. **Device quota counting + 6th-device picker (#46)** is a pre-release blocker on top of the per-device session foundation; a multi-session device switcher is future work (one active session per device; switching re-authenticates).
-- **Kafka** — deferred (S1 names it; not needed yet). **Rate-limit store** — in-memory; Redis before multi-instance.
+- **Pet domain v1** (`shunik-v1-foundation` change): household sharing, pets + event base/details, medications, weight history, document library + CDN, reminder engine, canonical units.
+- **Explicitly parked**: calendar integration (whole), owner analytics, vet reports, weight norm/BCS (v2), litter multi-create (v2), curated drug data, doc↔event links, per-pet roles, multi-household per user.
+- **Sign in with Apple follow-ups** — nonce replay defense, identity merging between email-OTP and Apple accounts (kept separate by design), localized copy for Apple-path server error codes (generic banner for now).
+- **Kafka** — deferred. **Rate-limit store** — in-memory; Redis before multi-instance.
 - **SwiftUI snapshot / on-device keychain tests** — not automated; verified manually in the simulator.
