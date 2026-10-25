@@ -872,6 +872,228 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /api/v1/households/mine:
+    get:
+      operationId: getMyHousehold
+      summary: Get my household
+      description: |
+        Returns the caller's household with its owner members. Auto-creates
+        the household (caller as owner) when the caller has none — sign-in
+        normally ensures one, this heals the self-leave edge without a round
+        trip. Requires a valid Bearer access token.
+      tags:
+        - Households
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Household with owner members.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseholdWithMembers"
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/households/invites:
+    post:
+      operationId: createInvite
+      summary: Invite by email
+      description: |
+        Records an email invitation to the caller's household and emails the
+        token to the invitee. Always 202 — the response never reveals whether
+        the address has an account (user-enumeration closed). Re-inviting the
+        same address replaces the pending invite. Rate limited per IP (sends
+        email). Requires a valid Bearer access token.
+      tags:
+        - Households
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInviteRequest"
+      responses:
+        "202":
+          description: Invitation recorded (delivery attempted).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Invitation sent if the address can receive mail
+        "400":
+          description: Invalid request body or email address.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_body
+                  message: Invalid email address
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "429":
+          description: Invitation creation rate limited (per IP).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: rate_limited
+                  message: Too many requests. Please try again later.
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/households/invites/accept:
+    post:
+      operationId: acceptInvite
+      summary: Accept invitation
+      description: |
+        Joins the caller to the invite's household. Unknown, consumed, and
+        expired tokens are indistinguishable (404 invite_not_found). Callers
+        already in a household are rejected (409 already_member) — day-1 rule.
+        Requires a valid Bearer access token.
+      tags:
+        - Households
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AcceptInviteRequest"
+      responses:
+        "200":
+          description: Joined — household with owner members.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseholdWithMembers"
+        "400":
+          description: Invalid request body or token format.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_body
+                  message: Invalid invitation token
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "404":
+          description: Invitation not found or expired.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invite_not_found
+                  message: Invitation not found or expired
+        "409":
+          description: Caller already belongs to a household.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: already_member
+                  message: You already belong to a household
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/households/members:
+    delete:
+      operationId: removeMember
+      summary: Remove member
+      description: |
+        Removes one membership (any member may remove any member, including
+        self — leaving ends the household for the leaver). The removed
+        user's refresh tokens are revoked BEFORE the membership row goes:
+        devices lock on next use, never wipe. Requires a valid Bearer access
+        token.
+      tags:
+        - Households
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RemoveMemberRequest"
+      responses:
+        "204":
+          description: Membership removed; the removed user's sessions revoked.
+        "400":
+          description: Invalid request body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_body
+                  message: Invalid request body
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "404":
+          description: No household, or the target is not a member.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: household_not_found
+                  message: Member is not in your household
+        "500":
+          $ref: "#/components/responses/InternalError"
+
 components:
   parameters:
     DeviceIdHeader:
@@ -1248,3 +1470,100 @@ components:
               type: object
               description: Optional additional error context
               example: {}
+
+    # ---------- Household sharing (day-1) ----------
+
+    Household:
+      type: object
+      description: One shared home for pets, events, and documents.
+      required:
+        - id
+        - created_at
+        - updated_at
+        - updated_by
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Household ID (client-generated UUID v7 on the server side).
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        updated_by:
+          type: string
+          description: User ID of the actor of the last write.
+
+    HouseholdMember:
+      type: object
+      description: One equal owner of a household, with email for display.
+      required:
+        - household_id
+        - user_id
+        - email
+        - added_by
+        - joined_at
+      properties:
+        household_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        added_by:
+          type: string
+          description: User ID of the actor who added the row.
+        joined_at:
+          type: string
+          format: date-time
+
+    HouseholdWithMembers:
+      type: object
+      description: Household plus its current owner members.
+      required:
+        - household
+        - members
+      properties:
+        household:
+          $ref: "#/components/schemas/Household"
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/HouseholdMember"
+
+    CreateInviteRequest:
+      type: object
+      description: Email invitation to the caller's household.
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+          description: Invitee address (lowercased before validation).
+
+    AcceptInviteRequest:
+      type: object
+      description: Join request carrying the invitation token from the email.
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          description: 64-hex-char invitation token (only its SHA-256 hash is stored).
+
+    RemoveMemberRequest:
+      type: object
+      description: Membership removal (any member, including self).
+      required:
+        - user_id
+      properties:
+        user_id:
+          type: string
+          format: uuid
+          description: Member to remove; must belong to the caller's household.

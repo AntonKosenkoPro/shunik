@@ -34,6 +34,9 @@ var canonicalErrorCodes = []string{
 	"refresh_expired",
 	"refresh_attempt_completed",
 	"refresh_attempt_conflict",
+	"household_not_found",
+	"invite_not_found",
+	"already_member",
 	"unauthorized",
 }
 
@@ -44,6 +47,10 @@ var bearerProtectedPaths = []string{
 	"/api/v1/auth/me",
 	"/api/v1/auth/account",
 	"/api/v1/auth/apple/deletion-credential",
+	"/api/v1/households/mine",
+	"/api/v1/households/invites",
+	"/api/v1/households/invites/accept",
+	"/api/v1/households/members",
 }
 
 type rawSpec struct {

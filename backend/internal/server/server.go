@@ -109,6 +109,7 @@ func NewDefaultDependencies(ctx context.Context, cfg *config.Config, store db.St
 		OTPRequest: ratelimit.OTPRequestLimit,
 		OTPVerify:  ratelimit.OTPVerifyLimit,
 		Status:     ratelimit.NewTokenBucket(10, 10, time.Minute),
+		Invite:     ratelimit.InviteLimit,
 		// Apple server-to-server deliveries are unauthenticated: blunt
 		// floods before JWS verification, with a ceiling high enough that
 		// Apple's own delivery retries never throttle.
@@ -262,6 +263,15 @@ func New(deps Dependencies) *Server {
 			r.With(h.AuthMiddleware).Delete("/account", h.DeleteAccount)
 			r.Post("/account/status", h.AccountStatus)
 			r.With(h.AuthMiddleware).Post("/apple/deletion-credential", h.AppleDeletionCredential)
+		})
+		// Household sharing (day-1: one household per user, equal owners).
+		// All protected — membership is proven by the bearer account.
+		r.Route("/households", func(r chi.Router) {
+			r.Use(h.AuthMiddleware)
+			r.Get("/mine", h.GetMyHousehold)
+			r.Post("/invites", h.CreateInvite)
+			r.Post("/invites/accept", h.AcceptInvite)
+			r.Delete("/members", h.RemoveMember)
 		})
 	})
 

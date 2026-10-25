@@ -109,6 +109,25 @@ func NewOTPMessage(to, code string) Message {
 	}
 }
 
+// inviteEmailSubject is the subject for household invitation emails.
+const inviteEmailSubject = "You've been invited to a Shunik household"
+
+// NewInviteMessage builds a household invitation email. The token rides in
+// the plain-text body (no autofill contract — this is not an OTP).
+func NewInviteMessage(to, token string) Message {
+	return Message{
+		To:      to,
+		Subject: inviteEmailSubject,
+		Text: `Someone invited you to share their Shunik household — pets, care schedules, and documents, together.
+
+Open Shunik, sign in, and accept the invitation with this token:
+` + token + `
+
+The token expires in 7 days. If you weren't expecting this, ignore it.
+`,
+	}
+}
+
 // ---------- ConsoleSender ----------
 
 // ConsoleSender prints emails to stdout (for development/testing).

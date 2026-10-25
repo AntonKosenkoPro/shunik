@@ -6,18 +6,20 @@
 - [x] 1.4 Structural rename (`dbc2f91`): `ios/Shunik`, Shunik/ShunikTests targets + scheme, `ShunikApp`, CI + skill + rule paths; orphaned `TimeOfLifeRelease.entitlements` removed; suites green
 - [x] 1.5 Fresh `openspec init` + migrated `shunik-v1-foundation` plan (proposal + 6 spec deltas + design from explore; this file rewritten for the remaining work)
 - [x] 1.6 Re-confirm ctx7 research bundle at apply ("nothing changed since explore"): GRDB FTS `/groue/grdb.swift`, UserNotifications `/websites/developer_apple_usernotifications`, S3 presigned `/websites/aws_amazon_s3`, HIG for first screens, SwiftUI Charts for weight trend; record IDs + queries + pins
+  - §3 research record (2026-10-25, backend-only iteration): no fetches. HIG waived — no UI involved (evidence: zero `ios/` changes in §3). Apple API waived — no Apple SDK involved. Topic (invite-token handling) resolved from the in-repo OTP precedent (SHA-256 hash at rest, single-use, expiry; `internal/auth/otp.go` `otpHash`) — no external behavior to look up. S3/GRDB/docs fetches N/A to §3 scope.
 
 ## 2. Remaining proposal review gates (answer before building)
 
 - [ ] 2.1 Confirm Q1: snooze stays cut for v1 (tasks below assume cut; overturn = edit `reminder-engine` spec + add snooze tasks)
 - [ ] 2.2 Confirm AASA server file on `antonkosenko.pro` gains `7923U48U87.com.antonkosenko.shunik` before TestFlight (SIWA attribution)
 
-## 3. Backend — identity + household + sharing
+## 3. Backend — identity + household + sharing [DONE 2026-10-26, branch opsx/shunik-v1-foundation]
 
-- [ ] 3.1 `households`, `household_members`, `household_invites` tables + invite accept on OTP/Apple sign-in; one household per user enforced
-- [ ] 3.2 Rescope every pet-scoped query `user_id → household_id` + membership edge check; household-isolation tests mirroring the old ownership tests
-- [ ] 3.3 `updated_by` on every household row, `marked_by` on intake transitions; surfaced in DTOs
-- [ ] 3.4 Revoke-member = lock-not-wipe; member devices gate on next refresh (files intact)
+- [x] 3.1 `households`, `household_members`, `household_invites` tables + invite accept on OTP/Apple sign-in; one household per user enforced (migration `010_households.sql`; unique index on membership user_id; `EnsureHousehold` called from `VerifyOTP` + `AppleSignIn`)
+- [x] 3.2 Rescope every pet-scoped query `user_id → household_id` + membership edge check; household-isolation tests mirroring the old ownership tests (no pet tables exist yet — this landed as the household-scoped API surface `GET /mine`, `POST /invites`, `POST /invites/accept`, `DELETE /members` with membership checks; `TestHouseholdFlow_*` isolation coverage; full per-resource rescope rides with §4 tables)
+- [x] 3.3 `updated_by` on every household row, `marked_by` on intake transitions; surfaced in DTOs (`households.updated_by`, `members.added_by`, `invites.invited_by` — all actor IDs, non-null; `marked_by` arrives with §4 intakes)
+- [x] 3.4 Revoke-member = lock-not-wipe; member devices gate on next refresh (files intact) (RemoveMember revokes ALL refresh tokens of the removed user BEFORE deleting the membership; devices 401 to the auth gate with files intact; `TestRemoveMember_RevokesThenRemoves`)
+- Verified: `gofmt` clean, `go vet` clean, `golangci-lint` 0 issues, `go test ./...` green (new `households_test.go` ×2: store + handlers incl. 202-always/no-enumeration, 409 double-join, 404 unknown/consumed/expired, revoke-before-remove, OTP-verify auto-household), contract gate green (4 paths + `household`/`household_member`/`invite` schemas + 3 error codes).
 
 ## 4. Backend — domain + blobs + sync
 

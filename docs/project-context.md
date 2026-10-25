@@ -12,9 +12,11 @@ and the active OpenSpec change; update it in the same iteration as the code.
 acting as identity + sync relay. Forked from Lifio (`timeOfLife@607fae3`); the
 time-tracking domain was stripped, the auth chassis kept.
 
-Current state is the **auth scaffold**: passwordless email-OTP + Sign in with Apple,
+Current state is the **auth scaffold plus household sharing (backend)**: passwordless email-OTP + Sign in with Apple,
 account deletion, per-device sessions, tombstone store helpers, and an auth-gated
-profile shell with a no-op sync skeleton. **No pet domain exists yet.** The v1 plan
+profile shell with a no-op sync skeleton — and, since §3, `households` /
+`household_members` / `household_invites` with invite + accept + member-removal
+endpoints. No pet domain exists yet. The v1 plan
 lives in the active OpenSpec change `shunik-v1-foundation` (proposal + 6 spec deltas
 + design + tasks, migrated from explore): household sharing, pets + event
 base/details, medication courses, weight history, document library, reminder engine,
@@ -37,6 +39,8 @@ create household → open store → shell); until then, do not assume household 
 anywhere in code.
 
 ### Data plane
+
+- **Households** (day-1 sharing, backend done since §3): `households` (one per user, enforced by unique membership), `household_members` (equal owners + `added_by`), `household_invites` (email + SHA-256 token hash, 7-day expiry, replace-on-reinvite). Every sign-in ensures a household (`EnsureHousehold` in `VerifyOTP`/`AppleSignIn`); invites join via `POST /invites/accept`; removal revokes the removed user's refresh tokens before deleting the membership (lock-not-wipe). Pet tables scope to `household_id` when they land (§4).
 
 - **GRDB `LocalStore`** (D1): SQLite via GRDB.swift in the App Group shared container
 `group.com.antonkosenko.shunik` (entitlement in
@@ -68,14 +72,14 @@ account routes exist; the deletions route returns with the first synced resource
 
 ### Incomplete / deferred (do not claim these are done)
 
-Everything pet-shaped is unbuilt: household sharing (two owners, invites,
-`updated_by`/`marked_by`, lock-not-wipe revocation), pets + adaptive single-pet IA,
+Everything pet-shaped is unbuilt: pets + adaptive single-pet IA,
 event base/details (vaccination, grooming, weight series), medication courses +
 intakes, document library + CDN blobs, the reminder engine (rolling UN window),
-canonical units + per-device lens, calendar integration (deferred whole), owner
+canonical units + per-device lens, per-household data files (the store is still
+per-account until the §5 household gate lands — the backend household already
+exists), calendar integration (deferred whole), owner
 analytics (deferred), vet reports (deferred), litter multi-create (v2), curated drug
-data (never without vet review + disclaimer). Per-household data files land with
-household sharing — the store is still per-account until then. No device management
+data (never without vet review + disclaimer). No device management
 UI exists yet. The iOS 18 lock-screen ControlWidget was never built here.
 
 ## OpenSpec routing
@@ -231,7 +235,8 @@ The app is unreleased; there is no on-disk data in the wild. **No backward compa
 
 ## Decisions log (precedents to respect)
 
-- Forked from Lifio `timeOfLife@607fae3` (seed `45fda7a`; strip `45fda7a` split out domain deletion; rename `879a1d0`; structural rename `dbc2f91`). Lifio history is preserved for archaeology; Lifio's `openspec/`, `Requirements/`, `Design/` were deliberately NOT copied as contract — only the plan artifacts migrated.
+- Forked from Lifio `timeOfLife@607fae3` (seed; strip `45fda7a` split out domain deletion; rename `879a1d0`; structural rename `dbc2f91`; scaffold `0cd3e2d`). Lifio history is preserved for archaeology; Lifio's `openspec/`, `Requirements/`, `Design/` were deliberately NOT copied as contract — only the plan artifacts migrated.
+- §3 (branch `opsx/shunik-v1-foundation`): household sharing backend — `010_households.sql`, store impls (pg + sqlite), `POST /invites` / `POST /invites/accept` / `DELETE /members` / `GET /mine`, `EnsureHousehold` on both sign-in paths, invite-token SHA-256 pattern reused from OTP codes, revoke-before-remove ordering. Next: §4 pet tables scoped to `household_id`.
 - Backend language is **Go**; mobile is **Swift**. No reintroductions.
 - Auth is **passwordless** — do not reintroduce passwords.
 - Tests use **SQLite in-memory** so they run without Docker.

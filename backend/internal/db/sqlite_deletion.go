@@ -409,6 +409,8 @@ func (s *SQLiteStore) PurgeUser(ctx context.Context, userID, clientID string, di
 		{"refresh tokens", `DELETE FROM refresh_tokens WHERE user_id = ?`},
 		{"otp codes", `DELETE FROM otp_codes WHERE user_id = ?`},
 		{"tombstones", `DELETE FROM tombstones WHERE user_id = ?`},
+		{"household memberships", `DELETE FROM household_members WHERE user_id = ?`},
+		{"household invites sent", `DELETE FROM household_invites WHERE invited_by = ?`},
 	} {
 		if _, err := tx.ExecContext(ctx, stmt.sql, userID); err != nil {
 			return res, fmt.Errorf("purge user %s: %w", stmt.name, err)

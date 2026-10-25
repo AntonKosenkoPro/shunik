@@ -84,4 +84,9 @@ var (
 	// notification id was already processed. The caller treats it as an
 	// idempotent no-op (HTTP 200, no state change).
 	ErrNotificationReplay = errors.New("apple notification already processed")
+
+	// ErrAlreadyMember is returned when a household join is attempted by a
+	// user who already belongs to a household (day-1: one household per
+	// user). The handler maps it to 409 already_member.
+	ErrAlreadyMember = errors.New("user already belongs to a household")
 )

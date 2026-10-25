@@ -155,6 +155,40 @@ type Tombstone struct {
 	DeletedAt time.Time `json:"deleted_at"`
 }
 
+// Household is one shared home for pets, events, and documents. Day-1:
+// one household per user, every member an equal owner.
+type Household struct {
+	ID        string    `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	UpdatedBy string    `json:"updated_by"`
+}
+
+// HouseholdMember binds a user to a household as an equal owner.
+// AddedBy names the actor who added the row (the user themselves on
+// auto-create and invite accept, the inviter never writes it directly).
+type HouseholdMember struct {
+	HouseholdID string    `json:"household_id"`
+	UserID      string    `json:"user_id"`
+	Email       string    `json:"email"`
+	AddedBy     string    `json:"added_by"`
+	JoinedAt    time.Time `json:"joined_at"`
+}
+
+// HouseholdInvite is an outstanding email invitation to a household.
+// The raw token is returned once at creation and emailed to the invitee;
+// only its SHA-256 hash persists (R1: no plaintext secrets).
+type HouseholdInvite struct {
+	ID          string     `json:"id"`
+	HouseholdID string     `json:"household_id"`
+	Email       string     `json:"email"`
+	TokenHash   string     `json:"-"`
+	InvitedBy   string     `json:"invited_by"`
+	ExpiresAt   time.Time  `json:"expires_at"`
+	AcceptedAt  *time.Time `json:"accepted_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+}
+
 // Store defines the interface for all database operations.
 type Store interface {
 	// GetUserByEmail returns a user by their email.
@@ -304,6 +338,37 @@ type Store interface {
 	// notification id. A duplicate id returns ErrNotificationReplay and must
 	// be treated as an idempotent no-op by the caller.
 	RecordAppleNotification(ctx context.Context, jti string) error
+
+	// EnsureHousehold returns the user's household, creating one with the
+	// user as owner when the user has none. Called on every successful
+	// sign-in so a household always exists before any pet-scoped write.
+	EnsureHousehold(ctx context.Context, userID string) (Household, error)
+
+	// GetHouseholdForUser returns the user's household or ErrNotFound.
+	GetHouseholdForUser(ctx context.Context, userID string) (Household, error)
+
+	// ListHouseholdMembers returns the household's owners with emails.
+	ListHouseholdMembers(ctx context.Context, householdID string) ([]HouseholdMember, error)
+
+	// CreateInvite records an email invitation; only the SHA-256 token hash
+	// persists. Re-inviting the same email replaces the pending invite.
+	CreateInvite(ctx context.Context, householdID, email, tokenHash, invitedBy string, expiresAt time.Time) (HouseholdInvite, error)
+
+	// GetInviteByTokenHash returns the invite for a token hash or
+	// ErrNotFound. Expiry and acceptance are the caller's check.
+	GetInviteByTokenHash(ctx context.Context, tokenHash string) (HouseholdInvite, error)
+
+	// AcceptInvite joins the user to the invite's household: consumed or
+	// expired invites behave as missing (ErrNotFound — indistinguishable),
+	// and users already in a household are rejected (ErrAlreadyMember).
+	// The invite is marked accepted in the same transaction.
+	AcceptInvite(ctx context.Context, inviteID, userID string) (Household, error)
+
+	// RemoveMember deletes one membership. Token revocation for the removed
+	// user is the caller's job, revoked BEFORE removing: a failed removal
+	// leaves a locked-but-member user who re-authenticates cleanly, while a
+	// failed revocation after removal would leave valid tokens outside.
+	RemoveMember(ctx context.Context, householdID, userID string) error
 
 	// Close closes the database connection.
 	Close() error
