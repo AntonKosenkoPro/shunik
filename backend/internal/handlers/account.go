@@ -140,6 +140,11 @@ func (h *Handler) DeleteAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Best-effort orphan cleanup: the purge emptied a household whose
+	// document rows cascaded, leaving bytes behind. Failures are logged
+	// orphans for the GC sweep, never a purge failure.
+	h.deleteOrphanedBlobs(ctx, res.OrphanedBlobKeys)
+
 	if !hasApple || res.RevocationJobID == "" {
 		// Email-only deletion. An Apple account always carries a
 		// revocation job here: the purge transaction requires the vault

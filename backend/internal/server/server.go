@@ -14,6 +14,7 @@ import (
 
 	"github.com/antonkosenko/shunik/backend/internal/apple"
 	"github.com/antonkosenko/shunik/backend/internal/auth"
+	"github.com/antonkosenko/shunik/backend/internal/blobs"
 	"github.com/antonkosenko/shunik/backend/internal/config"
 	"github.com/antonkosenko/shunik/backend/internal/db"
 	"github.com/antonkosenko/shunik/backend/internal/email"
@@ -58,6 +59,11 @@ type Dependencies struct {
 	AppleDigestKey []byte
 	// AppleClientID is the Bundle ID referenced by revocation jobs.
 	AppleClientID string
+	// BlobStore holds document bytes (nil = unconfigured: blob endpoints
+	// answer 503 and purge/GC byte cleanup skips silently). Built by
+	// NewDefaultDependencies via blobs.NewBlobStoreFromConfig; tests pass
+	// their own store or nil directly.
+	BlobStore blobs.Store
 }
 
 // defaultAccessTokenTTL and defaultRefreshTokenTTL mirror the config defaults
@@ -109,6 +115,7 @@ func NewDefaultDependencies(ctx context.Context, cfg *config.Config, store db.St
 		OTPRequest: ratelimit.OTPRequestLimit,
 		OTPVerify:  ratelimit.OTPVerifyLimit,
 		Status:     ratelimit.NewTokenBucket(10, 10, time.Minute),
+		Invite:     ratelimit.InviteLimit,
 		// Apple server-to-server deliveries are unauthenticated: blunt
 		// floods before JWS verification, with a ceiling high enough that
 		// Apple's own delivery retries never throttle.
@@ -181,7 +188,25 @@ func NewDefaultDependencies(ctx context.Context, cfg *config.Config, store db.St
 		AppleTokenKeyring:  appleTokenKeyring,
 		AppleDigestKey:     digestKey,
 		AppleClientID:      cfg.AppleClientID,
+		BlobStore:          blobStoreFromConfig(cfg, logger),
 	}
+}
+
+// blobStoreFromConfig constructs object storage for document bytes. An empty
+// S3_BUCKET (the default) is a valid disabled state: it returns nil and the
+// blob endpoints answer 503 while everything else keeps working. A
+// misconfigured non-empty bucket fails closed to nil the same way (the
+// error is surfaced here instead of inside the presign path).
+func blobStoreFromConfig(cfg *config.Config, logger *slog.Logger) blobs.Store {
+	bs, err := blobs.NewBlobStoreFromConfig(
+		cfg.S3Endpoint, cfg.S3Bucket, cfg.S3Region,
+		cfg.S3AccessKeyID, cfg.S3SecretAccessKey, cfg.S3PresignTTL,
+	)
+	if err != nil {
+		logger.Error("blob store misconfigured, document bytes disabled", "error", err)
+		return nil
+	}
+	return bs
 }
 
 // Server holds the HTTP server and its dependencies.
@@ -221,6 +246,7 @@ func New(deps Dependencies) *Server {
 			deps.AppleDigestKey,
 			deps.AppleClientID,
 		),
+		handlers.WithBlobStore(deps.BlobStore),
 	)
 
 	s := &Server{
@@ -263,6 +289,69 @@ func New(deps Dependencies) *Server {
 			r.Post("/account/status", h.AccountStatus)
 			r.With(h.AuthMiddleware).Post("/apple/deletion-credential", h.AppleDeletionCredential)
 		})
+		// Household sharing (day-1: one household per user, equal owners).
+		// All protected — membership is proven by the bearer account.
+		r.Route("/households", func(r chi.Router) {
+			r.Use(h.AuthMiddleware)
+			r.Get("/mine", h.GetMyHousehold)
+			r.Post("/invites", h.CreateInvite)
+			r.Post("/invites/accept", h.AcceptInvite)
+			r.Delete("/members/{userID}", h.RemoveMember)
+		})
+		// Shunik v1 domain (pets, events, medication intakes, documents,
+		// deletions timeline). All protected — every query scopes to the
+		// caller's household, resolved (self-heal) per request.
+		// Collection routes register both the bare and trailing-slash
+		// variants so /pets and /pets/ both match (chi treats them as
+		// distinct patterns).
+		r.Route("/pets", func(r chi.Router) {
+			r.Use(h.AuthMiddleware)
+			r.Post("/", h.CreatePet)
+			r.Get("/", h.ListPets)
+			r.Get("/{id}", h.GetPet)
+			r.Patch("/{id}", h.UpdatePet)
+			r.Delete("/{id}", h.DeletePet)
+		})
+		r.With(h.AuthMiddleware).Post("/pets", h.CreatePet)
+		r.With(h.AuthMiddleware).Get("/pets", h.ListPets)
+		r.Route("/events", func(r chi.Router) {
+			r.Use(h.AuthMiddleware)
+			r.Post("/", h.CreateEvent)
+			r.Get("/", h.ListEvents)
+			r.Get("/{id}", h.GetEvent)
+			r.Patch("/{id}", h.UpdateEvent)
+			r.Delete("/{id}", h.DeleteEvent)
+		})
+		r.With(h.AuthMiddleware).Post("/events", h.CreateEvent)
+		r.With(h.AuthMiddleware).Get("/events", h.ListEvents)
+		r.Route("/intakes", func(r chi.Router) {
+			r.Use(h.AuthMiddleware)
+			r.Post("/", h.CreateIntake)
+			r.Get("/", h.ListIntakes)
+			r.Get("/{id}", h.GetIntake)
+			r.Patch("/{id}", h.UpdateIntake)
+			r.Delete("/{id}", h.DeleteIntake)
+		})
+		r.With(h.AuthMiddleware).Post("/intakes", h.CreateIntake)
+		r.With(h.AuthMiddleware).Get("/intakes", h.ListIntakes)
+		r.Route("/documents", func(r chi.Router) {
+			r.Use(h.AuthMiddleware)
+			r.Post("/", h.CreateDocument)
+			r.Get("/", h.ListDocuments)
+			r.Get("/{id}", h.GetDocument)
+			r.Patch("/{id}", h.UpdateDocument)
+			r.Delete("/{id}", h.DeleteDocument)
+			r.Post("/{id}/upload-url", h.DocumentUploadURL)
+			r.Post("/{id}/confirm", h.ConfirmDocument)
+			r.Get("/{id}/download-url", h.DocumentDownloadURL)
+		})
+		r.With(h.AuthMiddleware).Post("/documents", h.CreateDocument)
+		r.With(h.AuthMiddleware).Get("/documents", h.ListDocuments)
+		r.Route("/deletions", func(r chi.Router) {
+			r.Use(h.AuthMiddleware)
+			r.Get("/", h.ListDeletions)
+		})
+		r.With(h.AuthMiddleware).Get("/deletions", h.ListDeletions)
 	})
 
 	s.router = r

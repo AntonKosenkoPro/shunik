@@ -363,6 +363,29 @@ func (s *SQLiteStore) PurgeUser(ctx context.Context, userID, clientID string, di
 	}
 	res.UserID = userID
 
+	// Capture the user's households BEFORE the membership deletes below:
+	// emptied households are removed after the child-delete list.
+	var householdIDs []string
+	memberRows, err := tx.QueryContext(ctx, `
+		SELECT household_id FROM household_members WHERE user_id = ?
+	`, userID)
+	if err != nil {
+		return res, fmt.Errorf("purge user households: %w", err)
+	}
+	for memberRows.Next() {
+		var hid string
+		if err := memberRows.Scan(&hid); err != nil {
+			_ = memberRows.Close()
+			return res, fmt.Errorf("purge user households scan: %w", err)
+		}
+		householdIDs = append(householdIDs, hid)
+	}
+	if err := memberRows.Err(); err != nil {
+		_ = memberRows.Close()
+		return res, fmt.Errorf("purge user households rows: %w", err)
+	}
+	_ = memberRows.Close()
+
 	if appleSubject.Valid {
 		res.HadAppleIdentity = true
 		res.AppleSubject = appleSubject.String
@@ -409,9 +432,55 @@ func (s *SQLiteStore) PurgeUser(ctx context.Context, userID, clientID string, di
 		{"refresh tokens", `DELETE FROM refresh_tokens WHERE user_id = ?`},
 		{"otp codes", `DELETE FROM otp_codes WHERE user_id = ?`},
 		{"tombstones", `DELETE FROM tombstones WHERE user_id = ?`},
+		{"household memberships", `DELETE FROM household_members WHERE user_id = ?`},
+		{"household invites sent", `DELETE FROM household_invites WHERE invited_by = ?`},
 	} {
 		if _, err := tx.ExecContext(ctx, stmt.sql, userID); err != nil {
 			return res, fmt.Errorf("purge user %s: %w", stmt.name, err)
+		}
+	}
+
+	// Household data belongs to the remaining members: shared households
+	// survive untouched. Households left with zero members are removed and
+	// their documents' blob keys reported for best-effort async byte
+	// cleanup (the household row cascades all metadata; bytes live outside
+	// the DB). householdIDs was captured before the membership deletes
+	// above, while the user's memberships still existed.
+	for _, hid := range householdIDs {
+		var remaining int
+		if err := tx.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM household_members WHERE household_id = ?
+		`, hid).Scan(&remaining); err != nil {
+			return res, fmt.Errorf("purge user household count: %w", err)
+		}
+		if remaining > 0 {
+			continue
+		}
+		blobRows, err := tx.QueryContext(ctx, `
+			SELECT blob_key FROM documents WHERE household_id = ?
+		`, hid)
+		if err != nil {
+			return res, fmt.Errorf("purge user orphaned blobs: %w", err)
+		}
+		var keys []string
+		for blobRows.Next() {
+			var key string
+			if err := blobRows.Scan(&key); err != nil {
+				_ = blobRows.Close()
+				return res, fmt.Errorf("purge user orphaned blobs scan: %w", err)
+			}
+			if key != "" {
+				keys = append(keys, key)
+			}
+		}
+		if err := blobRows.Err(); err != nil {
+			_ = blobRows.Close()
+			return res, fmt.Errorf("purge user orphaned blobs rows: %w", err)
+		}
+		_ = blobRows.Close()
+		res.OrphanedBlobKeys = append(res.OrphanedBlobKeys, keys...)
+		if _, err := tx.ExecContext(ctx, `DELETE FROM households WHERE id = ?`, hid); err != nil {
+			return res, fmt.Errorf("purge user empty household: %w", err)
 		}
 	}
 

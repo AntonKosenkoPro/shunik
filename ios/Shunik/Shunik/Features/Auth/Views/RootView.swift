@@ -19,7 +19,7 @@ struct RootView: View {
     /// reads. Nil while the bind is in flight (fresh sign-in, restore,
     /// re-login) or after sign-out. The shell mounts only once this matches
     /// the signed-in session id (bind-then-reveal): no tracker read (Track /
-    /// shell `.load()`) precedes `openLocalStore`, so a fresh sign-in never
+    /// shell `.load()`) precedes `openHouseholdStore`, so a fresh sign-in never
     /// flashes `error.unknown` from `LocalStoreError.notBound`.
     @State private var boundUserID: String?
     /// Serializes the account-bound store lifecycle across rapid
@@ -78,6 +78,15 @@ struct RootView: View {
                 // deletions stay restorable until their push succeeds).
                 if case .signedIn = session.state {
                     container.syncController.trigger(userID: sessionUserID())
+                    // Re-top-up the reminder queue: sync may have delivered
+                    // new dues while backgrounded (reminder-engine spec).
+                    Task { await container.reminderEngine.refresh() }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
+                // Timezone/clock change: wall-clock dues re-resolve.
+                if case .signedIn = session.state {
+                    Task { await container.reminderEngine.refresh() }
                 }
             }
     }
@@ -116,7 +125,7 @@ struct RootView: View {
                 if container.localStoreOpenError != nil {
                     // Bind failure dead-ends here without an escape hatch:
                     // beginSignIn (the only site that clears the error via
-                    // openLocalStore) runs solely in the blank hold below,
+                    // openHouseholdStore) runs solely in the blank hold below,
                     // and the shell with Profile's sign-out is unreachable
                     // while this gate is up. So offer sign-out right here
                     // (same L10n key + logout shape as ProfileView) — the
@@ -248,6 +257,7 @@ struct RootView: View {
         container.navigation.path = []
         container.navigation.resetTapRequests()
         boundUserID = nil
+        container.householdService.clearActiveHousehold()
         // A stale bind error must never leak into a later sign-in: the error
         // branch's sign-out is the only escape from a failed bind, and the
         // next beginSignIn clears on entry anyway — belt and braces.

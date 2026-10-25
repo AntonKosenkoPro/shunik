@@ -37,7 +37,7 @@ struct AccountViewModelTests {
         let localStore: LocalStore
         if let preboundFile {
             // swiftlint:disable:next force_try
-            localStore = try! LocalStore(url: preboundFile, userID: "u1")
+            localStore = try! LocalStore(url: preboundFile, householdID: "u1")
         } else {
             localStore = LocalStore()
         }
@@ -63,7 +63,8 @@ struct AccountViewModelTests {
             appleService: AppleSignInService(),
             localStore: localStore,
             undoBuffer: UndoBufferStore(store: localStore),
-            syncController: syncController
+            syncController: syncController,
+            householdService: makeOfflineHouseholdService()
         )
         return Harness(
             container: container, repo: repo, keychain: keychain,
@@ -99,8 +100,8 @@ struct AccountViewModelTests {
     func signOutKeepsFiles() async throws {
         let h = makeHarness()
         signIn(h, accountID: "u1")
-        let url = LocalStore.databaseURL(userID: "u1", in: h.base)
-        _ = try LocalStore(url: url, userID: "u1")
+        let url = LocalStore.databaseURL(householdID: "u1", in: h.base)
+        _ = try LocalStore(url: url, householdID: "u1")
         #expect(FileManager.default.fileExists(atPath: url.path))
 
         await AccountViewModel(container: h.container).signOut()
@@ -119,7 +120,7 @@ struct AccountViewModelTests {
     func eraseLocalDataFlow() async throws {
         let file = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString)
-            .appendingPathComponent(LocalStore.databaseFileName(userID: "u1"))
+            .appendingPathComponent(LocalStore.databaseFileName(householdID: "u1"))
         try FileManager.default.createDirectory(
             at: file.deletingLastPathComponent(), withIntermediateDirectories: true
         )

@@ -1,21 +1,34 @@
 import Foundation
 import Combine
 
-// swiftlint:disable:next todo
-// SHUNIK-TODO: scaffold — single-destination shell hosting the Profile page.
-// Pet-care destinations will be added here as new routes.
+/// Shell destinations (§6.1 adaptive IA): the four pet-care tabs plus the
+/// Profile pushed page.
 enum ShellRoute: Hashable {
+    case profile
+    case timeline
+    case pets
+    case meds
+    case documents
+}
+
+/// The shell's tabs (one per §6 destination + Profile).
+enum ShellTab: Hashable {
+    case timeline
+    case pets
+    case meds
+    case documents
     case profile
 }
 
-// swiftlint:disable:next todo
-// SHUNIK-TODO: extend with pet-care destinations.
-/// View model for the scaffold shell: owns the single profile path.
+/// View model for the tab shell: the selected tab plus the Profile
+/// navigation path (Profile pushes Account the same way as before).
 @MainActor
 final class AppShellViewModel: ObservableObject {
-    /// The profile navigation path. Profile is the shell's single
-    /// destination; Account pushes from it via caller-local links.
+    /// The Profile navigation path. Profile is a pushed page inside its own
+    /// tab; Account pushes from it via caller-local links.
     @Published var profilePath: [ShellRoute] = []
+    /// The selected tab.
+    @Published var selectedTab: ShellTab = .timeline
 
     init() {}
 

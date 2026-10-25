@@ -113,3 +113,135 @@
 
 "error.localPersistence" = "Could not save locally. Please try again.";
 
+
+// Common actions (§6 domain UI)
+"common.save" = "Save";
+"common.cancel" = "Cancel";
+"common.delete" = "Delete";
+"common.done" = "Done";
+"common.add" = "Add";
+"common.close" = "Close";
+"common.retry" = "Retry";
+"common.edit" = "Edit";
+"common.search" = "Search";
+"common.all" = "All";
+"common.share" = "Share";
+
+// Pets (§6.1) + pet scope
+"pets.title" = "Pets";
+"pets.empty" = "No pets yet";
+"pets.emptyHint" = "Add your first pet to start tracking care.";
+"pets.add" = "Add pet";
+"pets.edit" = "Edit pet";
+"pets.name" = "Name";
+"pets.species" = "Species";
+"pets.species.dog" = "Dog";
+"pets.species.cat" = "Cat";
+"pets.species.other" = "Other";
+"pets.birthdate" = "Birthdate";
+"pets.birthdate.none" = "Not set";
+"pets.notes" = "Notes";
+"pets.deleteTitle" = "Delete pet?";
+"pets.deleteMessage" = "The pet and its history will be removed from this device. You can undo right after.";
+"pets.deleted" = "Pet deleted";
+"petDetail.events" = "History";
+"petDetail.courses" = "Medications";
+"petDetail.documents" = "Documents";
+"petDetail.weight" = "Weight";
+
+// Timeline + events (§6.2)
+"timeline.title" = "Timeline";
+"timeline.empty" = "No events yet";
+"timeline.emptyHint" = "Log a vaccination, grooming, or weight below.";
+"event.add" = "Log event";
+"event.title" = "Title";
+"event.kind.vaccination" = "Vaccination";
+"event.kind.grooming" = "Grooming";
+"event.kind.weight" = "Weight";
+"event.vaccine" = "Vaccine";
+"event.batch" = "Batch";
+"event.vet" = "Vet";
+"event.service" = "Service";
+"event.place" = "Place";
+"event.notes" = "Notes";
+"event.occurredOn" = "Date";
+"event.nextDue" = "Next due";
+"event.nextDue.none" = "None";
+"event.deleteTitle" = "Delete event?";
+"event.deleteMessage" = "The event will be removed from this device. You can undo right after.";
+
+// Weight + units (§6.2, unit-system)
+"weight.log" = "Log weight";
+"weight.value" = "Weight";
+"weight.history" = "History";
+"weight.trend.up" = "Gaining";
+"weight.trend.down" = "Losing";
+"weight.trend.flat" = "Stable";
+"units.system" = "Units";
+"units.metric" = "Metric";
+"units.imperial" = "Imperial";
+
+// Medications (§6.3)
+"meds.title" = "Meds";
+"meds.due" = "Due";
+"meds.courses" = "Courses";
+"meds.course.add" = "New course";
+"meds.course.edit" = "Edit course";
+"meds.drug" = "Drug";
+"meds.dose" = "Dose";
+"meds.doseUnit" = "Unit";
+"meds.route" = "Route";
+"meds.schedule" = "Schedule";
+"meds.schedule.daily" = "Daily";
+"meds.schedule.weekdays" = "Weekdays";
+"meds.schedule.prn" = "As needed";
+"meds.times" = "Times";
+"meds.times.hint" = "08:00, 20:00";
+"meds.weekdays" = "Days";
+"meds.duration" = "Duration, days";
+"meds.endsOn" = "Ends on";
+"meds.status" = "Status";
+"meds.status.active" = "Active";
+"meds.status.paused" = "Paused";
+"meds.status.done" = "Done";
+"meds.status.stopped" = "Stopped";
+"meds.instructions" = "Instructions";
+"meds.infoRef" = "Reference";
+"meds.intakes" = "Doses";
+"meds.intake.taken" = "Taken";
+"meds.intake.missed" = "Missed";
+"meds.intake.skipped" = "Skipped";
+"meds.intake.pending" = "Pending";
+"meds.markTaken" = "Taken";
+"meds.markMissed" = "Missed";
+"meds.markSkipped" = "Skipped";
+"meds.logDose" = "Log dose";
+"meds.stop" = "Stop course";
+"meds.stopTitle" = "Stop course?";
+"meds.stopMessage" = "Future pending doses will be removed. Past doses stay.";
+"meds.adherence" = "Adherence";
+"meds.empty" = "No courses yet";
+"meds.emptyHint" = "Add a course to track doses.";
+
+// Documents (§6.4)
+"docs.title" = "Documents";
+"docs.search" = "Search documents";
+"docs.add" = "Add document";
+"docs.rename" = "Rename";
+"docs.titleLabel" = "Title";
+"docs.linkedPets" = "Pets";
+"docs.noPets" = "No pets";
+"docs.uploading" = "Uploading…";
+"docs.waitingUpload" = "Waiting for connection";
+"docs.uploadFailed" = "Upload failed";
+"docs.notReady" = "Waiting for upload";
+"docs.deleteTitle" = "Delete document?";
+"docs.deleteMessage" = "The document will be removed from this device. You can undo right after.";
+"docs.empty" = "No documents yet";
+"docs.emptyHint" = "Add vet reports, passports, and receipts.";
+
+// Reminders (§7.1/7.3)
+"reminders.title" = "Reminders";
+"reminders.toggle" = "Reminders";
+"reminders.deniedHint" = "Notifications are off. Turn them on in Settings to get dose and vaccine reminders.";
+"reminders.openSettings" = "Open Settings";

@@ -113,3 +113,135 @@
 
 "error.localPersistence" = "Не удалось сохранить локально. Попробуйте снова.";
 
+
+// Common actions (§6 domain UI)
+"common.save" = "Сохранить";
+"common.cancel" = "Отмена";
+"common.delete" = "Удалить";
+"common.done" = "Готово";
+"common.add" = "Добавить";
+"common.close" = "Закрыть";
+"common.retry" = "Повторить";
+"common.edit" = "Изменить";
+"common.search" = "Поиск";
+"common.all" = "Все";
+"common.share" = "Поделиться";
+
+// Pets (§6.1) + pet scope
+"pets.title" = "Питомцы";
+"pets.empty" = "Питомцев пока нет";
+"pets.emptyHint" = "Добавьте первого питомца, чтобы вести уход.";
+"pets.add" = "Добавить питомца";
+"pets.edit" = "Изменить питомца";
+"pets.name" = "Имя";
+"pets.species" = "Вид";
+"pets.species.dog" = "Собака";
+"pets.species.cat" = "Кошка";
+"pets.species.other" = "Другое";
+"pets.birthdate" = "Дата рождения";
+"pets.birthdate.none" = "Не указана";
+"pets.notes" = "Заметки";
+"pets.deleteTitle" = "Удалить питомца?";
+"pets.deleteMessage" = "Питомец и его история будут удалены с этого устройства. Действие можно отменить сразу после.";
+"pets.deleted" = "Питомец удалён";
+"petDetail.events" = "История";
+"petDetail.courses" = "Лекарства";
+"petDetail.documents" = "Документы";
+"petDetail.weight" = "Вес";
+
+// Timeline + events (§6.2)
+"timeline.title" = "Лента";
+"timeline.empty" = "Событий пока нет";
+"timeline.emptyHint" = "Запишите вакцинацию, груминг или вес ниже.";
+"event.add" = "Записать событие";
+"event.title" = "Название";
+"event.kind.vaccination" = "Вакцинация";
+"event.kind.grooming" = "Груминг";
+"event.kind.weight" = "Вес";
+"event.vaccine" = "Вакцина";
+"event.batch" = "Серия";
+"event.vet" = "Ветеринар";
+"event.service" = "Услуга";
+"event.place" = "Место";
+"event.notes" = "Заметки";
+"event.occurredOn" = "Дата";
+"event.nextDue" = "Следующий срок";
+"event.nextDue.none" = "Нет";
+"event.deleteTitle" = "Удалить событие?";
+"event.deleteMessage" = "Событие будет удалено с этого устройства. Действие можно отменить сразу после.";
+
+// Weight + units (§6.2, unit-system)
+"weight.log" = "Записать вес";
+"weight.value" = "Вес";
+"weight.history" = "История";
+"weight.trend.up" = "Набирает";
+"weight.trend.down" = "Теряет";
+"weight.trend.flat" = "Стабильно";
+"units.system" = "Единицы";
+"units.metric" = "Метрические";
+"units.imperial" = "Имперские";
+
+// Medications (§6.3)
+"meds.title" = "Лекарства";
+"meds.due" = "Приём";
+"meds.courses" = "Курсы";
+"meds.course.add" = "Новый курс";
+"meds.course.edit" = "Изменить курс";
+"meds.drug" = "Препарат";
+"meds.dose" = "Доза";
+"meds.doseUnit" = "Единица";
+"meds.route" = "Способ";
+"meds.schedule" = "Расписание";
+"meds.schedule.daily" = "Ежедневно";
+"meds.schedule.weekdays" = "По дням недели";
+"meds.schedule.prn" = "По необходимости";
+"meds.times" = "Время приёмов";
+"meds.times.hint" = "08:00, 20:00";
+"meds.weekdays" = "Дни";
+"meds.duration" = "Длительность, дней";
+"meds.endsOn" = "Окончание";
+"meds.status" = "Статус";
+"meds.status.active" = "Активен";
+"meds.status.paused" = "Пауза";
+"meds.status.done" = "Завершён";
+"meds.status.stopped" = "Остановлен";
+"meds.instructions" = "Инструкции";
+"meds.infoRef" = "Ссылка";
+"meds.intakes" = "Приёмы";
+"meds.intake.taken" = "Принято";
+"meds.intake.missed" = "Пропущено";
+"meds.intake.skipped" = "Отменено";
+"meds.intake.pending" = "Ожидает";
+"meds.markTaken" = "Принято";
+"meds.markMissed" = "Пропущено";
+"meds.markSkipped" = "Отменить";
+"meds.logDose" = "Записать приём";
+"meds.stop" = "Остановить курс";
+"meds.stopTitle" = "Остановить курс?";
+"meds.stopMessage" = "Будущие ожидающие приёмы будут удалены. Прошлые останутся.";
+"meds.adherence" = "Регулярность";
+"meds.empty" = "Курсов пока нет";
+"meds.emptyHint" = "Добавьте курс, чтобы отслеживать приёмы.";
+
+// Documents (§6.4)
+"docs.title" = "Документы";
+"docs.search" = "Поиск документов";
+"docs.add" = "Добавить документ";
+"docs.rename" = "Переименовать";
+"docs.titleLabel" = "Название";
+"docs.linkedPets" = "Питомцы";
+"docs.noPets" = "Без питомцев";
+"docs.uploading" = "Загрузка…";
+"docs.waitingUpload" = "Ожидание соединения";
+"docs.uploadFailed" = "Ошибка загрузки";
+"docs.notReady" = "Ожидает загрузки";
+"docs.deleteTitle" = "Удалить документ?";
+"docs.deleteMessage" = "Документ будет удалён с этого устройства. Действие можно отменить сразу после.";
+"docs.empty" = "Документов пока нет";
+"docs.emptyHint" = "Добавляйте справки, паспорта и чеки.";
+
+// Reminders (§7.1/7.3)
+"reminders.title" = "Напоминания";
+"reminders.toggle" = "Напоминания";
+"reminders.deniedHint" = "Уведомления выключены. Включите их в Настройках, чтобы получать напоминания о приёмах и вакцинациях.";
+"reminders.openSettings" = "Открыть Настройки";

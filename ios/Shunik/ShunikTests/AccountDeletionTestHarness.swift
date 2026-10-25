@@ -93,6 +93,14 @@ private func makeAccountDeletionBasePieces() -> (
 func signInAccountDeletion(_ h: AccountDeletionHarness, accountID: String, email: String = "a@b.com") {
     h.sessionStore.setSignedIn(CachedSession(id: accountID, email: email, emailVerified: true))
     h.cache.save(CachedSession(id: accountID, email: email, emailVerified: true))
+    // Household-active marker (mirrors `HouseholdService.resolveHousehold`):
+    // the coordinator erases exactly the file this selects.
+    h.defaults.set(accountID, forKey: "com.shunik.session.householdID")
+    try? accountID.write(
+        to: h.base.appendingPathComponent(ActiveAccountFileResolver.householdSessionFileName),
+        atomically: true,
+        encoding: .utf8
+    )
 }
 
 @MainActor
@@ -113,10 +121,10 @@ func seedAccountDeletionEvidence(
 
 @MainActor
 func accountDeletionFile(_ h: AccountDeletionHarness, _ accountID: String) -> URL {
-    LocalStore.databaseURL(userID: accountID, in: h.base)
+    LocalStore.databaseURL(householdID: accountID, in: h.base)
 }
 
 @MainActor
 func createAccountDeletionFile(_ h: AccountDeletionHarness, _ accountID: String) throws {
-    _ = try LocalStore(url: accountDeletionFile(h, accountID), userID: accountID)
+    _ = try LocalStore(url: accountDeletionFile(h, accountID), householdID: accountID)
 }

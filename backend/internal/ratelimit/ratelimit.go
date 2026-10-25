@@ -76,4 +76,9 @@ var (
 	// It is a dedicated bucket so Apple traffic cannot starve (or be starved
 	// by) the OTP request bucket (cross-feature isolation).
 	AppleLimit = NewTokenBucket(5, 5, time.Minute)
+
+	// InviteLimit limits household invitation creation per IP: 5 per minute.
+	// Invitations send email, so creation shares nothing with the OTP
+	// buckets (a burst of invites must never consume OTP capacity).
+	InviteLimit = NewTokenBucket(5, 5, time.Minute)
 )

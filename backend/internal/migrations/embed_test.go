@@ -43,10 +43,8 @@ func TestMigrations_FilesOrderedSequential(t *testing.T) {
 			t.Errorf("migration numbers not strictly increasing: %q before %q", files[i-1], f)
 		}
 	}
-	// Sequential from 001 with no gaps.
-	if len(files) >= 10 {
-		t.Fatalf("test only supports <10 migrations, got %d", len(files))
-	}
+	// File count is unbounded (gaps from stripped domains stay unreused);
+	// ordering and uniqueness above are the contract.
 }
 
 // TestMigrations_AdaptToSQLite pins the minimal dialect surgery: the named

@@ -88,6 +88,17 @@ type Config struct {
 	// authorization-code exchanges. It is sent only when set and must match
 	// the URI used in the native authorization request, if any.
 	AppleRedirectURI string
+	// S3-compatible object storage for document bytes (blob bodies; the
+	// database only holds keys). Empty S3Bucket (default) = disabled: blob
+	// routes answer 503 and everything else keeps working. S3
+	// misconfiguration must NEVER fail startup — disabled is a valid state.
+	S3Endpoint        string
+	S3Bucket          string
+	S3Region          string
+	S3AccessKeyID     string
+	S3SecretAccessKey string
+	// S3PresignTTL is the default presign lifetime (unset = 15m).
+	S3PresignTTL time.Duration
 }
 
 // Load reads configuration from the environment (.env first, non-fatal if missing).
@@ -311,6 +322,21 @@ func Load() (*Config, error) {
 		if _, err := apple.ParsePrivateKey([]byte(cfg.ApplePrivateKey)); err != nil {
 			return nil, invalidFieldError("APPLE_PRIVATE_KEY", "valid PKCS#8 ECDSA P-256 PEM (.p8 contents)")
 		}
+	}
+
+	// Optional: S3-compatible object storage for document bytes. Empty
+	// S3_BUCKET (default) = disabled, and that is a valid state — never fail
+	// startup here. Handlers map a nil store to 503.
+	cfg.S3Endpoint = os.Getenv("S3_ENDPOINT")
+	cfg.S3Bucket = os.Getenv("S3_BUCKET")
+	cfg.S3Region = os.Getenv("S3_REGION")
+	if cfg.S3Region == "" {
+		cfg.S3Region = "us-east-1"
+	}
+	cfg.S3AccessKeyID = os.Getenv("S3_ACCESS_KEY_ID")
+	cfg.S3SecretAccessKey = os.Getenv("S3_SECRET_ACCESS_KEY")
+	if cfg.S3PresignTTL, err = durationOrDefault("S3_PRESIGN_TTL", 15*time.Minute); err != nil {
+		return nil, err
 	}
 
 	return cfg, nil

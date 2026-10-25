@@ -37,6 +37,7 @@ struct ProfileView: View {
     var body: some View {
         List {
             accountSection
+            remindersSection
             versionFooter
         }
         .navigationTitle(L10n.profileTitle.text)
@@ -79,7 +80,7 @@ struct ProfileView: View {
     // types or adding/removing the trailing button re-lays-out the section
     // and the screen jumps on every tap of Sync now.
     @ViewBuilder private var syncStatusRow: some View {
-        TimelineView(.periodic(from: Date(), by: 60)) { context in
+        SwiftUI.TimelineView(.periodic(from: Date(), by: 60)) { context in
             switch sync.status {
             case .inactive:
                 EmptyView()
@@ -147,6 +148,61 @@ struct ProfileView: View {
     /// Age of the last successful sync, if any (nil before the first sync).
     private func rememberedAgeSubtitle(now: Date) -> String? {
         lastIdleDate.map { Self.ageSubtitle(since: $0, now: now) }
+    }
+
+    // MARK: - Reminders (§7.3)
+
+    /// Local reminders toggle + denied-state path. The toggle is ON only
+    /// when the OS authorized AND the device is unmuted; turning it off
+    /// mutes this device only (never syncs). Turning it on with an undecided
+    /// status requests permission; with denial it opens system Settings
+    /// (graceful deny path — the dues stay visible in-app either way).
+    @State private var remindersOn = false
+    @State private var remindersAuthorized = false
+
+    private var remindersSection: some View {
+        Section(L10n.remindersTitle.text) {
+            Toggle(L10n.remindersToggle.text, isOn: Binding(
+                get: { remindersOn },
+                set: { on in Task { await setReminders(on) } }
+            ))
+            .accessibilityIdentifier("ProfileRemindersToggle")
+            if !remindersAuthorized {
+                Text(L10n.remindersDeniedHint.text)
+                    .font(.caption)
+                    .foregroundStyle(Theme.textSecondary)
+                Button(L10n.remindersOpenSettings.text) {
+                    openSystemSettings()
+                }
+                .accessibilityIdentifier("ProfileOpenSettingsButton")
+            }
+        }
+        .task {
+            await container.reminderEngine.loadState()
+            remindersOn = container.reminderEngine.isAuthorized && !container.reminderEngine.isMuted
+            remindersAuthorized = container.reminderEngine.isAuthorized
+        }
+    }
+
+    private func setReminders(_ on: Bool) async {
+        if on {
+            let granted = await container.reminderEngine.ensurePermission()
+            if granted {
+                await container.reminderEngine.setMuted(false)
+            } else if let url = URL(string: UIApplication.openSettingsURLString) {
+                await UIApplication.shared.open(url)
+            }
+        } else {
+            await container.reminderEngine.setMuted(true)
+        }
+        remindersOn = container.reminderEngine.isAuthorized && !container.reminderEngine.isMuted
+        remindersAuthorized = container.reminderEngine.isAuthorized
+    }
+
+    private func openSystemSettings() {
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+            Task { await UIApplication.shared.open(url) }
+        }
     }
 
     // swiftlint:disable:next todo

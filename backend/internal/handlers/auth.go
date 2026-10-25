@@ -18,6 +18,7 @@ import (
 
 	"github.com/antonkosenko/shunik/backend/internal/apple"
 	"github.com/antonkosenko/shunik/backend/internal/auth"
+	"github.com/antonkosenko/shunik/backend/internal/blobs"
 	"github.com/antonkosenko/shunik/backend/internal/db"
 	"github.com/antonkosenko/shunik/backend/internal/email"
 	"github.com/antonkosenko/shunik/backend/internal/observe"
@@ -47,6 +48,10 @@ type Handler struct {
 	appleTokenKeys  *recovery.Keyring
 	digestKey       []byte
 	appleClientID   string
+	// blobStore holds document bytes (nil = unconfigured: blob endpoints
+	// 503 and purge/GC byte cleanup skips silently). Wired via
+	// WithBlobStore.
+	blobStore blobs.Store
 }
 
 // RateLimiterGroup holds the rate limiters used by the handlers.
@@ -57,6 +62,8 @@ type RateLimiterGroup struct {
 	Apple              *ratelimit.TokenBucket
 	Status             *ratelimit.TokenBucket
 	AppleNotifications *ratelimit.TokenBucket
+	// Invite limits household invitation creation per IP (it sends email).
+	Invite *ratelimit.TokenBucket
 }
 
 // HandlerOption customizes a Handler after construction.
@@ -313,7 +320,12 @@ func (h *Handler) AppleSignIn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Issue tokens (same path as VerifyOTP). Apple users are email-verified.
+	// A household always exists from the first sign-in.
 	user.AppleAuthLineage = &lineage
+	if _, err := h.store.EnsureHousehold(ctx, user.ID); err != nil {
+		h.writeInternalError(w, r, "failed to resolve household", err)
+		return
+	}
 	h.issueTokens(ctx, w, r, user, deviceID, authTime, lineage)
 	h.logger.Info("apple user signed in", "userID", user.ID)
 }
@@ -740,6 +752,13 @@ func (h *Handler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user.EmailVerified = true
+
+	// A household always exists from the first sign-in: resolve or create
+	// before any token issues so pet-scoped writes never lack a scope.
+	if _, err := h.store.EnsureHousehold(ctx, user.ID); err != nil {
+		h.writeInternalError(w, r, "failed to resolve household", err)
+		return
+	}
 
 	h.issueTokens(ctx, w, r, user, deviceID, time.Time{}, "")
 }

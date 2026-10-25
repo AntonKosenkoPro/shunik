@@ -12,9 +12,11 @@ and the active OpenSpec change; update it in the same iteration as the code.
 acting as identity + sync relay. Forked from Lifio (`timeOfLife@607fae3`); the
 time-tracking domain was stripped, the auth chassis kept.
 
-Current state is the **auth scaffold**: passwordless email-OTP + Sign in with Apple,
+Current state is the **auth scaffold plus household sharing (backend)**: passwordless email-OTP + Sign in with Apple,
 account deletion, per-device sessions, tombstone store helpers, and an auth-gated
-profile shell with a no-op sync skeleton. **No pet domain exists yet.** The v1 plan
+profile shell with a no-op sync skeleton — and, since §3, `households` /
+`household_members` / `household_invites` with invite + accept + member-removal
+endpoints. No pet domain exists yet. The v1 plan
 lives in the active OpenSpec change `shunik-v1-foundation` (proposal + 6 spec deltas
 + design + tasks, migrated from explore): household sharing, pets + event
 base/details, medication courses, weight history, document library, reminder engine,
@@ -37,6 +39,9 @@ create household → open store → shell); until then, do not assume household 
 anywhere in code.
 
 ### Data plane
+
+- **Households** (day-1 sharing, backend done since §3; domain tables since §4): `households`, `household_members` (equal owners + `added_by`), `household_invites` (email + SHA-256 token hash, 7-day expiry, replace-on-reinvite). Every sign-in ensures a household (`EnsureHousehold` in `VerifyOTP`/`AppleSignIn`); invites join via `POST /invites/accept`; removal revokes the removed user's refresh tokens before deleting the membership (lock-not-wipe).
+- **Pets, events, courses, intakes, documents** (§4 backend; iOS since §§5–7): `pets`, `event_base` (one row per event, `pet_id` immutable, base `updated_at` is the LWW clock) + kind details (`vacc_details`, `grooming_details`, `weight_details` in integer grams, `med_courses` with dose-as-string + schedule fields), `med_intakes` (child of course, `taken`/`missed`/`skipped` + snapshots + `marked_by`), `documents` (+ `document_pets` M:N links, `ready` flag, reserved `extracted_text`). Tombstones are household-scoped (`tombstones.household_id`); deletions converge cross-device per resource. Blob bytes live on S3-compatible storage via presigned URLs (`BlobStore`; disabled without `S3_BUCKET`); unconfirmed uploads are GC-swept; purge of a sole-member household surfaces orphaned blob keys for best-effort deletion.
 
 - **GRDB `LocalStore`** (D1): SQLite via GRDB.swift in the App Group shared container
 `group.com.antonkosenko.shunik` (entitlement in
@@ -63,20 +68,21 @@ per-resource drain + delta pull arrive with the first domain tables.
 Same contract as inherited: first-sync is pull-first, delta pulls use
 `?modified_since=`, conflicts resolve **LWW on `updated_at`**, deletes propagate
 **cross-device via tombstones** (`GET /api/v1/deletions?deleted_since=`), outbox
-drain is idempotent with create-before-dependent ordering. Currently only auth/
-account routes exist; the deletions route returns with the first synced resources.
+drain is idempotent with create-before-dependent ordering. Domain routes
+(pets, events, intakes, documents, deletions) are live alongside auth/account.
 
 ### Incomplete / deferred (do not claim these are done)
 
-Everything pet-shaped is unbuilt: household sharing (two owners, invites,
-`updated_by`/`marked_by`, lock-not-wipe revocation), pets + adaptive single-pet IA,
-event base/details (vaccination, grooming, weight series), medication courses +
-intakes, document library + CDN blobs, the reminder engine (rolling UN window),
-canonical units + per-device lens, calendar integration (deferred whole), owner
-analytics (deferred), vet reports (deferred), litter multi-create (v2), curated drug
-data (never without vet review + disclaimer). Per-household data files land with
-household sharing — the store is still per-account until then. No device management
-UI exists yet. The iOS 18 lock-screen ControlWidget was never built here.
+Built in §§5–7: household-scoped store + sync cycle + gate (§5);
+pets + adaptive single-pet IA, event base/details (vaccination, grooming,
+weight series), medication courses + intakes, document library + CDN blobs,
+reminder engine (rolling UN window), canonical units + per-device lens,
+per-household data files (`shunik_<householdId>.db`).
+Still deferred — do not claim these are done: calendar integration (whole),
+owner analytics, vet reports, litter multi-create (v2), curated drug data
+(never without vet review + disclaimer), device management UI, the iOS 18
+lock-screen ControlWidget, and the Shunik `Requirements/FURPS/` + `Design/`
+screens (Lifio tables still inside; Shunik rows land next).
 
 ## OpenSpec routing
 
@@ -231,7 +237,12 @@ The app is unreleased; there is no on-disk data in the wild. **No backward compa
 
 ## Decisions log (precedents to respect)
 
-- Forked from Lifio `timeOfLife@607fae3` (seed `45fda7a`; strip `45fda7a` split out domain deletion; rename `879a1d0`; structural rename `dbc2f91`). Lifio history is preserved for archaeology; Lifio's `openspec/`, `Requirements/`, `Design/` were deliberately NOT copied as contract — only the plan artifacts migrated.
+- Forked from Lifio `timeOfLife@607fae3` (seed; strip `45fda7a` split out domain deletion; rename `879a1d0`; structural rename `dbc2f91`; scaffold `0cd3e2d`). Lifio history is preserved for archaeology; Lifio's `openspec/`, `Requirements/`, `Design/` were deliberately NOT copied as contract — only the plan artifacts migrated.
+- §3 (branch `opsx/shunik-v1-foundation`): household sharing backend — `010_households.sql`, store impls (pg + sqlite), `POST /invites` / `POST /invites/accept` / `DELETE /members/{userID}` / `GET /mine`, `EnsureHousehold` on both sign-in paths, invite-token SHA-256 pattern reused from OTP codes, revoke-before-remove ordering. Next: §4 pet tables scoped to `household_id`.
+- §5 (same branch): iOS household store + sync + gate — LocalStore v2 domain tables (single chokepoint), `SyncModels` shared Codables, `SyncRelayRepository` + 409 `ConflictError`, `HouseholdService`, pull-merge → tombstones → drain cycle (404 resurrect/delete-success, 409 rebase-once, 422 loud-keep), resolver/gate/coordinator household-scoped, backend inclusive `>=` pull bounds + flat event detail + singular tombstones in OpenAPI.
+- §6 (same branch): domain UI — TabView shell (Timeline/Pets/Meds/Documents/Profile), `PetScope`, `UnitLens`, `MedicationEngine`, `DocumentTransferService`, relay upload/download URLs, en+ru strings.
+- §7 (same branch): reminders — `ReminderEngine` (derived queue, 14d window, deterministic IDs, local-only mute, ask-once permission), Profile toggle + Settings path.
+- §4 (same branch): full domain backend — `011_pets_events` + `012_documents` + `013_tombstones_household`, pg+sqlite impls (5 parallel area agents), `BlobStore` (AWS SDK v2 + fake), 12 domain routes + household `members/{userID}` path migration in OpenAPI, optimistic-concurrency LWW (409 + server copy), opportunistic unconfirmed-doc GC. Merger pass: pg param-type fix (live-verified), interface promotion of GC pair, store-assigned opaque blob keys, lint clean.
 - Backend language is **Go**; mobile is **Swift**. No reintroductions.
 - Auth is **passwordless** — do not reintroduce passwords.
 - Tests use **SQLite in-memory** so they run without Docker.
