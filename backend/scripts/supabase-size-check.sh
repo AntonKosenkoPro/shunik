@@ -4,8 +4,8 @@
 # still succeed. Exit 0 below the line, exit 2 above it (cron treats non-zero
 # as a failure to notify on). Prints sizes only — never connection details.
 #
-# Usage (VM cron, weekly): /opt/timeoflife/scripts/supabase-size-check.sh
-# Reads DATABASE_URL from the environment (VM: `set -a; . /opt/timeoflife/.env`).
+# Usage (VM cron, weekly): /opt/shunik/scripts/supabase-size-check.sh
+# Reads DATABASE_URL from the environment (VM: `set -a; . /opt/shunik/.env`).
 # Tool override for hosts without postgres clients (VM cron):
 #   PSQL_BIN="docker run --rm postgres:15-alpine psql"
 set -eu

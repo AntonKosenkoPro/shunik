@@ -13,11 +13,11 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
-	"github.com/antonkosenko/time-of-life/backend/internal/apple"
-	"github.com/antonkosenko/time-of-life/backend/internal/auth"
-	"github.com/antonkosenko/time-of-life/backend/internal/db"
-	"github.com/antonkosenko/time-of-life/backend/internal/ratelimit"
-	"github.com/antonkosenko/time-of-life/backend/internal/recovery"
+	"github.com/antonkosenko/shunik/backend/internal/apple"
+	"github.com/antonkosenko/shunik/backend/internal/auth"
+	"github.com/antonkosenko/shunik/backend/internal/db"
+	"github.com/antonkosenko/shunik/backend/internal/ratelimit"
+	"github.com/antonkosenko/shunik/backend/internal/recovery"
 )
 
 const (

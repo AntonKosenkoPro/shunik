@@ -1,4 +1,4 @@
-// Configuration settings file for Lifio — Debug.
+// Configuration settings file for Shunik — Debug.
 // API base URL is injected via Info.plist so runtime code can read it.
 
 // xcconfig treats `//` as a comment, so we break it with an empty variable.

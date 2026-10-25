@@ -12,15 +12,15 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 
-	"github.com/antonkosenko/time-of-life/backend/internal/apple"
-	"github.com/antonkosenko/time-of-life/backend/internal/auth"
-	"github.com/antonkosenko/time-of-life/backend/internal/config"
-	"github.com/antonkosenko/time-of-life/backend/internal/db"
-	"github.com/antonkosenko/time-of-life/backend/internal/email"
-	"github.com/antonkosenko/time-of-life/backend/internal/handlers"
-	"github.com/antonkosenko/time-of-life/backend/internal/observe"
-	"github.com/antonkosenko/time-of-life/backend/internal/ratelimit"
-	"github.com/antonkosenko/time-of-life/backend/internal/recovery"
+	"github.com/antonkosenko/shunik/backend/internal/apple"
+	"github.com/antonkosenko/shunik/backend/internal/auth"
+	"github.com/antonkosenko/shunik/backend/internal/config"
+	"github.com/antonkosenko/shunik/backend/internal/db"
+	"github.com/antonkosenko/shunik/backend/internal/email"
+	"github.com/antonkosenko/shunik/backend/internal/handlers"
+	"github.com/antonkosenko/shunik/backend/internal/observe"
+	"github.com/antonkosenko/shunik/backend/internal/ratelimit"
+	"github.com/antonkosenko/shunik/backend/internal/recovery"
 )
 
 // Dependencies holds all dependencies for the server.

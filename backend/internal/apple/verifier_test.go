@@ -15,7 +15,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-const testClientID = "com.antonkosenko.timeoflife"
+const testClientID = "com.antonkosenko.shunik"
 
 // jwksServer serves a JWKS containing the public half of key for a test.
 func jwksServer(t *testing.T, key *rsa.PrivateKey, kid string) *httptest.Server {

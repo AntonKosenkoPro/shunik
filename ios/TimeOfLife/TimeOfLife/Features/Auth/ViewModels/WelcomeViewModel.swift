@@ -28,7 +28,7 @@ final class WelcomeViewModel: ObservableObject {
     /// Initiates Sign in with Apple. Runs the Apple authorization, then exchanges
     /// the identity token (plus the short-lived authorization code when Apple
     /// supplied one) for a session via `AuthService`. The native Apple user id
-    /// travels separately for credential-state observation — never the Lifio
+    /// travels separately for credential-state observation — never the Shunik
     /// UUID. Cancellation is silent (no error banner); other failures surface
     /// `appleSignIn.error`.
     func signInWithApple() async {

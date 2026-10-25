@@ -17,7 +17,7 @@ import (
 // and status requests never renew it.
 const (
 	// StatusIssuer pins the credential origin.
-	StatusIssuer = "lifio"
+	StatusIssuer = "shunik"
 	// StatusAudience pins the credential audience.
 	StatusAudience = "account-status"
 	// StatusPurpose pins the credential purpose, enforced separately from

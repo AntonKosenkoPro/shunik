@@ -25,9 +25,9 @@ enum AppleSignInError: Error, Equatable {
 /// (and `authorizationCode` when present) is sent — `/auth/apple` on sign-in,
 /// `/auth/apple/deletion-credential` during explicit deletion for Apple
 /// accounts lacking a stored revocable credential. `user` is Apple's stable
-/// identifier (`sub`): it is preserved separately from the Lifio account UUID
+/// identifier (`sub`): it is preserved separately from the Shunik account UUID
 /// because `getCredentialState(forUserID:)` requires the native Apple user,
-/// never the Lifio UUID. `email` is kept for future use (Apple delivers
+/// never the Shunik UUID. `email` is kept for future use (Apple delivers
 /// `email`/`fullName` only on the first authorization, so it is optional).
 /// `authorizationCode` is Apple's single-use Data proof, UTF-8 decoded like
 /// the identity token; the server exchanges it for a revocable credential
@@ -41,7 +41,7 @@ struct AppleCredential: Sendable, Equatable {
     /// The Apple identity-token JWT (RS256), UTF-8 decoded from `Data`.
     let identityToken: String
     /// Apple's stable user identifier (`sub`). Equals the JWT `sub` claim.
-    /// Required for native credential-state observation — never the Lifio UUID.
+    /// Required for native credential-state observation — never the Shunik UUID.
     let user: String
     /// The user's email (real or `*@privaterelay.appleid.com`). First auth only.
     let email: String?

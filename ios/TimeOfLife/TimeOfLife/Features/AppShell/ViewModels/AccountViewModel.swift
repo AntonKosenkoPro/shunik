@@ -48,7 +48,7 @@ final class AccountViewModel: ObservableObject {
     /// refuses concurrent submits).
     private var submitTask: Task<Void, Never>?
 
-    private static let logger = Logger(subsystem: "com.antonkosenko.timeoflifeapp", category: "account")
+    private static let logger = Logger(subsystem: "com.antonkosenko.shunik", category: "account")
 
     init(container: AppContainer) {
         self.container = container

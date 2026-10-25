@@ -27,7 +27,7 @@ import (
 )
 
 // sentryServiceName is the allowlisted service label attached to Sentry events.
-const sentryServiceName = "lifio-backend"
+const sentryServiceName = "shunik-backend"
 
 // sentryEnabled reports whether Sentry reporting is active (DSN was provided
 // and sentry.Init succeeded).
@@ -116,7 +116,7 @@ func ReportError(r *http.Request, op string, err error) {
 	// handler returns 500 for work nobody waits for. The slog line stays
 	// (prod-log lifeline, written by the caller); Sentry stays quiet so
 	// client disconnects never page as server issues (precedent:
-	// LIFIO-BACKEND-1..3, all "context canceled" behind nginx 499s).
+	// SHUNIK-BACKEND-1..3, all "context canceled" behind nginx 499s).
 	// DeadlineExceeded still reports — a saturated server is actionable.
 	if errors.Is(err, context.Canceled) {
 		return

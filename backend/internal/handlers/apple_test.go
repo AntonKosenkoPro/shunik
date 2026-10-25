@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/antonkosenko/time-of-life/backend/internal/apple"
-	"github.com/antonkosenko/time-of-life/backend/internal/ratelimit"
+	"github.com/antonkosenko/shunik/backend/internal/apple"
+	"github.com/antonkosenko/shunik/backend/internal/ratelimit"
 )
 
 // fakeAppleVerifier returns fixed claims (or an error) regardless of input.

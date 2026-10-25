@@ -55,7 +55,7 @@ struct AccountNavigationCopyTests {
         #expect(row == "Delete account and local data")
         #expect(title == "Delete account and local data?")
         #expect(message.contains("permanently deletes"))
-        #expect(message.contains("entries"))
+        #expect(message.contains("synced data"))
         #expect(message.contains("Other devices will be signed out")
             || message.contains("Your other devices will be signed out"))
     }

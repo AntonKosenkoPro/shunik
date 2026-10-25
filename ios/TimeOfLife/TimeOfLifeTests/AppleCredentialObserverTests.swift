@@ -145,7 +145,7 @@ struct AppleCredentialObserverTests {
         #expect(box.accountIDs == ["u2"])
     }
 
-    @Test("queries the native Apple user, never the Lifio UUID")
+    @Test("queries the native Apple user, never the Shunik UUID")
     func queriesNativeAppleUser() async {
         let keychain = InMemoryKeychainStore()
         let sessionStore = SessionStore()

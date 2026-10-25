@@ -5,7 +5,7 @@ import OSLog
 ///
 /// `API_BASE_URL` is injected into `Info.plist` via `Config.Debug.xcconfig`
 /// (dev: `http://127.0.0.1:8080`) or `Config.Release.xcconfig`
-/// (prod: `https://timeoflife-api.antonkosenko.pro`) and read here.
+/// (prod: `https://shunik-api.antonkosenko.pro`) and read here.
 enum AppConfig {
     private static let defaultBaseURL = URL(string: "http://127.0.0.1:8080")!
 
@@ -58,5 +58,5 @@ enum AppConfig {
 }
 
 private extension Logger {
-    static let appConfig = Logger(subsystem: "com.antonkosenko.timeoflifeapp", category: "AppConfig")
+    static let appConfig = Logger(subsystem: "com.antonkosenko.shunik", category: "AppConfig")
 }

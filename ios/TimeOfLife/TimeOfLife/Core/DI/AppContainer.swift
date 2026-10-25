@@ -6,7 +6,7 @@ import SwiftUI
 /// objects views/view models need. Everything is injectable for tests.
 ///
 /// The local store is account-bound (account-bound-store spec): it starts
-/// UNBOUND and binds to the signed-in account's `lifio_<userId>.db` file.
+/// UNBOUND and binds to the signed-in account's `shunik_<userId>.db` file.
 /// `TimerService`, `UndoBufferStore`, and `SyncController` all hold the same
 /// `LocalStore` actor instance, so every view/feature resolves the ACTIVE
 /// account's data through `container.localStore` — the accessor shape is
@@ -45,7 +45,7 @@ final class AppContainer: ObservableObject {
     /// deallocate after `production()` returns and token refresh would fail.
     private let clientHolder: APIClientHolder?
 
-    private static let logger = Logger(subsystem: "com.antonkosenko.timeoflifeapp", category: "store")
+    private static let logger = Logger(subsystem: "com.antonkosenko.shunik", category: "store")
 
     init(
         baseURL: URL,
@@ -159,7 +159,7 @@ final class AppContainer: ObservableObject {
     // MARK: - Account-bound store lifecycle (account-bound-store spec)
 
     /// Binds the local store to the signed-in account: opens (creating if
-    /// needed) `lifio_<userId>.db` in the App Group. Called by the signed-in
+    /// needed) `shunik_<userId>.db` in the App Group. Called by the signed-in
     /// path in `RootView` — restore-on-launch and both sign-in flows — and
     /// awaited before any store operation (undo commitAll, seeding, first
     /// sync cycle) touches the file.

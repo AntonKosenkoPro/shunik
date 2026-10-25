@@ -230,7 +230,7 @@ func TestVaultAAD_DomainSeparation(t *testing.T) {
 	if string(a) == string(b) {
 		t.Error("AAD must bind the lineage")
 	}
-	if !strings.HasPrefix(string(a), "lifio-apple-vault\x00") {
+	if !strings.HasPrefix(string(a), "shunik-apple-vault\x00") {
 		t.Error("AAD must carry the vault domain prefix")
 	}
 	// Second-granularity RFC3339 pins the cross-engine invariant: Postgres

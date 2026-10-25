@@ -1,4 +1,4 @@
-# Lifio backend — common commands
+# Shunik backend — common commands
 .PHONY: build test test:race test:cover test:pg lint run docker-build docker-run deploy prod-up prod-down prod-logs prod-ps help
 
 help: ## Show this help
@@ -19,7 +19,7 @@ test:cover: ## Run all tests and print per-function coverage
 	go tool cover -func=coverage.out
 
 test:pg: ## Run PostgreSQL parity tests (needs `docker compose up -d postgres`)
-	TEST_PG_DSN="postgres://postgres:postgres@localhost:5432/timeoflife?sslmode=disable" go test ./internal/db -run 'Postgres' -v
+	TEST_PG_DSN="postgres://postgres:postgres@localhost:5432/shunik?sslmode=disable" go test ./internal/db -run 'Postgres' -v
 
 lint: ## Run all linters
 	out="$$(gofmt -l .)"; if [ -n "$$out" ]; then echo "$$out"; exit 1; fi
@@ -30,7 +30,7 @@ run: ## Run the server locally (needs Postgres via docker-compose)
 	go run ./cmd/server
 
 docker-build: ## Build the Docker image
-	docker build -t time-of-life-backend .
+	docker build -t shunik-backend .
 
 docker-run: ## Run with docker-compose (local)
 	docker compose up -d postgres

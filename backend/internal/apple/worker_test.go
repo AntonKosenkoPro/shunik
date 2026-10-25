@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/antonkosenko/time-of-life/backend/internal/db"
-	"github.com/antonkosenko/time-of-life/backend/internal/recovery"
+	"github.com/antonkosenko/shunik/backend/internal/db"
+	"github.com/antonkosenko/shunik/backend/internal/recovery"
 )
 
 // stubDeletionStore is a minimal in-memory Store for worker tests: only the

@@ -1,9 +1,9 @@
 openapi: "3.0.3"
 
 info:
-  title: Lifio API
+  title: Shunik API
   description: |
-    Backend API for the Lifio personal time-tracking iOS app.
+    Backend API for the Shunik personal time-tracking iOS app.
 
     ## Auth flow (passwordless email-OTP)
     1. **Request OTP** — `POST /api/v1/auth/otp/request` with an email address. Always returns 202
@@ -82,7 +82,7 @@ info:
 servers:
   - url: http://127.0.0.1:8080
     description: Local development
-  - url: https://timeoflife-api.antonkosenko.pro
+  - url: https://shunik-api.antonkosenko.pro
     description: Production
 
 paths:
@@ -710,7 +710,7 @@ paths:
         (identity-token-only history): verifies the presented identity token,
         requires the SAME Apple subject as the authenticated account, exchanges
         the fresh authorization code with Apple, and seals the refresh token.
-        Never creates a user, a Lifio session, or touches another account.
+        Never creates a user, a Shunik session, or touches another account.
         Wrong identities fail safely; email-only accounts are rejected.
       tags:
         - Auth
@@ -796,7 +796,7 @@ paths:
       summary: Receive Apple server-to-server notifications
       description: |
         Apple's server-to-server endpoint (verified JWS payload, no bearer).
-        `consent-revoked` ends the affected account's pre-event Lifio sessions
+        `consent-revoked` ends the affected account's pre-event Shunik sessions
         across devices and closes their recoveries while preserving the
         account, data, files, and cursors; reauthorizing the same Apple
         subject returns to the existing account. `consent-revoked` requires

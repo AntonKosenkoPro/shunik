@@ -268,7 +268,7 @@ func appleErrorCode(body []byte) string {
 // rotate ACCOUNT_STATUS_SECRET only after the revocation job table drains.
 func SubjectDigestKey(statusSecret []byte) []byte {
 	mac := hmac.New(sha256.New, statusSecret)
-	mac.Write([]byte("lifio/v1/apple-subject-digest-key"))
+	mac.Write([]byte("shunik/v1/apple-subject-digest-key"))
 	return mac.Sum(nil)
 }
 
@@ -277,7 +277,7 @@ func SubjectDigestKey(statusSecret []byte) []byte {
 // fences signups without ever retaining the subject itself.
 func SubjectDigest(digestKey []byte, subject string) string {
 	mac := hmac.New(sha256.New, digestKey)
-	mac.Write([]byte("lifio/v1/apple-revocation-subject\x00"))
+	mac.Write([]byte("shunik/v1/apple-revocation-subject\x00"))
 	mac.Write([]byte(subject))
 	return hex.EncodeToString(mac.Sum(nil))
 }
@@ -290,7 +290,7 @@ func SubjectDigest(digestKey []byte, subject string) string {
 // lineage + time copied at purge). The leading domain makes cross-use with
 // refresh-recovery receipts impossible.
 func VaultAAD(lineageID string, authTime time.Time) []byte {
-	aad := []byte("lifio-apple-vault\x00")
+	aad := []byte("shunik-apple-vault\x00")
 	aad = append(aad, lineageID...)
 	aad = append(aad, 0)
 	aad = append(aad, authTime.UTC().Format(time.RFC3339)...)

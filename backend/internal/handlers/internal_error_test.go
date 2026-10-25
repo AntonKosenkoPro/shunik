@@ -5,14 +5,14 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/antonkosenko/time-of-life/backend/internal/observe"
+	"github.com/antonkosenko/shunik/backend/internal/observe"
 )
 
 // TestInternalErrorEnvelopePreserved proves a store failure on an authed
 // route still returns the generic 500 envelope — with Sentry disabled (the
 // empty-DSN contract) and with Sentry enabled (reporting must never alter
 // the client response). The closed SQLite store stands in for any production
-// store outage (e.g. the LIFIO-BACKEND-2/3 dependency failure); the outage
+// store outage (e.g. the SHUNIK-BACKEND-2/3 dependency failure); the outage
 // surfaces at the AuthMiddleware account lookup, before Me runs.
 func TestInternalErrorEnvelopePreserved(t *testing.T) {
 	for _, enabled := range []bool{false, true} {

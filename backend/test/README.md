@@ -23,7 +23,7 @@ make test:pg             # PostgreSQL parity tests (needs Docker)
 | OpenAPI contract gate | `internal/contract/openapi_test.go` | Executable contract fixtures pinning `api/openapi.yaml` to documented invariants (R-006) |
 | PostgreSQL parity | `internal/db/postgres_parity_test.go` | Same critical auth/session semantics against real PostgreSQL (R-007) |
 | Factories | `internal/handlers/auth_test.go` (helpers: `mintBearer`, `decodeBody`, `errCode`) | Deterministic seeding for auth-domain tests |
-| Handler harness | `catalogRouter`, `serve`, `mintBearer`, `jsonReq`, `decodeBody`, `errCode` | Real chi routing + auth + handlers without a network socket |
+| Handler harness | `newTestHandler`, `mintBearer`, `jsonReq`, `decodeBody`, `errCode` | Real chi routing + auth + handlers without a network socket |
 
 ## Best Practices
 

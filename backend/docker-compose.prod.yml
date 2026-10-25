@@ -1,4 +1,4 @@
-# Production docker-compose file for Lifio backend.
+# Production docker-compose file for Shunik backend.
 # Used by the CI/CD pipeline to deploy to the GCP VM.
 # Environment variables are loaded from .env (or set in the CI/CD environment).
 
@@ -16,7 +16,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: timeoflife
+      POSTGRES_DB: shunik
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -24,7 +24,7 @@ services:
       retries: 5
 
   backend:
-    image: ghcr.io/antonkosenkopro/timeoflife/backend:latest
+    image: ghcr.io/antonkosenkopro/shunik/backend:latest
     restart: always
     logging:
       driver: json-file
@@ -39,7 +39,7 @@ services:
       # repoints the backend at hosted Postgres (Supabase); empty keeps the
       # VM-local Postgres composed from DB_PASSWORD. Local postgres keeps
       # running either way so rollback is instant (retention: see change).
-      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:${DB_PASSWORD}@postgres:5432/timeoflife?sslmode=disable}
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:${DB_PASSWORD}@postgres:5432/shunik?sslmode=disable}
       JWT_SECRET: ${JWT_SECRET}
       # Refresh recovery keyring (fix-refresh-response-loss). Required:
       # config.Load fail-fasts without it, so the secret must exist before
@@ -105,5 +105,5 @@ volumes:
 
 networks:
   default:
-    name: timeoflife-net
+    name: shunik-net
     external: true

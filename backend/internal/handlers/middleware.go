@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/antonkosenko/time-of-life/backend/internal/auth"
-	"github.com/antonkosenko/time-of-life/backend/internal/db"
+	"github.com/antonkosenko/shunik/backend/internal/auth"
+	"github.com/antonkosenko/shunik/backend/internal/db"
 )
 
 // contextKey is a private type used for context keys to avoid collisions.

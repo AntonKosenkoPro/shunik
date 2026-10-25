@@ -1,11 +1,11 @@
-// Configuration settings file for Lifio — Release / production.
+// Configuration settings file for Shunik — Release / production.
 // API base URL is injected via Info.plist so runtime code can read it.
 
 // xcconfig treats `//` as a comment, so we break it with an empty variable.
 // The $(EMPTY) reference expands to nothing, resulting in
-// https://timeoflife-api.antonkosenko.pro (the Cloudflare-fronted origin).
+// https://shunik-api.antonkosenko.pro (the Cloudflare-fronted origin).
 EMPTY =
-API_BASE_URL = https:/$(EMPTY)/timeoflife-api.antonkosenko.pro
+API_BASE_URL = https:/$(EMPTY)/shunik-api.antonkosenko.pro
 
 // Sentry DSN (observability Stage 0): empty = crash reporting disabled.
 // Self-reference resolves from the environment, so Xcode Cloud workflow env

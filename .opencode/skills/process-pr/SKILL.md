@@ -33,7 +33,7 @@ matching the branch, link it; otherwise ask (show `gh pr list --author @me`
   (commit or stash first — never open a PR with a dirty tree).
 - Current branch is NOT `main` (`git branch --show-current`).
   Base is `main` unless the user names another.
-- Work happens in an isolated worktree (`timeOfLife.wt/<change-name>`,
+- Work happens in an isolated worktree (`shunik.wt/<change-name>`,
   one branch per worktree; main checkout stays clean). Never share one
   branch between two agents/worktrees.
 - Freshness: `git fetch origin` + rebase onto `origin/main` before opening
@@ -209,7 +209,7 @@ else `main`; model short id when known else omitted; session short id else
   footer to every commit message. Never override `user.name`/`user.email`.
 - **PR create/fill** (step 1): append to the body (after the filled template):
   `> Agent: opencode/<role> · <model> · ses_<id>` plus
-  `<!-- lifio-agent: <role>/<model>/ses_<id> -->`.
+  `<!-- shunik-agent: <role>/<model>/ses_<id> -->`.
 - **`/review` trigger** (steps 4, 6): first line stays exactly `/review`
   (the workflow matches `contains`, so the footer below it is safe); footer
   block after a blank line.

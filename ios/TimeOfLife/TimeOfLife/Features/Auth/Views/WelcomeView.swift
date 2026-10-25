@@ -3,7 +3,7 @@ import SwiftUI
 /// Welcome screen — the root of the mandatory launch gate (app-shell spec,
 /// account-bound-local-data).
 ///
-/// Introduces the app ("Lifio — personal time tracker") and leads with
+/// Introduces the app ("Shunik — pet care companion") and leads with
 /// Sign in with Apple as the primary, default auth method. Email/OTP is a
 /// secondary option reached via a plain text button that pushes `.emailEntry`.
 /// The email button is always tappable (it only navigates); it is disabled only

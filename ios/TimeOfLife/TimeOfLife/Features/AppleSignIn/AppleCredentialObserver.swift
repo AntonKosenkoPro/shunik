@@ -22,7 +22,7 @@ enum AppleCredentialState: Equatable, Sendable {
 /// Indirection over `ASAuthorizationAppleIDProvider.getCredentialState` so
 /// observation is unit-testable without Apple IDs or devices. The native API
 /// requires the NATIVE Apple user identifier (`ASAuthorizationAppleIDCredential.user`),
-/// never the Lifio account UUID — callers pass the separately preserved
+/// never the Shunik account UUID — callers pass the separately preserved
 /// native id. Official docs: AuthenticationServices
 /// `ASAuthorizationAppleIDProvider.credentialState(forUserID:)` (async,
 /// available iOS 13+), `credentialRevokedNotification` (means sign-out),
@@ -55,7 +55,7 @@ struct LiveAppleCredentialStateProvider: AppleCredentialStateProviding {
 /// Observes native Apple revocation for the CURRENT Apple-authenticated
 /// session only (task 5.4).
 ///
-/// Scope: started with the Lifio account id plus a lifecycle generation.
+/// Scope: started with the Shunik account id plus a lifecycle generation.
 /// Callbacks (notification or explicit check) sign out only when all three
 /// still match — the stored native Apple user id exists (i.e. this device
 /// signed in via Apple, never inferred from email suffix or `has_apple_identity`),
@@ -65,7 +65,7 @@ struct LiveAppleCredentialStateProvider: AppleCredentialStateProviding {
 /// account's Live Activity, or delete data.
 ///
 /// A `.revoked` verdict (or the revocation notification) performs a
-/// file-preserving sign-out: sessions end, the Lifio identity, server data,
+/// file-preserving sign-out: sessions end, the Shunik identity, server data,
 /// and all local files stay intact, and reauthorizing the same Apple
 /// identity returns to the existing account. `.notFound` / `.transferred` /
 /// `.unknown` never sign out and are never interpreted as account deletion —
@@ -84,7 +84,7 @@ final class AppleCredentialObserver {
     /// Monotonic lifecycle: bumped on every `stop()`, so callbacks captured
     /// by an older observation can never act on a newer session.
     private var generation: UInt64 = 0
-    /// The Lifio account id under observation (nil = inactive).
+    /// The Shunik account id under observation (nil = inactive).
     private var observedAccountID: String?
     private var notificationCancellable: AnyCancellable?
 

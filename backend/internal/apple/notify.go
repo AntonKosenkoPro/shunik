@@ -13,7 +13,7 @@ import (
 )
 
 // Server-to-server notification event types (official
-// processing-changes contract). Only consent-revoked changes Lifio session
+// processing-changes contract). Only consent-revoked changes Shunik session
 // state — and even then as sign-out, never deletion. email-enabled/disabled
 // are no-ops; account-deleted (permanent deletion of the user's entire Apple
 // Account) is explicitly out of scope and a no-op here.

@@ -15,13 +15,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/antonkosenko/time-of-life/backend/internal/apple"
-	"github.com/antonkosenko/time-of-life/backend/internal/auth"
-	"github.com/antonkosenko/time-of-life/backend/internal/db"
-	"github.com/antonkosenko/time-of-life/backend/internal/email"
-	"github.com/antonkosenko/time-of-life/backend/internal/migrations"
-	"github.com/antonkosenko/time-of-life/backend/internal/ratelimit"
-	"github.com/antonkosenko/time-of-life/backend/internal/recovery"
+	"github.com/antonkosenko/shunik/backend/internal/apple"
+	"github.com/antonkosenko/shunik/backend/internal/auth"
+	"github.com/antonkosenko/shunik/backend/internal/db"
+	"github.com/antonkosenko/shunik/backend/internal/email"
+	"github.com/antonkosenko/shunik/backend/internal/migrations"
+	"github.com/antonkosenko/shunik/backend/internal/ratelimit"
+	"github.com/antonkosenko/shunik/backend/internal/recovery"
 )
 
 func newTestStore(t *testing.T) *db.SQLiteStore {

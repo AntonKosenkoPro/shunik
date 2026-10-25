@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/antonkosenko/time-of-life/backend/internal/apple"
+	"github.com/antonkosenko/shunik/backend/internal/apple"
 	"github.com/joho/godotenv"
 )
 

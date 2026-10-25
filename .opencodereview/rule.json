@@ -2,7 +2,7 @@
   "rules": [
     {
       "path": "ios/TimeOfLife/TimeOfLife/Core/Storage/**",
-      "rule": "LocalStore.swift is the single mutation chokepoint for GRDB (App Group group.com.antonkosenko.timeoflifeapp). Flag any raw GRDB writes (Database.save/insert/update/delete, DatabaseQueue/Pool write APIs) outside LocalStore.swift. Watch transactional outbox, undo buffer, and sync cursor logic for races and missing transactions.",
+      "rule": "LocalStore.swift is the single mutation chokepoint for GRDB (App Group group.com.antonkosenko.shunik). Flag any raw GRDB writes (Database.save/insert/update/delete, DatabaseQueue/Pool write APIs) outside LocalStore.swift. Watch transactional outbox, undo buffer, and sync cursor logic for races and missing transactions.",
       "merge_system_rule": true
     },
     {

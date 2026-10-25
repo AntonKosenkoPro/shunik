@@ -1,10 +1,10 @@
-/* Lifio — English */
+/* Shunik — English */
 
 // App
-"app.name" = "Lifio";
+"app.name" = "Shunik";
 
 // Welcome
-"welcome.tagline" = "Personal time tracker.";
+"welcome.tagline" = "Pet care companion.";
 "welcome.continueWithEmail" = "Continue with Email";
 
 // Auth gate (account-bound-local-data: required-voice launch gate)
@@ -37,9 +37,9 @@
 "account.signOutConfirmTitle" = "Sign out?";
 "account.signOutConfirmMessage" = "You will be signed out on this device. Your data stays on this device and on the relay.";
 "account.permanentSection" = "Permanent Deletion";
-"account.permanentFooter" = "Permanently deletes your Lifio account and synced data, plus this account's data on this device. Your other devices will be signed out.";
+"account.permanentFooter" = "Permanently deletes your Shunik account and synced data, plus this account's data on this device. Your other devices will be signed out.";
 "account.deleteTitle" = "Delete account and local data?";
-"account.deleteMessage" = "This permanently deletes your Lifio account and all synced entries, categories, and notes, and removes this account's data from this device. Your other devices will be signed out.";
+"account.deleteMessage" = "This permanently deletes your Shunik account and all synced data, and removes this account's data from this device. Your other devices will be signed out.";
 "account.deleteConfirm" = "Delete account and local data";
 "account.deletingProgress" = "Deleting account…";
 "account.deleteError" = "Could not delete your account. Please try again.";

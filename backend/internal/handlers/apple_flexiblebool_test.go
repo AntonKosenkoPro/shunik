@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/antonkosenko/time-of-life/backend/internal/apple"
+	"github.com/antonkosenko/shunik/backend/internal/apple"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -47,7 +47,7 @@ func mintFlexToken(t *testing.T, key *rsa.PrivateKey, kid string, emailVerified 
 	t.Helper()
 	claims := jwt.MapClaims{
 		"iss":            "https://appleid.apple.com",
-		"aud":            "com.antonkosenko.timeoflife",
+		"aud":            "com.antonkosenko.shunik",
 		"sub":            "apple-sub-flex",
 		"email":          "r@privaterelay.appleid.com",
 		"email_verified": emailVerified,
@@ -82,7 +82,7 @@ func TestAppleSignIn_GarbageEmailVerifiedReturns401(t *testing.T) {
 			srv := flexJWKS(t, key, "k")
 			defer srv.Close()
 
-			verifier, err := apple.NewVerifier(context.Background(), "com.antonkosenko.timeoflife", srv.URL)
+			verifier, err := apple.NewVerifier(context.Background(), "com.antonkosenko.shunik", srv.URL)
 			if err != nil {
 				t.Fatalf("NewVerifier: %v", err)
 			}

@@ -16,7 +16,7 @@ class Connectivity: ObservableObject {
 
 final class NetworkMonitor: Connectivity {
     private let monitor: NWPathMonitor
-    private let queue = DispatchQueue(label: "com.timeoflife.NetworkMonitor")
+    private let queue = DispatchQueue(label: "com.shunik.NetworkMonitor")
 
     override init() {
         self.monitor = NWPathMonitor()

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/antonkosenko/time-of-life/backend/internal/migrations"
+	"github.com/antonkosenko/shunik/backend/internal/migrations"
 )
 
 // setupTestStore creates a new in-memory SQLite store and runs migrations.

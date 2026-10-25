@@ -8,7 +8,7 @@
 	</array>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.com.antonkosenko.timeoflifeapp</string>
+		<string>group.com.antonkosenko.shunik</string>
 	</array>
 </dict>
 </plist>

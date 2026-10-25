@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/antonkosenko/time-of-life/backend/internal/apple"
+	"github.com/antonkosenko/shunik/backend/internal/apple"
 )
 
 const deletionEchoCanary = "CANARY-SECRET-handler-789"

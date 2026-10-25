@@ -1,4 +1,4 @@
-// Command server is the entry point for the Lifio backend API server.
+// Command server is the entry point for the Shunik backend API server.
 package main
 
 import (
@@ -12,11 +12,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/antonkosenko/time-of-life/backend/internal/config"
-	"github.com/antonkosenko/time-of-life/backend/internal/db"
-	"github.com/antonkosenko/time-of-life/backend/internal/migrations"
-	"github.com/antonkosenko/time-of-life/backend/internal/observe"
-	"github.com/antonkosenko/time-of-life/backend/internal/server"
+	"github.com/antonkosenko/shunik/backend/internal/config"
+	"github.com/antonkosenko/shunik/backend/internal/db"
+	"github.com/antonkosenko/shunik/backend/internal/migrations"
+	"github.com/antonkosenko/shunik/backend/internal/observe"
+	"github.com/antonkosenko/shunik/backend/internal/server"
 )
 
 func main() {

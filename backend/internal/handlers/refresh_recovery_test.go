@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/antonkosenko/time-of-life/backend/internal/auth"
+	"github.com/antonkosenko/shunik/backend/internal/auth"
 )
 
 // refreshCallWithAttempt performs POST /auth/refresh with a device id and an

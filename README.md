@@ -1,4 +1,4 @@
-# Lifio
+# Shunik
 
 A personal time-tracking app for iOS — minimal-effort tracking of where your time goes (widgets, shortcuts, integrations). **Local-first and account-bound:** sign in once (mandatory), then your device is the source of truth; the Go backend is the identity + optional sync relay.
 
@@ -20,11 +20,11 @@ Current scope: **auth MVP** (mandatory passwordless email-OTP or Sign in with Ap
 4. **Stop** — saves the entry to the local GRDB database and enqueues an outbox row; the `SyncController` drains the outbox and pulls deltas on foreground/connectivity/manual "Sync now" — and works fully offline when the tunnel drops.
 5. **Switch tabs freely** — a running timer stays visible above the tab bar on History and Insights with return-to-Track and in-place Stop.
 
-Entries, categories, the running timer state, the outbox, and the undo buffer live in the App Group shared container (`group.com.antonkosenko.timeoflifeapp`), ready for future cross-process system integrations.
+Entries, categories, the running timer state, the outbox, and the undo buffer live in the App Group shared container (`group.com.antonkosenko.shunik`), ready for future cross-process system integrations.
 
 ### Local-first architecture (account-bound)
 
-The app requires sign-in before any tracking use; after that the device is the source of truth and everything works offline. Local data is **per-account**: one SQLite file per account (`lifio_<userId>.db` in the App Group), one active file at a time; dormant files are kept (never wiped by logout or revocation), and re-login as the same account reopens and resumes — outbox drains, cursors continue, a running timer draft resumes. Sessions are **per-device**: a stable Keychain UUID travels as `X-Device-Id`, refresh families and logout/reuse revocation are scoped to one device, the refresh TTL is enforced, and a revoked/exhausted session **locks to the auth gate without wiping local data**. Writes go through a transactional **outbox** (deletes are first-class), deletions sit in a durable **undo buffer** restorable until the app restarts (committed on cold launch), and `SyncController` syncs via `?modified_since=` delta pulls with last-write-wins on `updated_at` — guarded to the same account it was activated under. Specs: `openspec/specs/` baselines (24 incl. `account-bound-store` / `device-sessions` / `apple-signin` / `backend-database` / `email-otp-auth` / `observability` / `relay-cors`) plus the archived `2026-10-02-reduce-codebase-complexity` change (wording-only docs-contract sync, folded into the baselines). Categories seed **per account file** on first open and are managed from Profile; entry and category deletions share the editor-Delete + shake-to-undo system confirmation grammar. The iOS 18 lock-screen ControlWidget toggle remains **incomplete**; device quota + picker (#46) is a pre-release blocker — see `docs/project-context.md` → "Incomplete / deferred".
+The app requires sign-in before any tracking use; after that the device is the source of truth and everything works offline. Local data is **per-account**: one SQLite file per account (`shunik_<userId>.db` in the App Group), one active file at a time; dormant files are kept (never wiped by logout or revocation), and re-login as the same account reopens and resumes — outbox drains, cursors continue, a running timer draft resumes. Sessions are **per-device**: a stable Keychain UUID travels as `X-Device-Id`, refresh families and logout/reuse revocation are scoped to one device, the refresh TTL is enforced, and a revoked/exhausted session **locks to the auth gate without wiping local data**. Writes go through a transactional **outbox** (deletes are first-class), deletions sit in a durable **undo buffer** restorable until the app restarts (committed on cold launch), and `SyncController` syncs via `?modified_since=` delta pulls with last-write-wins on `updated_at` — guarded to the same account it was activated under. Specs: `openspec/specs/` baselines (24 incl. `account-bound-store` / `device-sessions` / `apple-signin` / `backend-database` / `email-otp-auth` / `observability` / `relay-cors`) plus the archived `2026-10-02-reduce-codebase-complexity` change (wording-only docs-contract sync, folded into the baselines). Categories seed **per account file** on first open and are managed from Profile; entry and category deletions share the editor-Delete + shake-to-undo system confirmation grammar. The iOS 18 lock-screen ControlWidget toggle remains **incomplete**; device quota + picker (#46) is a pre-release blocker — see `docs/project-context.md` → "Incomplete / deferred".
 
 ## Security (R1)
 
@@ -59,8 +59,8 @@ xcodegen generate
 open TimeOfLife.xcodeproj
 ```
 
-- `API_BASE_URL` is injected per build configuration: Debug → `http://127.0.0.1:8080` (local backend; ATS allows plain HTTP only to `127.0.0.1`), Release → `https://timeoflife-api.antonkosenko.pro`. On a physical device, use your LAN IP instead.
-- Code signing is split per configuration: **Debug stays unsigned** (simulator/CI need no Apple Developer account); **Release signs** with team `7923U48U87` (development identity; archives sign distribution automatically) and carries the Sign in with Apple entitlement (App ID `com.antonkosenko.timeoflifeapp` must have the SIWA capability enabled in the Apple Developer portal). The backend needs `APPLE_CLIENT_ID=com.antonkosenko.timeoflifeapp` set or `/auth/apple` returns 503.
+- `API_BASE_URL` is injected per build configuration: Debug → `http://127.0.0.1:8080` (local backend; ATS allows plain HTTP only to `127.0.0.1`), Release → `https://shunik-api.antonkosenko.pro`. On a physical device, use your LAN IP instead.
+- Code signing is split per configuration: **Debug stays unsigned** (simulator/CI need no Apple Developer account); **Release signs** with team `7923U48U87` (development identity; archives sign distribution automatically) and carries the Sign in with Apple entitlement (App ID `com.antonkosenko.shunik` must have the SIWA capability enabled in the Apple Developer portal). The backend needs `APPLE_CLIENT_ID=com.antonkosenko.shunik` set or `/auth/apple` returns 503.
 - Releases (TestFlight): cut via the manual **release** workflow (Actions → `release` → Run workflow, `version` = `X.Y.Z`, e.g. `1.0.0`) — it validates the version is strictly greater than current on `main`, bumps `project.yml` (marketing version, build auto-+1, `Info.plist` mirrored), commits, and pushes annotated tag `vX.Y.Z`. Pushing the tag triggers the **Xcode Cloud** workflow (tag pattern `v*`), which runs `ci_post_clone.sh` (`xcodegen generate`, since the `.xcodeproj` is gitignored), archives the Release configuration, and uploads to TestFlight automatically. Symbolication rides the same signed archive: `ci_post_xcodebuild.sh` uploads its dSYMs (`$CI_ARCHIVE_PATH/dSYMs`) to the Sentry staging + release projects, skipping gracefully when secrets are absent. Profile shows the built commit in a trailing row (`1.0.0 (a1b2c3d)`; `1.0.0 (a1b2c3d) • Debug` on Debug builds) so testers can report the exact commit. The integer build (auto-+1) survives solely as the App Store Connect upload identifier and is no longer displayed. The tag-triggered Cloud Test→Archive run is the post-bump verification — do not distribute the TestFlight build until it is green.
 - Tests & lint:
 
@@ -79,7 +79,7 @@ Unit tests cover the auth flow (validators, API client incl. 401→refresh→ret
 
 Unit tests fake the Apple authorization (`AppleAuthorizationProviding`), and Apple's identity-token JWKS is only fetched for real with `APPLE_CLIENT_ID` configured — so the following must be verified manually on a **real device** (the entitlement has no effect in the simulator):
 
-Prerequisites: Release build installed on the device (`Product → Destination → your device`, Release scheme archive or Run with Release config), backend reachable with `APPLE_CLIENT_ID=com.antonkosenko.timeoflifeapp` (local or production), a sandbox/production Apple ID.
+Prerequisites: Release build installed on the device (`Product → Destination → your device`, Release scheme archive or Run with Release config), backend reachable with `APPLE_CLIENT_ID=com.antonkosenko.shunik` (local or production), a sandbox/production Apple ID.
 
 1. [ ] **Sheet presents** — launch the app (signed-out, the auth flow is the root screen) → tap *Sign in with Apple*; Apple's native authorization sheet appears (not an error).
 2. [ ] **Sign-in succeeds** — complete the sheet (try a *Hide My Email* address); the app lands in the shell; Profile shows the session and "Sync now".
@@ -90,7 +90,7 @@ Prerequisites: Release build installed on the device (`Product → Destination �
 7. [ ] **Cancel is silent** — start the Apple flow, dismiss the sheet; no error banner appears.
 8. [ ] **Offline gates the button** — airplane mode on; the Apple button is disabled (dimmed); the email path still navigates.
 9. [ ] **Idempotent re-sign-in** — sign out, sign in with Apple again; same user (the same account file reattaches, no duplicate account or duplicate seeded categories).
-10. [ ] **Hide My Email attribution (email-OTP path)** — on Continue with Email, the system Hide My Email sheet attributes to Lifio (never a numeric PID); the saved alias label in Settings → Apple Account → iCloud → Hide My Email agrees. Requires the `webcredentials:antonkosenko.pro` association verified (`swcd`).
+10. [ ] **Hide My Email attribution (email-OTP path)** — on Continue with Email, the system Hide My Email sheet attributes to Shunik (never a numeric PID); the saved alias label in Settings → Apple Account → iCloud → Hide My Email agrees. Requires the `webcredentials:antonkosenko.pro` association verified (`swcd`).
 
 ### Live Activities — manual smoke checklist
 
@@ -110,7 +110,7 @@ Live Activities need a real device with Dynamic Island (the simulator shows the 
 
 ## Deployment (S4)
 
-The backend deploys to a **GCP Compute Engine VM** (`timeoflife-backend`, us-east1-b) via Docker Compose: PostgreSQL 15, the Go backend, and Nginx (Let's Encrypt SSL). Every push to `main` touching `backend/` lints, tests, builds, and deploys automatically. Manual deploys use the `backend` GitHub Actions workflow dispatch. Production URL: `https://timeoflife-api.antonkosenko.pro`.
+The backend deploys to a **GCP Compute Engine VM** (`shunik-backend`, us-east1-b) via Docker Compose: PostgreSQL 15, the Go backend, and Nginx (Let's Encrypt SSL). Every push to `main` touching `backend/` lints, tests, builds, and deploys automatically. Manual deploys use the `backend` GitHub Actions workflow dispatch. Production URL: `https://shunik-api.antonkosenko.pro`.
 
 **Landing + privacy**: `https://lifio.antonkosenko.pro` (static site in `web/`, Cloudflare Pages Git integration on `main`, no build step). Privacy policy: `https://lifio.antonkosenko.pro/privacy` — the support + privacy URLs for external TestFlight review.
 

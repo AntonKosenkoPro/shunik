@@ -17,7 +17,7 @@ struct ActiveAccountFileResolverTests {
     private func makeDefaults(userID: String?) -> UserDefaults {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
         if let userID {
-            defaults.set(userID, forKey: "com.timeoflife.session.id")
+            defaults.set(userID, forKey: "com.shunik.session.id")
         }
         return defaults
     }

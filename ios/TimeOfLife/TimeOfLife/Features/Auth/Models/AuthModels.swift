@@ -124,7 +124,7 @@ struct AppleSignInRequest: Codable, Equatable, Sendable {
 /// `POST /auth/apple/deletion-credential` body. Verifies the same Apple
 /// subject for an existing Apple account lacking a stored revocable
 /// credential and saves it before DELETE. Never creates a user or issues
-/// another Lifio session; a different identity is rejected.
+/// another Shunik session; a different identity is rejected.
 struct AppleDeletionCredentialRequest: Codable, Equatable, Sendable {
     let identityToken: String
     let authorizationCode: String?

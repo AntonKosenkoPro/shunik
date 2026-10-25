@@ -13,8 +13,8 @@ import (
 
 	"github.com/getsentry/sentry-go"
 
-	"github.com/antonkosenko/time-of-life/backend/internal/db"
-	"github.com/antonkosenko/time-of-life/backend/internal/observe"
+	"github.com/antonkosenko/shunik/backend/internal/db"
+	"github.com/antonkosenko/shunik/backend/internal/observe"
 )
 
 type wiretapTransport struct {
@@ -70,7 +70,7 @@ func TestWorker_StuckJobFilesBackgroundIssue(t *testing.T) {
 		if len(ev.Exception) == 0 || !strings.Contains(ev.Exception[0].Value, "apple service unavailable") {
 			t.Fatalf("sanitized failure required, got %+v", ev.Exception)
 		}
-		if ev.Tags["service.name"] != "lifio-backend" {
+		if ev.Tags["service.name"] != "shunik-backend" {
 			t.Fatalf("allowlisted tags required, got %v", ev.Tags)
 		}
 	case <-time.After(5 * time.Second):

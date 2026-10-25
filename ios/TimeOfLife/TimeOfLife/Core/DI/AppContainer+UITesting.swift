@@ -15,7 +15,7 @@ import SwiftUI
 extension AppContainer {
     /// Seed diagnostics (Console): DEBUG-only fixture, never ships with the
     /// Release graph. Same `os.Logger` pattern as `SyncController`.
-    private static let seedLogger = Logger(subsystem: "com.antonkosenko.timeoflifeapp", category: "uitest")
+    private static let seedLogger = Logger(subsystem: "com.antonkosenko.shunik", category: "uitest")
 
     /// Builds the deterministic UI-testing graph and seeds it to `screen`.
     static func uiTesting(screen: String) -> AppContainer {
@@ -25,7 +25,7 @@ extension AppContainer {
         let navigation = AppNavigationStack()
         let connectivity = MockConnectivity(connected: true)
         // The UI-testing graph pins a per-user test file (account-bound-store
-        // spec shape): `lifio_<userId>.db` under a throwaway temp directory,
+        // spec shape): `shunik_<userId>.db` under a throwaway temp directory,
         // opened already bound so every screen reads one account's data. A
         // file failure must never crash the loop: fall back to an unbound
         // store (screens render empty) instead of `try!`.

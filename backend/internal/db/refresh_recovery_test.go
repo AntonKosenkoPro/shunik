@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/antonkosenko/time-of-life/backend/internal/migrations"
+	"github.com/antonkosenko/shunik/backend/internal/migrations"
 )
 
 func newRecoveryTestStore(t *testing.T) *SQLiteStore {

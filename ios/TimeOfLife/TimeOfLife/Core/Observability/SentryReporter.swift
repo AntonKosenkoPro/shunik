@@ -19,7 +19,7 @@ import Sentry
 enum SentryReporter {
     private static let dsnInfoKey = "SENTRY_DSN"
     private static let logger = Logger(
-        subsystem: "com.antonkosenko.timeoflifeapp",
+        subsystem: "com.antonkosenko.shunik",
         category: "SentryReporter"
     )
 

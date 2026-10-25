@@ -15,7 +15,7 @@ import Foundation
 final class SessionCache: @unchecked Sendable {
     private let defaults: UserDefaults
     private let sessionFileURL: URL?
-    private let queue = DispatchQueue(label: "com.timeoflife.SessionCache")
+    private let queue = DispatchQueue(label: "com.shunik.SessionCache")
 
     init(defaults: UserDefaults = .standard, sessionFileURL: URL? = nil) {
         self.defaults = defaults
@@ -74,9 +74,9 @@ final class SessionCache: @unchecked Sendable {
     }
 
     private enum Keys {
-        static let id = "com.timeoflife.session.id"
-        static let email = "com.timeoflife.session.email"
-        static let emailVerified = "com.timeoflife.session.emailVerified"
+        static let id = "com.shunik.session.id"
+        static let email = "com.shunik.session.email"
+        static let emailVerified = "com.shunik.session.emailVerified"
     }
 }
 

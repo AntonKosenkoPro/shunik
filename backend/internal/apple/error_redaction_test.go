@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/antonkosenko/time-of-life/backend/internal/db"
+	"github.com/antonkosenko/shunik/backend/internal/db"
 )
 
 const echoCanary = "CANARY-SECRET-abcdef-123456"

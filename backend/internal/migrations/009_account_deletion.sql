@@ -14,7 +14,7 @@
 -- apple_auth_time/apple_auth_lineage name the latest completed Apple
 -- authorization; apple_consent_cutoff is the latest verified Apple
 -- consent-revoked event time. A NULL lineage with a set cutoff means every
--- pre-cutoff Lifio session is dead until a fresh Apple authorization mints a
+-- pre-cutoff Shunik session is dead until a fresh Apple authorization mints a
 -- new lineage. Email-only accounts never get a cutoff.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_auth_time TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_auth_lineage TEXT;

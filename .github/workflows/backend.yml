@@ -129,7 +129,7 @@ jobs:
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
           source: "backend/docker-compose.prod.yml,backend/nginx"
-          target: "/opt/timeoflife"
+          target: "/opt/shunik"
           strip_components: 1
 
       - name: Deploy to VM
@@ -140,7 +140,7 @@ jobs:
           key: ${{ secrets.VM_SSH_KEY }}
           script: |
             set -euo pipefail
-            cd /opt/timeoflife
+            cd /opt/shunik
 
             # Back up the current .env before regenerating (recoverable, not authoritative).
             [ -f .env ] && cp .env ".env.bak.$(date +%Y%m%d-%H%M%S)" || true
@@ -158,7 +158,7 @@ jobs:
             AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
             AWS_REGION=${{ vars.AWS_REGION }}
             # Single-quoted: SES_FROM routinely carries a display name
-            # ("Lifio <noreply@...>" — spaces + angle brackets), which the
+            # ("Shunik <noreply@...>" — spaces + angle brackets), which the
             # `set -a; . ./.env` sourcing below would otherwise parse as
             # redirections (observed: `.env: line 7: syntax error near
             # unexpected token 'newline'`). Single (not double) quotes so

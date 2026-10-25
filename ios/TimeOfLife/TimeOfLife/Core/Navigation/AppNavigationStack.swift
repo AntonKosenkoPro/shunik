@@ -7,12 +7,12 @@ import SwiftUI
 @MainActor
 final class AppNavigationStack: ObservableObject {
     @Published var path: [AppRoute] = []
-    /// Monotonic counter bumped on every `lifio://track` deep link (Live
+    /// Monotonic counter bumped on every `shunik://track` deep link (Live
     /// Activity tap). `AppShellView` observes it and selects the Track tab.
     /// A counter (not a Bool) so rapid taps never coalesce.
     @Published var trackRequestID = 0
     /// Monotonic counter bumped on every Island-Stop link
-    /// (`lifio://track?stop=1` — fix-terminated-stop-saved-face Spike D).
+    /// (`shunik://track?stop=1` — fix-terminated-stop-saved-face Spike D).
     /// `AppShellView` observes it, selects Track, reloads, and stops the
     /// timer through the exact in-app path. Counter (not Bool) so rapid
     /// taps never coalesce; a tap with no running draft is a graceful

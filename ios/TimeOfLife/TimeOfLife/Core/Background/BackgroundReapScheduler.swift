@@ -16,10 +16,10 @@ import OSLog
 enum BackgroundReapScheduler {
     /// The task identifier (also listed in
     /// `BGTaskSchedulerPermittedIdentifiers` in the app plists).
-    static let taskIdentifier = "com.antonkosenko.timeoflifeapp.reap-check"
+    static let taskIdentifier = "com.antonkosenko.shunik.reap-check"
 
     private static let logger = Logger(
-        subsystem: "com.antonkosenko.timeoflifeapp",
+        subsystem: "com.antonkosenko.shunik",
         category: "BackgroundReapScheduler"
     )
 

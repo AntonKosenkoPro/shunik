@@ -134,7 +134,7 @@ final class SyncController: ObservableObject {
 
     /// Cycle diagnostics (Console): secret-free strings only — the same codes
     /// and messages surfaced in UI. Never tokens, bodies, or emails.
-    private static let logger = Logger(subsystem: "com.antonkosenko.timeoflifeapp", category: "sync")
+    private static let logger = Logger(subsystem: "com.antonkosenko.shunik", category: "sync")
 
     // swiftlint:disable:next todo
     // SHUNIK-TODO: scaffold — the pet-care relay client will be wired here.

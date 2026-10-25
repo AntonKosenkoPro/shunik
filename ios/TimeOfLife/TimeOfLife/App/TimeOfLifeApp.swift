@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Entry point of the Lifio app.
+/// Entry point of the Shunik app.
 ///
 /// Owns the composition root (`AppContainer`). Auth is passwordless: the user
 /// enters their email, receives a 6-digit code, and types it on the OTP
@@ -83,8 +83,8 @@ struct TimeOfLifeApp: App {
             .environmentObject(container)
             .environmentObject(session)
             .environmentObject(navigation)
-            // Live Activity taps (`lifio://track`): select the Track tab.
-            // Stop links (`lifio://track?stop=1`, Spikes D+E): the app
+            // Live Activity taps (`shunik://track`): select the Track tab.
+            // Stop links (`shunik://track?stop=1`, Spikes D+E): the app
             // itself performs the stop on open — the widget cannot stop
             // anything with the app dead. Unknown links are ignored
             // (DeepLink.parse returns nil).

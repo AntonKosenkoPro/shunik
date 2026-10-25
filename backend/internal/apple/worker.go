@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/antonkosenko/time-of-life/backend/internal/db"
-	"github.com/antonkosenko/time-of-life/backend/internal/observe"
-	"github.com/antonkosenko/time-of-life/backend/internal/recovery"
+	"github.com/antonkosenko/shunik/backend/internal/db"
+	"github.com/antonkosenko/shunik/backend/internal/observe"
+	"github.com/antonkosenko/shunik/backend/internal/recovery"
 )
 
 // alertAfterAttempts / alertAfterAge escalate a stuck job to the operator

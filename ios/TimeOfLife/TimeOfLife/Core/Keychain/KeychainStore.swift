@@ -10,7 +10,7 @@ import Security
 actor KeychainStore: KeychainStoring {
     private let service: String
 
-    init(service: String = "com.timeoflife.keychain") {
+    init(service: String = "com.shunik.keychain") {
         self.service = service
     }
 

@@ -24,8 +24,8 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
-	"github.com/antonkosenko/time-of-life/backend/internal/apple"
-	"github.com/antonkosenko/time-of-life/backend/internal/db"
+	"github.com/antonkosenko/shunik/backend/internal/apple"
+	"github.com/antonkosenko/shunik/backend/internal/db"
 )
 
 func doMe(t *testing.T, h *Handler, accessToken string) *httptest.ResponseRecorder {

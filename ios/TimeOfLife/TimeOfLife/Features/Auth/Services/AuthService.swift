@@ -60,7 +60,7 @@ final class AuthService: ObservableObject {
     /// snapshot. Shared with the deletion lifecycle coordinator.
     let deletionStorage: AccountDeletionStorage
 
-    private static let logger = Logger(subsystem: "com.antonkosenko.timeoflifeapp", category: "auth")
+    private static let logger = Logger(subsystem: "com.antonkosenko.shunik", category: "auth")
 
     init(
         repository: AuthRepository,
@@ -106,9 +106,9 @@ final class AuthService: ObservableObject {
     /// `POST /auth/apple`. Exchanges Apple's identity (plus the short-lived
     /// authorization code when Apple supplied one) for a session and persists
     /// it (same path as `verifyOtp` → flips `SessionStore` → signed-in). The
-    /// native Apple user id is preserved separately from the Lifio account
+    /// native Apple user id is preserved separately from the Shunik account
     /// UUID: `getCredentialState(forUserID:)` requires the native Apple user,
-    /// never the Lifio UUID. Email OTP sign-in clears any stale Apple user
+    /// never the Shunik UUID. Email OTP sign-in clears any stale Apple user
     /// id, so native observation stays scoped to the current auth method.
     func signInWithApple(identityToken: String, appleUserID: String?, authorizationCode: String? = nil) async throws {
         let session = try await repository.appleSignIn(identityToken: identityToken, authorizationCode: authorizationCode)

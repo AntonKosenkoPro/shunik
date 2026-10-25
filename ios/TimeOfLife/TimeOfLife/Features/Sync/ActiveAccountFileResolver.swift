@@ -49,7 +49,7 @@ struct ActiveAccountFileResolver {
     /// The `SessionCache` user-id key (SessionCache.swift: `Keys.id`) — kept
     /// in one place here rather than reaching into `SessionCache`'s private
     /// keys.
-    private static let sessionUserIDKey = "com.timeoflife.session.id"
+    private static let sessionUserIDKey = "com.shunik.session.id"
 
     /// The session-id sidecar file in the container root (mirrored by
     /// `SessionCache` on sign-in, removed on sign-out).

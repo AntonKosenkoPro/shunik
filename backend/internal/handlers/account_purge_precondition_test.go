@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/antonkosenko/time-of-life/backend/internal/apple"
-	"github.com/antonkosenko/time-of-life/backend/internal/db"
+	"github.com/antonkosenko/shunik/backend/internal/apple"
+	"github.com/antonkosenko/shunik/backend/internal/db"
 )
 
 // purgeMissingStore behaves like the real store except the purge aborts

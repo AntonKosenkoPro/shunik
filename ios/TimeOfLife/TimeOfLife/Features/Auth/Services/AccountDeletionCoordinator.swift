@@ -83,7 +83,7 @@ final class AccountDeletionCoordinator: ObservableObject {
         case noMonitoredAccount
     }
 
-    private static let logger = Logger(subsystem: "com.antonkosenko.timeoflifeapp", category: "accountDeletion")
+    private static let logger = Logger(subsystem: "com.antonkosenko.shunik", category: "accountDeletion")
     /// Minimum interval between other-device status checks (single-flight +
     /// bounded: checks run on auth failure/foreground/connectivity, never
     /// polling). Injectably small in tests.

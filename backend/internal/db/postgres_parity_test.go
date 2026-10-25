@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/antonkosenko/time-of-life/backend/internal/migrations"
+	"github.com/antonkosenko/shunik/backend/internal/migrations"
 )
 
 // PostgreSQL parity suite (R-007 / 1.1-API-007): the same critical auth

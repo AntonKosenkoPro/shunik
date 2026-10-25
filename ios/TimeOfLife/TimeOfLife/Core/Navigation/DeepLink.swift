@@ -4,7 +4,7 @@ import Foundation
 // SHUNIK-TODO: scaffold — the shared Live Activity contract module is gone.
 // The scheme/host literals are inlined from the deleted contract.
 private enum TrackLink {
-    static let scheme = "lifio"
+    static let scheme = "shunik"
     static let host = "track"
     static let stopQueryKey = "stop"
     static let stopQueryValue = "1"

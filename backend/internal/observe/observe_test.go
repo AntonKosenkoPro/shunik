@@ -211,7 +211,7 @@ func chiRequest(t *testing.T, method, pattern, path string) *http.Request {
 
 // TestReportErrorAttachesErrorContext proves a handled 500 reports exactly
 // one event carrying the route template, op tag, 5xx class, the error string,
-// and an op-scoped fingerprint — the payload shape LIFIO-BACKEND-1..3 lacked.
+// and an op-scoped fingerprint — the payload shape SHUNIK-BACKEND-1..3 lacked.
 func TestReportErrorAttachesErrorContext(t *testing.T) {
 	ft := initFakeHub(t)
 
@@ -256,7 +256,7 @@ func TestReportErrorAttachesErrorContext(t *testing.T) {
 }
 
 // TestReportErrorSkipsClientDisconnect proves a handled 500 caused by the
-// requester going away ("context canceled", the LIFIO-BACKEND-1..3 shape)
+// requester going away ("context canceled", the SHUNIK-BACKEND-1..3 shape)
 // stays out of Sentry: the slog line is the record, not a paged issue.
 func TestReportErrorSkipsClientDisconnect(t *testing.T) {
 	ft := initFakeHub(t)

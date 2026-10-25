@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/antonkosenko/time-of-life/backend/internal/apple"
-	"github.com/antonkosenko/time-of-life/backend/internal/db"
+	"github.com/antonkosenko/shunik/backend/internal/apple"
+	"github.com/antonkosenko/shunik/backend/internal/db"
 )
 
 // ---------- shared helpers ----------
@@ -35,7 +35,7 @@ func redactSubject(sub string) string {
 }
 
 // newLineageID mints an authorization lineage identifier (128-bit hex, not a
-// Lifio session credential and never logged).
+// Shunik session credential and never logged).
 func newLineageID() string {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -274,7 +274,7 @@ type appleDeletionCredentialReq struct {
 // existing Apple user that has none (identity-token-only history). It
 // verifies the presented identity, requires the SAME Apple subject as the
 // authenticated account, exchanges the code, and seals the refresh token —
-// never creating a user, a Lifio session, or touching another account.
+// never creating a user, a Shunik session, or touching another account.
 // Wrong identities fail safely; email-only accounts are rejected.
 func (h *Handler) AppleDeletionCredential(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -397,7 +397,7 @@ type appleNotificationReq struct {
 // audience, issued time, expiry when present); event dispatch follows the
 // official contract:
 //
-//   - consent-revoked: ends pre-event Lifio sessions across devices and
+//   - consent-revoked: ends pre-event Shunik sessions across devices and
 //     closes their recoveries. The account, data, files, and cursors are
 //     preserved; a later same-subject authorization returns to the existing
 //     UUID. Idempotent; stale/duplicate events never touch a newer lineage.

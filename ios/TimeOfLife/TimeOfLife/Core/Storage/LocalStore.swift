@@ -4,7 +4,7 @@ import GRDB
 
 /// The on-device source of truth (local-first-store spec): one SQLite
 /// database file per signed-in account in the App Group shared container,
-/// named `lifio_<userId>.db`, that the app, widgets, extensions, and
+/// named `shunik_<userId>.db`, that the app, widgets, extensions, and
 /// lock-screen Controls all read and write cross-process
 /// (account-bound-store spec). Exactly one file is active at a time — the
 /// signed-in account's.
@@ -28,7 +28,7 @@ import GRDB
 /// once since boot.
 actor LocalStore {
     /// The App Group shared container identifier (local-first-store spec).
-    static let appGroupID = "group.com.antonkosenko.timeoflifeapp"
+    static let appGroupID = "group.com.antonkosenko.shunik"
 
     /// The local-metadata key holding the user id a database file is bound
     /// to (account-bound-store spec). Written on the first open of a per-user
@@ -39,9 +39,9 @@ actor LocalStore {
     static let boundUserIDKey = "bound_user_id"
 
     /// The database file name for one account inside the App Group container
-    /// (account-bound-store spec: `lifio_<userId>.db`).
+    /// (account-bound-store spec: `shunik_<userId>.db`).
     static func databaseFileName(userID: String) -> String {
-        "lifio_\(userID).db"
+        "shunik_\(userID).db"
     }
 
     /// The database queue. `DatabaseQueue` is sufficient: the app is the only
@@ -122,7 +122,7 @@ actor LocalStore {
     }
 
     /// Binds the store to an account: opens (creating if needed) that
-    /// account's `lifio_<userId>.db` file in the App Group container and
+    /// account's `shunik_<userId>.db` file in the App Group container and
     /// migrates it. Re-login as the same account reopens the existing file
     /// and resumes it (dirty outbox, sync cursors, running-timer draft) with
     /// no re-pull; switching accounts closes the previous file (kept on disk,
@@ -715,7 +715,7 @@ actor LocalStore {
     /// a genuine removal failure throws.
     private static func removeDatabaseFiles(at url: URL) throws {
         let fileManager = FileManager.default
-        // SQLite sidecars use dash-style names ("lifio_X.db-wal"), not
+        // SQLite sidecars use dash-style names ("shunik_X.db-wal"), not
         // dot extensions — build them explicitly from the full path.
         let sidecars = ["-wal", "-shm", "-journal"].map { suffix in
             URL(fileURLWithPath: url.path + suffix)

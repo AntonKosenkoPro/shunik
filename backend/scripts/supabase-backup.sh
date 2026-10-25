@@ -2,8 +2,8 @@
 # Weekly pg_dump of the hosted relay database (Supabase Free has no automated
 # backups — migrate-db-to-supabase-free, backup floor).
 #
-# Usage (VM cron): 0 3 * * 0 /opt/timeoflife/scripts/supabase-backup.sh /var/backups/supabase
-# Reads DATABASE_URL from the environment (VM: `set -a; . /opt/timeoflife/.env`).
+# Usage (VM cron): 0 3 * * 0 /opt/shunik/scripts/supabase-backup.sh /var/backups/supabase
+# Reads DATABASE_URL from the environment (VM: `set -a; . /opt/shunik/.env`).
 # Off-site leg (spec backend-database: >=30d retention outside this VM and the
 # DB project): set BACKUP_BUCKET=gs://<bucket> (VM has gsutil); the transfer
 # then runs on every backup and Cron activation REQUIRES the bucket set —

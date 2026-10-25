@@ -4,20 +4,20 @@ Agent entrypoint for this repo. **Read [`docs/project-context.md`](docs/project-
 
 ## What this is
 
-**Lifio** — a personal time-tracking iOS app (SwiftUI, iOS 18+, local-first **account-bound**: mandatory sign-in, per-account data files, per-device sessions) with a Go backend acting as **identity + sync relay**. Current scope: auth MVP (passwordless email-OTP + Sign in with Apple) and the Track experience (three-tab shell, numeric timer, plain-text capture + Recents, running tag selector, Profile, compact cross-tab timer). There is no activity entity — entries own their text, ordered categories, and notes.
+**Shunik** — a pet-care iOS app (SwiftUI, iOS 18+, local-first: mandatory sign-in, per-account data files, per-device sessions) with a Go backend acting as **identity + sync relay**. Current state is the **auth chassis scaffold** forked from Lifio: passwordless email-OTP + Sign in with Apple, account deletion, tombstone store helpers, outbox/cursor/undo scaffolding, and an auth-gated profile shell — no pet domain yet. The Shunik v1 domain (household sharing, pets + event base/details, medication courses, weight history, document library, reminder engine, units) is defined in the `shunik-v1-foundation` plan and lands next. See `docs/project-context.md` — being rewritten for Shunik; until then it still describes Lifio and must not be trusted for domain facts.
 
 ## OpenSpec routing (read this before touching behavior)
 
 The repo is spec-driven (`openspec/config.yaml`, `schema: spec-driven`). See `openspec/README.md` for the workflow; the essentials:
 
-- **Baseline specs** (`openspec/specs/<capability>/spec.md`): current contract (24 baselines incl. `app-shell`, `timer-capture-experience`, `apple-signin`, `live-activities`). Never edit directly — behavior changes go through a change.
+- **Baseline specs** (`openspec/specs/<capability>/spec.md`): current contract (auth + local-first mechanics baselines carried over from the Lifio fork; the pet domain has no baselines yet — it lands via the `shunik-v1-foundation` plan). Never edit directly — behavior changes go through a change.
 - **Active deltas**: active changes live under `openspec/changes/` — check `openspec list` before starting new behavior work.
 - **Archives** (`openspec/changes/archive/`): history; their deltas are already folded into the baselines.
 
 ## Non-negotiables
 
-- **LocalStore is the single mutation chokepoint** (GRDB in App Group `group.com.antonkosenko.timeoflifeapp`) — no raw GRDB writes outside it.
-- **Incomplete UI surfaces — do not claim they are done**: shake-to-undo polish + bulk-delete cap, and the iOS 18 lock-screen ControlWidget itself (a widget extension target exists for Live Activities; the Control toggle is still deferred). Device quota + picker (#46) is a pre-release blocker. Full list: `docs/project-context.md` → "Incomplete / deferred".
+- **LocalStore is the single mutation chokepoint** (GRDB in App Group `group.com.antonkosenko.shunik`) — no raw GRDB writes outside it.
+- **Incomplete / deferred — do not claim they are done**: the pet domain itself (household sharing, pets, events, medications, documents, reminders, units), per-household data files (store is still per-account until the household work lands), device quota/management, and the iOS 18 lock-screen ControlWidget. Full list: `docs/project-context.md` → "Incomplete / deferred" (once rewritten for Shunik).
 - **OpenAPI is the authoritative API contract** (`backend/api/openapi.yaml`, S10). Endpoint changes update both sides + the spec.
 - **External docs first (ctx7)**: before implementing anything that depends on external library/framework/SDK/API/CLI/cloud-service behavior, fetch current docs via `npx ctx7@latest library` → `docs` and cite library ID + query in proposal/design; never rely on training data alone. Procedure: `docs/project-context.md` → "External docs first (ctx7)".
 - **No backward compat for on-disk formats** (pre-release): edit `Codable` shapes in place, no legacy branches.
@@ -32,20 +32,20 @@ The repo is spec-driven (`openspec/config.yaml`, `schema: spec-driven`). See `op
 
 Every agent commit and every agent-authored GitHub entity (PR, issue, comment, review reply) carries the marker `opencode/<role> (<model>, ses_<id>)`. Role from `opencode.json` agent names else `main`; model short id when known else omitted; session short id else `YYYY-MM-DD`.
 - **Commits**: human stays Author/Committer; append a `Co-Authored-By: opencode/<role> (<model>, ses_<id>) <opencode@local>` footer. Visible in `log`/`show`/commit page, never in `blame` — query via `git log --grep`.
-- **PRs/issues/comments**: append `> Agent: opencode/<role> · <model> · ses_<id>` plus `<!-- lifio-agent: <role>/<model>/ses_<id> -->`. `/review` triggers keep `/review` on the first line (the workflow matches `contains`). No second GitHub identity, no branch-namespace change, no history rewrite. Rationale: `openspec/changes/agent-attribution/`.
+- **PRs/issues/comments**: append `> Agent: opencode/<role> · <model> · ses_<id>` plus `<!-- shunik-agent: <role>/<model>/ses_<id> -->`. `/review` triggers keep `/review` on the first line (the workflow matches `contains`). No second GitHub identity, no branch-namespace change, no history rewrite. Rationale: carried over from the Lifio fork (see Lifio history for the original `agent-attribution` change).
 
 ## Repo layout (short)
 
 ```
-backend/                 Go (chi + pgx/Postgres; sqlite for tests) — relay: auth + categories/entries
-ios/TimeOfLife/          SwiftUI app (iOS 18+), XcodeGen-managed
-  TimeOfLife/Features/{Auth,AppShell,TimeTracking,Catalog,Sync,AppleSignIn}
+backend/                 Go (chi + pgx/Postgres; sqlite for tests) — relay: auth + account (pet domain lands next)
+ios/TimeOfLife/          SwiftUI app (iOS 18+), XcodeGen-managed (structural rename to Shunik names deferred)
+  TimeOfLife/Features/{Auth,AppShell,Sync,AppleSignIn}   (profile shell + sync skeleton; domain features land next)
   TimeOfLife/Core/Storage/   LocalStore.swift (GRDB), UndoBufferStore.swift, SessionCache.swift
   TimeOfLife/Core/           networking, keychain, reachability, theme, navigation, DI, components
-docs/                    project-context.md (canonical context), ci.md, ios-test-loop.md (fast xcodebuild loop)
-openspec/                specs + changes (see above)
-Requirements/FURPS/      FURPS+ table (Common.md, Timetracking.md, Sign-up_and_Sign-in.md, Activity_Catalog_and_Categories.md)
-Design/                  text design system — see Design/README.md
+docs/                    project-context.md (being rewritten for Shunik — Lifio text still inside, do not trust for domain facts), ci.md, ios-test-loop.md (fast xcodebuild loop)
+openspec/                specs + changes (fresh `openspec init` + seed from the shunik-v1-foundation plan lands next; Lifio baselines still inside — do not treat the pet domain as specified)
+Requirements/FURPS/      Lifio tables (Shunik requirements land next)
+Design/                  Lifio system (Shunik screens land next)
 .github/workflows/       backend.yml + openspec.yml (mandatory GH checks) + Xcode Cloud `iOS PR Checks` (mandatory iOS checks), release.yml (manual version bump — multi-target, see ci.md checklist when adding a target), ai-review.yml (advisory stage-1 review — docs/review-process.md)
 ```
 
@@ -78,7 +78,7 @@ xcodebuild -scheme TimeOfLife -destination 'generic/platform=iOS Simulator' buil
 ## Flow recommendations
 
 - Plan every not obvious task (that will consume over 100k tokens per session)
-- Worktree gate — no reclassification: before the FIRST change-scoped write of a session (including `openspec new change` and anything under `openspec/changes/<name>/`), create `timeOfLife.wt/<change-name>` from fresh `origin/main` (one branch `opsx/<change-name>` per worktree), move the session into it (`session_move`), verify with `git worktree list`, and do all subsequent change work there; remove it after archive. Only pure reads (zero writes) and trivial in-place docs-typo fixes may stay in the main checkout. Worktrees do not lift the serialization rules below.
+- Worktree gate — no reclassification: before the FIRST change-scoped write of a session (including `openspec new change` and anything under `openspec/changes/<name>/`), create `shunik.wt/<change-name>` from fresh `origin/main` (one branch `opsx/<change-name>` per worktree), move the session into it (`session_move`), verify with `git worktree list`, and do all subsequent change work there; remove it after archive. Only pure reads (zero writes) and trivial in-place docs-typo fixes may stay in the main checkout. Worktrees do not lift the serialization rules below.
 - Rebase twice on `origin/main`: `git fetch origin` + rebase before implementing and again before opening the PR; re-run affected linters/tests after each rebase; pushed branches move via `push --force-with-lease`; never `merge main` into a feature/bugfix branch.
 - Research bundle first for every feature/bugfix (topic + applicable HIG + Apple API + best practice via ctx7, max 5, cites or waiver reasons) — rule: `docs/project-context.md` → "External docs first (ctx7)".
 - Parallelism budget (OpenCode Zen Muse Spark 1.3 Free: ~9–10 concurrent slots measured; local work overlaps the queue): default fan-out **6 agents**, hard ceiling **9**; explore-only work stays at **3**
