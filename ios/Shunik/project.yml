@@ -1,0 +1,232 @@
+name: Shunik
+options:
+  bundleIdPrefix: com.antonkosenko
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+  groupSortPosition: top
+  # Runs after every regeneration (local, CI, Xcode Cloud). Required while
+  # XcodeGen stringifies nested target attributes instead of emitting PBX
+  # dicts (yonaskolb/XcodeGen#1637) — see scripts/normalize-system-capabilities.py.
+  postGenCommand: python3 scripts/normalize-system-capabilities.py
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    # Code signing is split per configuration so simulator/CI builds need no
+    # Apple Developer account: Debug (base) stays unsigned. Release carries the
+    # team + distribution identity for TestFlight/App Store archives; the SIWA
+    # entitlement (Shunik.entitlements) requires the App ID
+    # com.antonkosenko.shunik to have Sign In with Apple enabled in the
+    # portal. To change teams later, update the Release DEVELOPMENT_TEAM below.
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGNING_REQUIRED: NO
+    CODE_SIGN_IDENTITY: ""
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+configs:
+  Debug: debug
+  Release: release
+configFiles:
+  Debug: Shunik/Configuration/Config.Debug.xcconfig
+  Release: Shunik/Configuration/Config.Release.xcconfig
+targets:
+  Shunik:
+    type: application
+    platform: iOS
+    sources:
+      - path: Shunik
+        excludes:
+          - "Configuration/Config.Debug.xcconfig"
+          - "Configuration/Config.Release.xcconfig"
+          - "Configuration/Info.plist"
+          - "Configuration/Info-Debug.plist"
+          - "Configuration/Shunik.entitlements"
+      - path: Shunik/Configuration/Config.Debug.xcconfig
+        type: file
+        buildPhase: none
+      - path: Shunik/Configuration/Config.Release.xcconfig
+        type: file
+        buildPhase: none
+      - path: Shunik/Configuration/Shunik.entitlements
+        type: file
+        buildPhase: none
+      - path: Shunik/Localization/en.lproj
+      - path: Shunik/Localization/ru.lproj
+    resources:
+      - Shunik/Resources/Assets.xcassets
+      - Shunik/PrivacyInfo.xcprivacy
+    info:
+      path: Shunik/Configuration/Info.plist
+      properties:
+        CFBundleDisplayName: Shunik
+        CFBundleShortVersionString: "0.2.6"
+        CFBundleVersion: "11"
+        LSRequiresIPhoneOS: true
+        UIApplicationSupportsIndirectInputEvents: true
+        UILaunchScreen:
+          UIColorName: BackgroundPrimary
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIRequiredDeviceCapabilities:
+          - arm64
+        # No NSAppTransportSecurity here: the 127.0.0.1 insecure-HTTP
+        # exception lives in Info-Debug.plist only (Debug needs the local
+        # backend over plain HTTP; Release talks HTTPS and ships without
+        # the exception). See settings.configs.Debug.INFOPLIST_FILE below.
+        UIUserInterfaceStyle: Automatic
+        UIRequiresFullScreen: true
+        ITSAppUsesNonExemptEncryption: false
+        # Live Activities (live-activities change): the app must opt in to
+        # allow ActivityKit requests, and the Island/banner tap deep-links
+        # to Track. NOTE: this plist is REGENERATED from these properties on
+        # every `xcodegen generate` — hand-edits here are wiped. Keep the
+        # unmanaged Info-Debug.plist (Debug config) in sync by hand.
+        NSSupportsLiveActivities: true
+        # Background reap chain (live-activities): a BGAppRefreshTask wakes
+        # the app so a widget-orphaned banner clears without the user
+        # opening the app. `fetch` mode + the permitted identifier below;
+        # NOTE: this plist is REGENERATED from these properties on every
+        # `xcodegen generate` — keep the unmanaged Info-Debug.plist (Debug
+        # config) in sync by hand, like NSSupportsLiveActivities above.
+        UIBackgroundModes:
+          - fetch
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.antonkosenko.shunik.reap-check
+        CFBundleURLTypes:
+          - CFBundleURLName: com.antonkosenko.shunik.track
+            CFBundleURLSchemes: [shunik]
+        API_BASE_URL: "$(API_BASE_URL)"
+        # Crash reporting DSN (observability Stage 0): build setting fed by
+        # `SENTRY_DSN` in the per-config xcconfig (empty = SDK disabled).
+        # CI threads the `SENTRY_IOS_DSN` secret into that setting at archive
+        # time; local builds stay empty (no reporting). Like API_BASE_URL.
+        SENTRY_DSN: "$(SENTRY_DSN)"
+        # Build-stamped commit SHA (profile-version-sha): the trailing Run
+        # Script Phase below overwrites this "?" default in the *built* plist
+        # on every build, so a build that skips the script still reads a
+        # defined key.
+        GIT_COMMIT_SHA: "?"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.antonkosenko.shunik
+        INFOPLIST_FILE: Shunik/Configuration/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Shunik/Configuration/Shunik.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentPrimary
+        ENABLE_PREVIEWS: YES
+        SWIFT_EMIT_LOC_STRINGS: NO
+        CURRENT_PROJECT_VERSION: "11"
+        GENERATE_INFOPLIST_FILE: NO
+        # Warnings-as-errors live here (target-scoped), not on the CLI: a
+        # global SWIFT_TREAT_WARNINGS_AS_ERRORS=YES conflicts with the
+        # -suppress-warnings flag Xcode adds to SPM package targets (GRDB).
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+        GCC_TREAT_WARNINGS_AS_ERRORS: YES
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+          # Debug talks to the local backend over plain HTTP, so it uses
+          # the Debug plist carrying the scoped 127.0.0.1 ATS exception.
+          # Release uses the base plist (no exception — HTTPS only).
+          INFOPLIST_FILE: Shunik/Configuration/Info-Debug.plist
+        Release:
+          DEVELOPMENT_TEAM: 7923U48U87
+          CODE_SIGNING_REQUIRED: YES
+          # "Apple Development" (not "Apple Distribution"): with Automatic
+          # signing, device builds need the development identity; archives
+          # still pick the distribution identity automatically.
+          CODE_SIGN_IDENTITY: Apple Development
+    # Capabilities MUST be declared here: Xcode writes them to
+    # TargetAttributes.SystemCapabilities in the (gitignored) .pbxproj,
+    # so anything added only via the Xcode UI is wiped by the next
+    # `xcodegen generate` (this previously broke Sign in with Apple
+    # on every regen).
+    # NOTE: XcodeGen <= 2.46.0 emits this block as a quoted string
+    # (yonaskolb/XcodeGen#1637); options.postGenCommand normalizes it
+    # back to a native PBX dict on every generate.
+    attributes:
+      SystemCapabilities:
+        com.apple.ApplicationGroups.iOS:
+          enabled: 1
+        com.apple.SignInWithApple:
+          enabled: 1
+        # Background fetch mode (live-activities BG reap chain) — mirrors
+        # the App Group / SIWA pattern above; the postGenCommand hook
+        # normalizes every com.apple.* entry generically.
+        com.apple.BackgroundModes:
+          enabled: 1
+        # Associated Domains (Hide My Email attribution fix): enables
+        # webcredentials for antonkosenko.pro; the postGenCommand hook
+        # normalizes every com.apple.* entry generically.
+        com.apple.AssociatedDomains:
+          enabled: 1
+    dependencies:
+      - package: GRDB
+        product: GRDB
+      # Crash reporting (observability Stage 0): app target only — the
+      # widget extension stays dependency-light by design (see above).
+      - package: Sentry
+        product: Sentry
+    # Trailing stamp (profile-version-sha): writes the built commit's 7-char
+    # SHA into the *built* Info.plist as GIT_COMMIT_SHA for the Profile
+    # version footer. Trailing on purpose — the built plist only exists after
+    # Xcode's Process-Info.plist step — and build-phase scripts still run
+    # before CodeSign, so the stamped plist is what gets signed. No
+    # dirty-tree marker by decision: a dirty tree reports its base commit.
+    postBuildScripts:
+      - name: Stamp GIT_COMMIT_SHA
+        # No outputs by design: the stamp must refresh on every build (a new
+        # commit between builds changes the footer). This silences Xcode's
+        # "will be run during every build" warning by declaring the intent.
+        basedOnDependencyAnalysis: false
+        script: |
+          SHA="$(git rev-parse --short=7 HEAD 2>/dev/null || echo "?")"
+          /usr/libexec/PlistBuddy -c "Set :GIT_COMMIT_SHA $SHA" "${TARGET_BUILD_DIR}/${INFOPLIST_PATH}" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Add :GIT_COMMIT_SHA string $SHA" "${TARGET_BUILD_DIR}/${INFOPLIST_PATH}"
+  ShunikTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - ShunikTests
+    dependencies:
+      - target: Shunik
+      - package: GRDB
+        product: GRDB
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.antonkosenko.shunik.tests
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Shunik.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Shunik"
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+        GCC_TREAT_WARNINGS_AS_ERRORS: YES
+schemes:
+  Shunik:
+    build:
+      targets:
+        Shunik: all
+        ShunikTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - ShunikTests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
+packages:
+  GRDB:
+    url: https://github.com/groue/GRDB.swift
+    from: 7.0.0
+  # Crash reporting (observability Stage 0): crashes + sync-distress
+  # breadcrumbs; no performance spans (Stage 1 owns spans).
+  Sentry:
+    url: https://github.com/getsentry/sentry-cocoa
+    from: 8.0.0

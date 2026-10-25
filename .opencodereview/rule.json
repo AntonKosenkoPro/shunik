@@ -1,7 +1,7 @@
 {
   "rules": [
     {
-      "path": "ios/TimeOfLife/TimeOfLife/Core/Storage/**",
+      "path": "ios/Shunik/Shunik/Core/Storage/**",
       "rule": "LocalStore.swift is the single mutation chokepoint for GRDB (App Group group.com.antonkosenko.shunik). Flag any raw GRDB writes (Database.save/insert/update/delete, DatabaseQueue/Pool write APIs) outside LocalStore.swift. Watch transactional outbox, undo buffer, and sync cursor logic for races and missing transactions.",
       "merge_system_rule": true
     },
@@ -16,22 +16,22 @@
       "merge_system_rule": true
     },
     {
-      "path": "ios/TimeOfLife/TimeOfLife/**/*.swift",
+      "path": "ios/Shunik/Shunik/**/*.swift",
       "rule": "SwiftUI views must use Theme semantic colors only — flag any raw Color literal (Color.red, Color(hex:) etc.) in view code. New user-facing strings must be added to BOTH en.lproj and ru.lproj and to the L10n enum if enumerated — flag strings that appear in only one. Never hand-edit .pbxproj; project.yml + xcodegen only.",
       "merge_system_rule": true
     },
     {
-      "path": "ios/TimeOfLife/TimeOfLife/**/*.xcodeproj/**",
+      "path": "ios/Shunik/Shunik/**/*.xcodeproj/**",
       "rule": "This is XcodeGen-managed. Hand-edits to .pbxproj must be flagged as an error: changes go through project.yml + xcodegen generate.",
       "merge_system_rule": true
     },
     {
-      "path": "ios/TimeOfLife/TimeOfLife/Features/Sync/**",
+      "path": "ios/Shunik/Shunik/Features/Sync/**",
       "rule": "Sync/Keychain rules: tokens live only in the Keychain, never persisted or logged in plaintext; OTP codes are stored as SHA-256 hashes. Flag any plaintext token/code persistence, logging of secrets, or session handling that bypasses SessionCache/Keychain.",
       "merge_system_rule": true
     },
     {
-      "path": "ios/TimeOfLife/TimeOfLifeTests/**",
+      "path": "ios/Shunik/ShunikTests/**",
       "rule": "Tests must be valid: flag tests that cannot fail, tests deleted or skipped to make CI pass, and tests that assert implementation details instead of behavior.",
       "merge_system_rule": true
     },

@@ -49,12 +49,12 @@ docker-compose up -d postgres
 go run ./cmd/server         # serves http://127.0.0.1:8080 (watch stdout for OTP codes)
 ```
 
-### iOS (`/ios/TimeOfLife`) — SwiftUI, iOS 18+
+### iOS (`/ios/Shunik`) — SwiftUI, iOS 18+
 
 XcodeGen-managed: edit `project.yml`, run `xcodegen generate` — never hand-edit the `.pbxproj`.
 
 ```bash
-cd ios/TimeOfLife
+cd ios/Shunik
 xcodegen generate
 open TimeOfLife.xcodeproj
 ```
@@ -66,8 +66,8 @@ open TimeOfLife.xcodeproj
 
 ```bash
 swiftlint lint --strict     # --fix autocorrects
-xcodebuild -scheme TimeOfLife -destination 'generic/platform=iOS Simulator' build
-xcodebuild test -scheme TimeOfLife \
+xcodebuild -scheme Shunik -destination 'generic/platform=iOS Simulator' build
+xcodebuild test -scheme Shunik \
   -destination 'platform=iOS Simulator,name=<available simulator>'
 ```
 

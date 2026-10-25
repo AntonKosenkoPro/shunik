@@ -38,10 +38,10 @@ Every agent commit and every agent-authored GitHub entity (PR, issue, comment, r
 
 ```
 backend/                 Go (chi + pgx/Postgres; sqlite for tests) — relay: auth + account (pet domain lands next)
-ios/TimeOfLife/          SwiftUI app (iOS 18+), XcodeGen-managed (structural rename to Shunik names deferred)
-  TimeOfLife/Features/{Auth,AppShell,Sync,AppleSignIn}   (profile shell + sync skeleton; domain features land next)
-  TimeOfLife/Core/Storage/   LocalStore.swift (GRDB), UndoBufferStore.swift, SessionCache.swift
-  TimeOfLife/Core/           networking, keychain, reachability, theme, navigation, DI, components
+ios/Shunik/              SwiftUI app (iOS 18+), XcodeGen-managed
+  Shunik/Features/{Auth,AppShell,Sync,AppleSignIn}   (profile shell + sync skeleton; domain features land next)
+  Shunik/Core/Storage/   LocalStore.swift (GRDB), UndoBufferStore.swift, SessionCache.swift
+  Shunik/Core/           networking, keychain, reachability, theme, navigation, DI, components
 docs/                    project-context.md (being rewritten for Shunik — Lifio text still inside, do not trust for domain facts), ci.md, ios-test-loop.md (fast xcodebuild loop)
 openspec/                specs + changes (fresh `openspec init` + seed from the shunik-v1-foundation plan lands next; Lifio baselines still inside — do not treat the pet domain as specified)
 Requirements/FURPS/      Lifio tables (Shunik requirements land next)
@@ -59,7 +59,7 @@ golangci-lint run && gofmt -l . && go vet ./...
 docker-compose up -d postgres && cp .env.example .env && go run ./cmd/server
 ```
 
-### iOS (Xcode 16+, xcodegen, swiftlint) — from `ios/TimeOfLife/`
+### iOS (Xcode 16+, xcodegen, swiftlint) — from `ios/Shunik/`
 ```bash
 xcodegen generate
 swiftlint lint --strict         # --fix autocorrects
@@ -82,7 +82,7 @@ xcodebuild -scheme TimeOfLife -destination 'generic/platform=iOS Simulator' buil
 - Rebase twice on `origin/main`: `git fetch origin` + rebase before implementing and again before opening the PR; re-run affected linters/tests after each rebase; pushed branches move via `push --force-with-lease`; never `merge main` into a feature/bugfix branch.
 - Research bundle first for every feature/bugfix (topic + applicable HIG + Apple API + best practice via ctx7, max 5, cites or waiver reasons) — rule: `docs/project-context.md` → "External docs first (ctx7)".
 - Parallelism budget (OpenCode Zen Muse Spark 1.3 Free: ~9–10 concurrent slots measured; local work overlaps the queue): default fan-out **6 agents**, hard ceiling **9**; explore-only work stays at **3**
-- Delegate FIRST via the Task tool — no sequential fallback: any task touching 2+ of backend (`backend/`) / iOS (`ios/TimeOfLife/`) / specs-docs (`openspec/`, `docs/`, `Requirements/`, `Design/`) MUST fan out with one Task call per area in a single message before doing the work yourself; merge results yourself
+- Delegate FIRST via the Task tool — no sequential fallback: any task touching 2+ of backend (`backend/`) / iOS (`ios/Shunik/`) / specs-docs (`openspec/`, `docs/`, `Requirements/`, `Design/`) MUST fan out with one Task call per area in a single message before doing the work yourself; merge results yourself
 - Subagent depth is **3** (`subagent_depth` in `opencode.json`): subagents may spawn nested subagents when needed — use nesting for fan-out inside an area (e.g., area worker splits per-file/per-item), but prefer flat fan-out, stay within the parallelism budget, and never nest to re-delegate a single unit of work
 - Backend verify (`gofmt`, `go vet`, `golangci-lint`, `go test`) and iOS verify (`swiftlint`, build, test) are disjoint — always run them on separate agents in parallel
 - Serialize single-writer resources: one `xcodebuild` at a time (DerivedData lock), one simulator per test run, never concurrent `xcodegen generate` with project edits, one writer for `openapi.yaml` / `tasks.md` / `project-context.md` / `project.yml` / `Localizable.strings`

@@ -2,7 +2,7 @@ name: release
 
 # Manual release bump: workflow_dispatch with the desired marketing version.
 # Normal mode (build_only=false): validates strictly-greater semver on main,
-# edits ios/TimeOfLife/project.yml (the single version writer — design.md D1)
+# edits ios/Shunik/project.yml (the single version writer — design.md D1)
 # and mirrors the values into the tracked Release Info.plist statics (xcodegen
 # rewrites those files from project.yml on every generate, so the mirror keeps
 # the committed files from reading stale between the bump and the next
@@ -97,14 +97,14 @@ jobs:
           build_only = os.environ.get("BUILD_ONLY") == "true"
           out_path = os.environ.get("GITHUB_OUTPUT")
 
-          with open("ios/TimeOfLife/project.yml", encoding="utf-8") as f:
+          with open("ios/Shunik/project.yml", encoding="utf-8") as f:
               text = f.read()
           # Multi-target: every occurrence must agree — a new target whose
           # versions were not kept in sync fails here loudly instead of
           # shipping a version-skewed bundle (see live-activities appex).
           currents = re.findall(r'CFBundleShortVersionString:\s*"([^"]+)"', text)
           if not currents:
-              print("::error::Could not find CFBundleShortVersionString in ios/TimeOfLife/project.yml.")
+              print("::error::Could not find CFBundleShortVersionString in ios/Shunik/project.yml.")
               sys.exit(1)
           if len(set(currents)) != 1:
               print(
@@ -222,7 +222,7 @@ jobs:
                   )
                   sys.exit(1)
               snap = subprocess.run(
-                  ["git", "show", f"{bump}:ios/TimeOfLife/project.yml"],
+                  ["git", "show", f"{bump}:ios/Shunik/project.yml"],
                   capture_output=True,
                   text=True,
               ).stdout
@@ -248,7 +248,7 @@ jobs:
           import re
           import sys
 
-          path = "ios/TimeOfLife/project.yml"
+          path = "ios/Shunik/project.yml"
           requested = os.environ["VERSION"]
           with open(path, encoding="utf-8") as f:
               text = f.read()
@@ -313,7 +313,7 @@ jobs:
           # Debug (unmanaged Info-Debug.plist) files stay pinned: release
           # bumps have never touched them (see v0.1.4 bump 206cc3d).
           RELEASE_PLISTS = [
-              "ios/TimeOfLife/TimeOfLife/Configuration/Info.plist",
+              "ios/Shunik/TimeOfLife/Configuration/Info.plist",
           ]
           # Single source of truth for the commit step (see PLISTS env there).
           if "GITHUB_OUTPUT" in os.environ:
@@ -345,12 +345,12 @@ jobs:
           PLISTS: ${{ steps.bump.outputs.plists }}
         run: |
           set -euo pipefail
-          BUILD=$(python3 -c 'import re; print(re.search(r"CFBundleVersion:\s*\"([^\"]+)\"", open("ios/TimeOfLife/project.yml").read()).group(1))')
+          BUILD=$(python3 -c 'import re; print(re.search(r"CFBundleVersion:\s*\"([^\"]+)\"", open("ios/Shunik/project.yml").read()).group(1))')
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # $PLISTS is intentionally unquoted (word-split the step output);
           # :? fails loud if the Bump step did not emit it.
-          git add ios/TimeOfLife/project.yml ${PLISTS:?RELEASE_PLISTS output missing}
+          git add ios/Shunik/project.yml ${PLISTS:?RELEASE_PLISTS output missing}
           if [ "$MODE" = "rebuild" ]; then
             git commit -m "chore(release): rebuild $VERSION ($BUILD)"
             git push --atomic origin HEAD:main
@@ -369,7 +369,7 @@ jobs:
           set -euo pipefail
           # Provenance must describe the tagged commit, not the live tree: a
           # rebuild-mode bump may have moved the build number forward since.
-          BUILD=$(git show "$BUMP_COMMIT:ios/TimeOfLife/project.yml" | python3 -c 'import re,sys; print(re.search(r"CFBundleVersion:\s*\"([^\"]+)\"", sys.stdin.read()).group(1))')
+          BUILD=$(git show "$BUMP_COMMIT:ios/Shunik/project.yml" | python3 -c 'import re,sys; print(re.search(r"CFBundleVersion:\s*\"([^\"]+)\"", sys.stdin.read()).group(1))')
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "v$VERSION" -m "Release $VERSION ($BUILD)" "$BUMP_COMMIT"
@@ -407,7 +407,7 @@ jobs:
             elif [ "$MODE" = "recover" ]; then
               echo "Pushed the missing \`v$VERSION\` tag onto its bump commit. No version numbers changed."
             else
-              echo "Bumped \`ios/TimeOfLife/project.yml\` to \`$VERSION\` (Release Info.plists mirrored for every target), committed, tagged \`v$VERSION\`, and pushed."
+              echo "Bumped \`ios/Shunik/project.yml\` to \`$VERSION\` (Release Info.plists mirrored for every target), committed, tagged \`v$VERSION\`, and pushed."
             fi
             echo ""
             echo "Verification: the \`verify\` job runs \`ios.yml\` on the pushed head automatically (GITHUB_TOKEN pushes trigger no workflows on their own). Do not upload to App Store Connect until it is green."

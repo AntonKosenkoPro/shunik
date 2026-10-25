@@ -39,27 +39,27 @@ jobs:
         run: brew install xcodegen swiftlint
 
       - name: Generate Xcode project
-        working-directory: ios/TimeOfLife
+        working-directory: ios/Shunik
         run: xcodegen generate
 
       - name: SwiftLint
-        working-directory: ios/TimeOfLife
+        working-directory: ios/Shunik
         run: swiftlint lint --strict
 
       - name: Build with warnings as errors
         # SWIFT_TREAT_WARNINGS_AS_ERRORS/GCC_TREAT_WARNINGS_AS_ERRORS are set
         # per-target in project.yml — the CLI variants conflict with the
         # -suppress-warnings flag Xcode adds to SPM package targets (GRDB).
-        working-directory: ios/TimeOfLife
+        working-directory: ios/Shunik
         run: |
           set -o pipefail
-          xcodebuild -scheme TimeOfLife \
+          xcodebuild -scheme Shunik \
             -destination 'generic/platform=iOS Simulator' \
             build | xcpretty
 
       - name: Resolve simulator destination
         id: sim
-        working-directory: ios/TimeOfLife
+        working-directory: ios/Shunik
         run: |
           NAME=$(xcrun simctl list devices available -j | \
             python3 -c 'import json,sys
@@ -69,10 +69,10 @@ jobs:
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
 
       - name: Test
-        working-directory: ios/TimeOfLife
+        working-directory: ios/Shunik
         run: |
           set -o pipefail
-          xcodebuild -scheme TimeOfLife \
+          xcodebuild -scheme Shunik \
             -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.name }},OS=latest" \
             test | xcpretty
 
@@ -92,16 +92,16 @@ jobs:
         run: brew install xcodegen getsentry/tools/sentry-cli
 
       - name: Generate Xcode project
-        working-directory: ios/TimeOfLife
+        working-directory: ios/Shunik
         run: xcodegen generate
 
       - name: Archive Release (unsigned) for dSYMs
-        working-directory: ios/TimeOfLife
+        working-directory: ios/Shunik
         env:
           SENTRY_IOS_DSN: ${{ secrets.SENTRY_IOS_DSN }}
         run: |
           set -o pipefail
-          xcodebuild archive -scheme TimeOfLife \
+          xcodebuild archive -scheme Shunik \
             -destination 'generic/platform=iOS' \
             -archivePath build/TimeOfLife.xcarchive \
             CODE_SIGNING_ALLOWED=NO \
@@ -109,7 +109,7 @@ jobs:
             SENTRY_DSN="$SENTRY_IOS_DSN" | xcpretty
 
       - name: Upload dSYMs to Sentry (staging + release)
-        working-directory: ios/TimeOfLife
+        working-directory: ios/Shunik
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}

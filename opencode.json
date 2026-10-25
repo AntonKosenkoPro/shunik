@@ -34,7 +34,7 @@
       "reasoningEffort": "xhigh"
     },
     "general": {
-      "description": "General-purpose worker for independent units of work. Use PROACTIVELY instead of working sequentially: any task touching 2+ of backend/ vs ios/TimeOfLife/ vs specs-docs MUST be split into parallel Task calls (one per area, single message) before doing anything yourself. Backend verify and iOS verify always run on separate agents in parallel. Default fan-out 6 agents, hard ceiling 9.",
+      "description": "General-purpose worker for independent units of work. Use PROACTIVELY instead of working sequentially: any task touching 2+ of backend/ vs ios/Shunik/ vs specs-docs MUST be split into parallel Task calls (one per area, single message) before doing anything yourself. Backend verify and iOS verify always run on separate agents in parallel. Default fan-out 6 agents, hard ceiling 9.",
       "model": "opencode-go/muse-spark-1.3-contributor",
       "reasoningEffort": "high"
     },
