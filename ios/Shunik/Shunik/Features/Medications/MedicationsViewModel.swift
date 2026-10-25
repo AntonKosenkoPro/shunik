@@ -56,17 +56,20 @@ final class MedicationsViewModel: ObservableObject {
     private let undo: UndoBufferStore
     private let sync: SyncController
     private let sessionUserID: String
+    /// Resolves notification scheduling after materialize (nil in tests).
+    private let engine: ReminderEngine?
     private var intakesByCourse: [String: [IntakeRecord]] = [:]
     /// Title snapshots of deleted courses: their settled intakes stay in the
     /// store (history never mutates) but the event row is gone, so the detail
     /// view falls back to these for its header.
     private var deletedCourseSnapshots: [String: EventRecord] = [:]
 
-    init(store: LocalStore, undo: UndoBufferStore, sync: SyncController, sessionUserID: String) {
+    init(store: LocalStore, undo: UndoBufferStore, sync: SyncController, sessionUserID: String, engine: ReminderEngine? = nil) {
         self.store = store
         self.undo = undo
         self.sync = sync
         self.sessionUserID = sessionUserID
+        self.engine = engine
     }
 
     // MARK: - Scope
@@ -115,24 +118,9 @@ final class MedicationsViewModel: ObservableObject {
             }
             courses = try await loadAllCourses()
             let now = Date()
+            var hadNewPends = false
             for course in courses {
-                guard let detail = course.course, detail.status == "active" else { continue }
-                let existing = try await store.listIntakes(courseID: course.id)
-                let createdAt = RFC3339Milli.parse(course.createdAt) ?? now
-                for row in MedicationEngine.autoMiss(intakes: existing, now: now) {
-                    let prior = existing.first { $0.id == row.id }
-                    guard row.status != prior?.status, let current = prior else { continue }
-                    _ = try await store.updateIntake(row, baseUpdatedAt: current.updatedAt, markedBy: sessionUserID)
-                }
-                let settled = try await store.listIntakes(courseID: course.id)
-                let covered = Set(settled.compactMap(\.dueAt))
-                let fresh = MedicationEngine.materialize(
-                    courseID: course.id, householdID: course.householdID, course: detail,
-                    courseCreatedAt: createdAt, now: now, existingDueAts: covered
-                )
-                for row in fresh {
-                    _ = try await store.createIntake(row, markedBy: sessionUserID)
-                }
+                hadNewPends = try await syncCourse(course, now: now) || hadNewPends
             }
             var cache: [String: [IntakeRecord]] = [:]
             for course in courses {
@@ -144,9 +132,40 @@ final class MedicationsViewModel: ObservableObject {
             intakesByCourse = cache
             rebuildDue(now: now)
             operationError = nil
+            // New pendings mean new dues: refresh the queue and ask for
+            // permission once (reminder-engine re-top-up + first-due rule).
+            if let engine {
+                await engine.refresh()
+                if hadNewPends {
+                    await engine.noteDueCreated()
+                }
+            }
         } catch {
             operationError = error.localizedDescription
         }
+    }
+
+    /// Applies auto-miss transitions and materializes missing slots for one
+    /// active course. Returns whether new pendings were created.
+    private func syncCourse(_ course: EventRecord, now: Date) async throws -> Bool {
+        guard let detail = course.course, detail.status == "active" else { return false }
+        let existing = try await store.listIntakes(courseID: course.id)
+        let createdAt = RFC3339Milli.parse(course.createdAt) ?? now
+        for row in MedicationEngine.autoMiss(intakes: existing, now: now) {
+            let prior = existing.first { $0.id == row.id }
+            guard row.status != prior?.status, let current = prior else { continue }
+            _ = try await store.updateIntake(row, baseUpdatedAt: current.updatedAt, markedBy: sessionUserID)
+        }
+        let settled = try await store.listIntakes(courseID: course.id)
+        let covered = Set(settled.compactMap(\.dueAt))
+        let fresh = MedicationEngine.materialize(
+            courseID: course.id, householdID: course.householdID, course: detail,
+            courseCreatedAt: createdAt, now: now, existingDueAts: covered
+        )
+        for row in fresh {
+            _ = try await store.createIntake(row, markedBy: sessionUserID)
+        }
+        return !fresh.isEmpty
     }
 
     private func loadAllCourses() async throws -> [EventRecord] {

@@ -37,6 +37,9 @@ final class AppContainer: ObservableObject {
     /// `ActiveAccountFileResolver` reads. Built in `production()`; injected
     /// in tests.
     let householdService: HouseholdService
+    /// The single notification scheduler (reminder-engine spec). Owns the
+    /// OS pending list; kinds never schedule directly.
+    let reminderEngine: ReminderEngine
     /// The last `openHouseholdStore` failure (disk-full, corrupt file, migration
     /// error — and, as of the complexity-reduction pass, integrity failures
     /// too: an `invalidUserID`/`accountMismatch` bind leaves the store
@@ -67,6 +70,7 @@ final class AppContainer: ObservableObject {
         undoBuffer: UndoBufferStore,
         syncController: SyncController,
         householdService: HouseholdService,
+        reminderEngine: ReminderEngine? = nil,
         clientHolder: APIClientHolder? = nil,
         deletionCoordinator: AccountDeletionCoordinator? = nil
     ) {
@@ -84,6 +88,7 @@ final class AppContainer: ObservableObject {
         self.undoBuffer = undoBuffer
         self.syncController = syncController
         self.householdService = householdService
+        self.reminderEngine = reminderEngine ?? ReminderEngine(store: localStore)
         self.clientHolder = clientHolder
         self.deletionCoordinator = deletionCoordinator ?? AccountDeletionCoordinator(
             repository: repository,

@@ -32,7 +32,8 @@ struct MedicationsView: View {
                     store: container.localStore,
                     undo: container.undoBuffer,
                     sync: container.syncController,
-                    sessionUserID: userID
+                    sessionUserID: userID,
+                    engine: container.reminderEngine
                 )
                 viewModel = created
                 await created.load()

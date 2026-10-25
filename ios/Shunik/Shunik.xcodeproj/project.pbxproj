@@ -22,6 +22,7 @@
 		184D1ED10214EE5169826175 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED069180FD6FCB4D8E939E21 /* AppConfig.swift */; };
 		19E41FC5AC23A4FA8473D3D8 /* AuthServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66F394FA0A388FE2BDCCCFBE /* AuthServiceTests.swift */; };
 		1A2AB7E7D5803B5E8F03A0C7 /* TimelineViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 679D6CADBDB1278D25036E38 /* TimelineViewModel.swift */; };
+		1C01DAEFF09C34E4F2AE6B64 /* ReminderEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 767931A37232B0131E53156F /* ReminderEngine.swift */; };
 		1C3F4EBBA0577914DE25053A /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DA557210BA0DFAC17259821 /* Theme.swift */; };
 		1D3EE94E083AE0B970A5CC2B /* AppVersionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D19D5706665B74AF3641887 /* AppVersionTests.swift */; };
 		1F932ADCB61C5CB6FB013A24 /* ProfileSignOutRowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00EE1B4053300038B69AC240 /* ProfileSignOutRowTests.swift */; };
@@ -149,6 +150,7 @@
 		E92DA10BF79B13540A9DF45A /* AuthGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F7697108906F7E5BFEAA499 /* AuthGateTests.swift */; };
 		EB26FB565A6E7807F805B2C7 /* AccountDeletionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB44B1AADA40EC2F782FCFAB /* AccountDeletionCoordinator.swift */; };
 		EDCB7850CE9FBE42DD0A3562 /* MockAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B62E908519C2863CD1D0DBA5 /* MockAPIClient.swift */; };
+		EE637FE4DBD1F0BA6AE2EF1C /* ReminderEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CB1603BA3EF13F0B0CD2EDA /* ReminderEngineTests.swift */; };
 		EE693019FC3C83C143F2F9EF /* PetFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73D08C66A818A13128AD36BB /* PetFormView.swift */; };
 		EFB5B9F8A6851EE9863AE0D1 /* PetDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3648453F4A2A32ECF538A4C /* PetDetailViewModel.swift */; };
 		F0BF48FA1633AC6EDD9EE342 /* TextFieldWithError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41ACEBB4BCAACECA9268BE5E /* TextFieldWithError.swift */; };
@@ -183,6 +185,7 @@
 		0938C2A14ED03152B76453A3 /* ClearTextButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClearTextButton.swift; sourceTree = "<group>"; };
 		0A4A8367E2BC062D7D3E5623 /* SyncModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncModels.swift; sourceTree = "<group>"; };
 		0B4FEE67BF3A79225533B11F /* Shunik.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Shunik.entitlements; sourceTree = "<group>"; };
+		0CB1603BA3EF13F0B0CD2EDA /* ReminderEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderEngineTests.swift; sourceTree = "<group>"; };
 		0F2205319B3C02049C0CC7F6 /* RecordIDGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordIDGenerator.swift; sourceTree = "<group>"; };
 		11404AB892265CB3F42E4755 /* MedicationEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MedicationEngineTests.swift; sourceTree = "<group>"; };
 		11A631503223A61F98793B85 /* DocumentsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentsViewModel.swift; sourceTree = "<group>"; };
@@ -255,6 +258,7 @@
 		734792B829597D6B27AB2D12 /* OtpCodeField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OtpCodeField.swift; sourceTree = "<group>"; };
 		73D08C66A818A13128AD36BB /* PetFormView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetFormView.swift; sourceTree = "<group>"; };
 		73DC022F4E8B471AFB2B35C8 /* WelcomeViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeViewModel.swift; sourceTree = "<group>"; };
+		767931A37232B0131E53156F /* ReminderEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderEngine.swift; sourceTree = "<group>"; };
 		7749C78381A3415CE5F48C0E /* FakeAuthRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeAuthRepository.swift; sourceTree = "<group>"; };
 		7B09453E0140910F16459AC7 /* DeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLink.swift; sourceTree = "<group>"; };
 		7B78D76536EB57CD45E9E9F0 /* APIClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientTests.swift; sourceTree = "<group>"; };
@@ -381,6 +385,14 @@
 				4C57BFCAF546307855094A39 /* TimeFormatter.swift */,
 			);
 			path = Utilities;
+			sourceTree = "<group>";
+		};
+		0DEA6DF08F966A305E39420D /* Reminders */ = {
+			isa = PBXGroup;
+			children = (
+				767931A37232B0131E53156F /* ReminderEngine.swift */,
+			);
+			path = Reminders;
 			sourceTree = "<group>";
 		};
 		0ED9D84019978A2A6C334B5E /* Helpers */ = {
@@ -568,6 +580,7 @@
 				0FB38959386C23F5E3FC6619 /* Events */,
 				8A0BA07F1A9FB3DF7AED72D8 /* Medications */,
 				8A4B7522AE4B652CF79E222F /* Pets */,
+				0DEA6DF08F966A305E39420D /* Reminders */,
 				9CE8061FBD33AAD63506B258 /* Sync */,
 			);
 			path = Features;
@@ -688,6 +701,7 @@
 				3745FC7871A4C8B5CA1DD25D /* PetsViewModelTests.swift */,
 				00EE1B4053300038B69AC240 /* ProfileSignOutRowTests.swift */,
 				557E960A3CD801D6B0E5E86E /* RecordIDGeneratorTests.swift */,
+				0CB1603BA3EF13F0B0CD2EDA /* ReminderEngineTests.swift */,
 				C935E883BE26A9252F5ED6E8 /* RemoteAccountDeletionTests.swift */,
 				4E6E6C456B10FB3481BA47E5 /* RemoteAuthRepositoryTests.swift */,
 				CE099C9D53055616DEB844BC /* SessionCacheSidecarTests.swift */,
@@ -1049,6 +1063,7 @@
 				FF3587EDD10376FBCE9C43D8 /* ProfileView.swift in Sources */,
 				49234D6FA699E577C44314F5 /* RecordIDGenerator.swift in Sources */,
 				F9DB640C7733D60162DE4CAC /* RefreshAttempt.swift in Sources */,
+				1C01DAEFF09C34E4F2AE6B64 /* ReminderEngine.swift in Sources */,
 				BEEFC5ECB0D73DC5F470DE78 /* RemoteAuthRepository.swift in Sources */,
 				C50D6576344C383D98B65D1A /* RootView.swift in Sources */,
 				99353B598A6450A265A547F4 /* SentryReporter.swift in Sources */,
@@ -1120,6 +1135,7 @@
 				2A2F0D488E6E7AE0D396378E /* PetsViewModelTests.swift in Sources */,
 				1F932ADCB61C5CB6FB013A24 /* ProfileSignOutRowTests.swift in Sources */,
 				4BCDAFC5844A7A0467825004 /* RecordIDGeneratorTests.swift in Sources */,
+				EE637FE4DBD1F0BA6AE2EF1C /* ReminderEngineTests.swift in Sources */,
 				603FC15766BA4D010E2A38FA /* RemoteAccountDeletionTests.swift in Sources */,
 				AD322B33BD8B070FF50ACED4 /* RemoteAuthRepositoryTests.swift in Sources */,
 				53B1853E65DE2B279F2EFDD1 /* SessionCacheSidecarTests.swift in Sources */,

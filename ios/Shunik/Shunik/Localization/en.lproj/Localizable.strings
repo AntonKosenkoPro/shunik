@@ -239,3 +239,9 @@
 "docs.deleteMessage" = "The document will be removed from this device. You can undo right after.";
 "docs.empty" = "No documents yet";
 "docs.emptyHint" = "Add vet reports, passports, and receipts.";
+
+// Reminders (§7.1/7.3)
+"reminders.title" = "Reminders";
+"reminders.toggle" = "Reminders";
+"reminders.deniedHint" = "Notifications are off. Turn them on in Settings to get dose and vaccine reminders.";
+"reminders.openSettings" = "Open Settings";

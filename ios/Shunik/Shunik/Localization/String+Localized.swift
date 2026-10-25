@@ -208,6 +208,12 @@ enum L10n: String, CaseIterable {
     case medsStatusStopped = "meds.status.stopped"
     case medsInstructions = "meds.instructions"
     case medsInfoRef = "meds.infoRef"
+
+    // Reminders (§7.1/7.3)
+    case remindersTitle = "reminders.title"
+    case remindersToggle = "reminders.toggle"
+    case remindersDeniedHint = "reminders.deniedHint"
+    case remindersOpenSettings = "reminders.openSettings"
     case medsIntakes = "meds.intakes"
     case medsIntakeTaken = "meds.intake.taken"
     case medsIntakeMissed = "meds.intake.missed"

@@ -49,9 +49,11 @@
 
 ## 7. iOS — reminders + units
 
-- [ ] 7.1 Reminder engine: derived queue, rolling ~14d window, deterministic IDs, re-top-up triggers, both-buzz default + per-device mute, wall-clock intakes
-- [ ] 7.2 Unit lens: per-device Metric/Imperial (locale default), chip live-conversion, decimal pounds; no display prefs in sync payloads
-- [ ] 7.3 Notification permission flow + Settings toggle; request at first due creation with graceful deny path
+- [x] 7.1 Reminder engine: derived queue, rolling ~14d window, deterministic IDs, re-top-up triggers, both-buzz default + per-device mute, wall-clock intakes
+- [x] 7.2 Unit lens: per-device Metric/Imperial (locale default), chip live-conversion, decimal pounds; no display prefs in sync payloads
+- [x] 7.3 Notification permission flow + Settings toggle; request at first due creation with graceful deny path
+- iOS detail: `ReminderEngine` (UNUserNotificationCenter seam; queue from vacc/groom `next_due_at` + pending intakes; `due_<event>`/`intake_<id>` deterministic IDs; 14d window, 64-cap, stale/reschedule/stray cancellation via persisted stamp map; mute in `com.shunik.remindersMuted`, never synced; ask-once `noteDueCreated`); triggers — meds load (materialize), event save with next-due, foreground + timezone change, unmute; Profile Reminders section (toggle = authorized && !muted; denied → hint + Open Settings; off = local mute). §7.2 shipped in §6 (UnitLens, UserDefaults-only) — verified no unit data enters outbox payloads (String timestamps + integer grams only).
+- Verified: `swiftlint --strict` clean, `xcodebuild test` 416/416 green (50 suites incl. new ReminderEngine suite), backend untouched, `openspec validate --all --strict` green.
 
 ## 8. Verify per iteration (S5, both suites)
 

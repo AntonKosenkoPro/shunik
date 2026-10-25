@@ -78,6 +78,15 @@ struct RootView: View {
                 // deletions stay restorable until their push succeeds).
                 if case .signedIn = session.state {
                     container.syncController.trigger(userID: sessionUserID())
+                    // Re-top-up the reminder queue: sync may have delivered
+                    // new dues while backgrounded (reminder-engine spec).
+                    Task { await container.reminderEngine.refresh() }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
+                // Timezone/clock change: wall-clock dues re-resolve.
+                if case .signedIn = session.state {
+                    Task { await container.reminderEngine.refresh() }
                 }
             }
     }

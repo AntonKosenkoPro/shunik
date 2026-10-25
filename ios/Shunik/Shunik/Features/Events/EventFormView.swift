@@ -265,6 +265,12 @@ struct EventFormView: View {
                     makeRecord(id: "", householdID: householdID), updatedBy: userID
                 )
             }
+            // A next-due creates a future buzz: ask once, then re-top-up
+            // (first-due rule + reminder-engine refresh).
+            if hasNextDue, kindState == "vaccination" || kindState == "grooming" {
+                await container.reminderEngine.noteDueCreated()
+            }
+            await container.reminderEngine.refresh()
             dismiss()
         } catch {
             errorMessage = L10n.errorLocalPersistence.text
