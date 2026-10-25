@@ -57,7 +57,10 @@
 
 ## 8. Verify per iteration (S5, both suites)
 
-- [ ] 8.1 `gofmt -l .` empty, `go vet ./...`, `golangci-lint run`, `go test ./... -cover` green (SQLite, no Docker)
-- [ ] 8.2 `swiftlint lint --strict`, warning-as-error build, `xcodebuild test` green (one `xcodebuild` at a time, `project.yml` owns targets — wire any new target into `release.yml` + `ios.yml` same PR)
-- [ ] 8.3 Re-check Shunik FURPS/requirements rows once written; update `docs/project-context.md`, `README.md`, `Design/*`, `openapi.yaml` where behavior/contract changed
+- [x] 8.1 `gofmt -l .` empty, `go vet ./...`, `golangci-lint run`, `go test ./... -cover` green (SQLite, no Docker)
+- [x] 8.2 `swiftlint lint --strict`, warning-as-error build, `xcodebuild test` green (one `xcodebuild` at a time, `project.yml` owns targets — no new targets added in §§5–7, nothing to wire into `release.yml`/`ios.yml`)
+- [x] 8.3 Re-check Shunik FURPS/requirements rows once written; update `docs/project-context.md`, `README.md`, `Design/*`, `openapi.yaml` where behavior/contract changed
 - [ ] 8.4 Rebase twice on `origin/main` (`push --force-with-lease`, never merge); re-run affected linters/tests after each rebase
+- Verified 8.1: `gofmt -l` empty, `go vet` clean, `golangci-lint` 0 issues, `go test ./... -cover` green incl. live PG18 (`TEST_PG_DSN` local), contract green.
+- Verified 8.2: `swiftlint --strict` clean, build succeeds (app/test warnings-as-errors via `project.yml`; only external `appintentsmetadataprocessor` notice), `xcodebuild test` 416/416 green (50 suites).
+- Verified 8.3: Shunik FURPS/requirements rows NOT yet written (Lifio tables still in `Requirements/FURPS/` — nothing to re-check, not claimed); `docs/project-context.md` updated (§§5–7 actual state, deferred list corrected, stale "backend only"/"only auth routes" notes fixed); `README.md` updated (branch state + deferred list); `Design/*` untouched (Lifio system; Shunik screens land next per plan — not claimed as done); `openapi.yaml` unchanged since §5 (contract still green).

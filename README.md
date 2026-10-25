@@ -2,7 +2,7 @@
 
 A pet-care iOS app (SwiftUI, iOS 18+) with a Go backend acting as identity + sync relay. **Local-first:** sign in once (mandatory), then your device is the source of truth and the backend relays sync between your devices and household.
 
-Current state is the **auth scaffold** forked from Lifio: passwordless email-OTP + Sign in with Apple, account deletion, per-device sessions, and an auth-gated profile shell. The pet domain (household sharing, pets, vaccinations, medications, weight, grooming, documents, reminders) is defined in the active OpenSpec change `shunik-v1-foundation` and lands next.
+Shunik is a pet-care app forked from Lifio: passwordless email-OTP + Sign in with Apple, account deletion, per-device sessions, and a household-scoped local-first core. The v1 pet domain (household sharing, pets, vaccinations, medications, weight, grooming, documents, reminders) is implemented on the `opsx/shunik-v1-foundation` branch under the active OpenSpec change `shunik-v1-foundation`.
 
 | Doc | What it's for |
 |---|---|
@@ -96,7 +96,7 @@ Backend deploys to a **GCP Compute Engine VM** (`shunik-backend`, us-east1-b) vi
 
 ## Deferred / out of scope
 
-- **Pet domain v1** (`shunik-v1-foundation` change): household sharing, pets + event base/details, medications, weight history, document library + CDN, reminder engine, canonical units.
+- **Pet domain v1** is implemented on `opsx/shunik-v1-foundation` (OpenSpec change `shunik-v1-foundation`): household sharing, pets + event base/details, medications, weight history, document library + CDN, reminder engine, canonical units.
 - **Explicitly parked**: calendar integration (whole), owner analytics, vet reports, weight norm/BCS (v2), litter multi-create (v2), curated drug data, doc↔event links, per-pet roles, multi-household per user.
 - **Sign in with Apple follow-ups** — nonce replay defense, identity merging between email-OTP and Apple accounts (kept separate by design), localized copy for Apple-path server error codes (generic banner for now).
 - **Kafka** — deferred. **Rate-limit store** — in-memory; Redis before multi-instance.
