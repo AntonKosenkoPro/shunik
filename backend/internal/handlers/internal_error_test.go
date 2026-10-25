@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/antonkosenko/time-of-life/backend/internal/observe"
@@ -11,8 +12,8 @@ import (
 // route still returns the generic 500 envelope — with Sentry disabled (the
 // empty-DSN contract) and with Sentry enabled (reporting must never alter
 // the client response). The closed SQLite store stands in for any production
-// store outage (e.g. the LIFIO-BACKEND-2/3 dependency failure); AuthMiddleware
-// is JWT-only, so auth passes and ListCategories is what fails.
+// store outage (e.g. the LIFIO-BACKEND-2/3 dependency failure); the outage
+// surfaces at the AuthMiddleware account lookup, before Me runs.
 func TestInternalErrorEnvelopePreserved(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		name := "disabled"
@@ -37,7 +38,10 @@ func TestInternalErrorEnvelopePreserved(t *testing.T) {
 				t.Fatalf("close store: %v", err)
 			}
 
-			w := serve(h, jsonReq(t, http.MethodGet, "/api/v1/categories", tok, nil))
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+			req.Header.Set("Authorization", "Bearer "+tok)
+			w := httptest.NewRecorder()
+			h.AuthMiddleware(http.HandlerFunc(h.Me)).ServeHTTP(w, req)
 			if w.Code != http.StatusInternalServerError {
 				t.Fatalf("expected 500, got %d (body=%s)", w.Code, w.Body.String())
 			}

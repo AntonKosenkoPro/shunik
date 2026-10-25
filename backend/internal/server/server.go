@@ -263,24 +263,6 @@ func New(deps Dependencies) *Server {
 			r.Post("/account/status", h.AccountStatus)
 			r.With(h.AuthMiddleware).Post("/apple/deletion-credential", h.AppleDeletionCredential)
 		})
-
-		// Categories, entries, and deletion tombstones. All protected.
-		r.Group(func(r chi.Router) {
-			r.Use(h.AuthMiddleware)
-			r.Get("/categories", h.ListCategories)
-			r.Post("/categories", h.CreateCategory)
-			r.Get("/categories/{id}", h.GetCategory)
-			r.Patch("/categories/{id}", h.UpdateCategory)
-			r.Delete("/categories/{id}", h.DeleteCategory)
-			r.Get("/entries", h.ListEntries)
-			r.Post("/entries", h.CreateEntry)
-			r.Get("/entries/recents", h.ListRecents)
-			r.Get("/entries/{id}", h.GetEntry)
-			r.Patch("/entries/{id}", h.UpdateEntry)
-			r.Delete("/entries/{id}", h.DeleteEntry)
-			// Deletion tombstones (cross-device delete propagation).
-			r.Get("/deletions", h.ListDeletions)
-		})
 	})
 
 	s.router = r

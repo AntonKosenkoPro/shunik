@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // purgeJobGracePeriod is the initial next_attempt_at for a revocation job
@@ -265,6 +266,73 @@ func (s *PostgresStore) ApplyAppleConsentCutoff(ctx context.Context, appleSubjec
 	return userID, true, nil
 }
 
+// pgxScanner abstracts *pgxpool.Pool and pgx.Row for single-row scans.
+type pgxScanner interface {
+	Scan(dest ...any) error
+}
+
+// pgUpsertTombstone records (or refreshes) a deletion tombstone for one hard
+// delete, inside the caller's transaction. Tombstones are generic
+// cross-device delete propagation — future resources reuse them.
+//
+//nolint:unused // kept for future resources; no callers until the next resource lands.
+func pgUpsertTombstone(ctx context.Context, tx pgx.Tx, userID, resource, recordID string) error {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO tombstones (user_id, resource, record_id, deleted_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (user_id, resource, record_id)
+		DO UPDATE SET deleted_at = excluded.deleted_at
+	`, userID, resource, recordID, time.Now().UTC())
+	if err != nil {
+		return fmt.Errorf("upsert tombstone: %w", err)
+	}
+	return nil
+}
+
+// pgClearTombstone removes a record's tombstone so a recreation never meets
+// its own stale tombstone. Harmless when no tombstone exists.
+//
+//nolint:unused // kept for future resources; no callers until the next resource lands.
+func pgClearTombstone(ctx context.Context, pool *pgxpool.Pool, userID, resource, recordID string) error {
+	if _, err := pool.Exec(ctx, `
+		DELETE FROM tombstones WHERE user_id = $1 AND resource = $2 AND record_id = $3
+	`, userID, resource, recordID); err != nil {
+		return fmt.Errorf("clear tombstone: %w", err)
+	}
+	return nil
+}
+
+// ListDeletions returns the user's tombstones with deleted_at > since
+// (nil/zero = all), ordered by deleted_at ASC. Kept without a Store
+// interface slot (no deletion-list route): future resources reuse it.
+func (s *PostgresStore) ListDeletions(ctx context.Context, userID string, since *time.Time) ([]Tombstone, error) {
+	if since != nil && since.IsZero() {
+		since = nil
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT resource, record_id, deleted_at
+		FROM tombstones
+		WHERE user_id = $1 AND ($2::timestamptz IS NULL OR deleted_at > $2)
+		ORDER BY deleted_at ASC
+	`, userID, since)
+	if err != nil {
+		return nil, fmt.Errorf("list deletions: %w", err)
+	}
+	defer rows.Close()
+	var out []Tombstone
+	for rows.Next() {
+		var t Tombstone
+		if err := rows.Scan(&t.Resource, &t.ID, &t.DeletedAt); err != nil {
+			return nil, fmt.Errorf("list deletions scan: %w", err)
+		}
+		out = append(out, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list deletions rows: %w", err)
+	}
+	return out, nil
+}
+
 // scanRevocationJob scans a revocation job row in jobColumns order.
 const pgJobColumns = `id, subject_digest, sealed_refresh, client_id,
 	auth_lineage, auth_time, attempts, next_attempt_at, last_attempt_at, last_error, created_at`
@@ -276,11 +344,10 @@ func pgScanJob(sc pgxScanner, j *RevocationJob) error {
 
 // PurgeUser atomically deletes the account and every associated operational
 // row. The account row is locked first (consistent lock order with the
-// rotation and catalog paths); a stored Apple credential is moved into a
+// rotation path); a stored Apple credential is moved into a
 // durable revocation job before operational rows disappear; then receipts,
-// refresh tokens, OTPs, join rows, entries, categories, tombstones, the
-// vault row, and finally the user are deleted explicitly in dependency
-// order. Commit-all or commit-nothing: any failure rolls the purge back.
+// refresh tokens, OTPs, tombstones, the vault row, and finally the user are
+// deleted explicitly in dependency order. Commit-all or commit-nothing: any failure rolls the purge back.
 // Serialization/deadlock races against concurrent writes retry boundedly.
 func (s *PostgresStore) PurgeUser(ctx context.Context, userID, clientID string, digestFn func(string) string) (PurgeResult, error) {
 	var lastErr error
@@ -395,9 +462,6 @@ func (s *PostgresStore) purgeUserOnce(ctx context.Context, userID, clientID stri
 		{"recovery receipts", `DELETE FROM refresh_recovery_receipts WHERE user_id = $1`},
 		{"refresh tokens", `DELETE FROM refresh_tokens WHERE user_id = $1`},
 		{"otp codes", `DELETE FROM otp_codes WHERE user_id = $1`},
-		{"entry-category joins", `DELETE FROM entry_categories WHERE entry_id IN (SELECT id FROM entries WHERE user_id = $1)`},
-		{"entries", `DELETE FROM entries WHERE user_id = $1`},
-		{"categories", `DELETE FROM categories WHERE user_id = $1`},
 		{"tombstones", `DELETE FROM tombstones WHERE user_id = $1`},
 	} {
 		if _, err := tx.Exec(ctx, stmt.sql, userID); err != nil {

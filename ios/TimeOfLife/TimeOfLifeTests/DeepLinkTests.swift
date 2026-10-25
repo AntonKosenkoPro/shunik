@@ -1,7 +1,6 @@
 import Testing
 import Foundation
 @testable import TimeOfLife
-import LifioLiveActivityCore
 
 @Suite("DeepLink")
 struct DeepLinkTests {
@@ -20,7 +19,7 @@ struct DeepLinkTests {
 
     @Test("the shared stop URL parses to stopTimer")
     func stopURLParses() {
-        #expect(DeepLink.parse(LiveActivityDeepLink.stopURL!) == .stopTimer)
+        #expect(DeepLink.parse(URL(string: "lifio://track?stop=1")!) == .stopTimer)
     }
 
     @Test("track with other query items stays track")

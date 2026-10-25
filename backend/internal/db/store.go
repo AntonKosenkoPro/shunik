@@ -95,47 +95,6 @@ type RotateResult struct {
 	SuccessorCreatedAt time.Time
 }
 
-// CategoryTag is a denormalized category (id + name + icon) attached to an
-// entry in API responses. It is never written on its own.
-type CategoryTag struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Icon string `json:"icon"`
-}
-
-// Category is a many-to-many tag an entry may carry.
-type Category struct {
-	ID        string    `json:"id"`
-	UserID    string    `json:"-"`
-	Name      string    `json:"name"`
-	Icon      string    `json:"icon"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
-// Entry is one timed interval. Entries are self-contained: ActivityText is
-// the entry's own display text (trimmed, case-sensitive identity — `Gym` ≠
-// `GYM`), Categories are the entry's own ordered tags (stored via
-// entry_categories), and Notes belong to the entry. Nothing is resolved from
-// another record at read time, so history never mutates retroactively.
-// Source/SourceRef record entry provenance (where the entry came from:
-// manual, widget, siri, control, screentime, garmin, ...); Source defaults
-// to "manual" and SourceRef is null for entries created without them.
-type Entry struct {
-	ID              string        `json:"id"`
-	UserID          string        `json:"-"`
-	ActivityText    string        `json:"activity_text"`
-	Notes           string        `json:"notes"`
-	StartedAt       time.Time     `json:"started_at"`
-	EndedAt         *time.Time    `json:"ended_at"`
-	DurationSeconds *int          `json:"duration_seconds"`
-	Source          string        `json:"source"`
-	SourceRef       *string       `json:"source_ref"`
-	Categories      []CategoryTag `json:"categories"`
-	CreatedAt       time.Time     `json:"created_at"`
-	UpdatedAt       time.Time     `json:"updated_at"`
-}
-
 // AppleCredential is the encrypted Apple revocable credential retained for
 // one Apple user (automatic unlinking on explicit deletion). Only the sealed
 // blob plus routing metadata persist — never a plaintext token.
@@ -194,47 +153,6 @@ type Tombstone struct {
 	Resource  string    `json:"resource"`
 	ID        string    `json:"id"`
 	DeletedAt time.Time `json:"deleted_at"`
-}
-
-// EntryFilter carries the optional GET /entries query parameters.
-type EntryFilter struct {
-	From          *time.Time // include entries with started_at >= From
-	To            *time.Time // include entries with started_at <= To (inclusive upper bound)
-	CategoryID    string     // restrict to entries carrying this category tag
-	Limit         int        // page size; 0 → default
-	Cursor        string     // opaque pagination cursor from a previous response
-	ModifiedSince *time.Time // include entries with updated_at > ModifiedSince (delta pull-sync; nil = full)
-}
-
-// NullableTime represents an optional timestamp on a partial update: Set=false
-// leaves the column unchanged; Set=true with Valid=false sets it to NULL;
-// Set=true with Valid=true sets it to Value.
-type NullableTime struct {
-	Set   bool
-	Valid bool
-	Value time.Time
-}
-
-// EntryPatch is a partial update for an entry (PATCH /entries/{id}). Nil/zero
-// fields are left unchanged. CategoryIDs nil leaves the entry's tags; a
-// non-nil slice replaces them in order (unknown or non-owned ids are pruned,
-// the remainder kept — a merge never fails the sync cycle). UpdatedAt is the
-// LWW version (required).
-type EntryPatch struct {
-	ActivityText *string
-	Notes        *string
-	CategoryIDs  *[]CategoryTag
-	StartedAt    *time.Time
-	EndedAt      NullableTime // Set=false leaves ended_at unchanged
-	UpdatedAt    time.Time
-}
-
-// CategoryPatch is a partial update for a category (PATCH /categories/{id}).
-// Nil pointer fields are left unchanged. UpdatedAt is the LWW version (required).
-type CategoryPatch struct {
-	Name      *string
-	Icon      *string
-	UpdatedAt time.Time
 }
 
 // Store defines the interface for all database operations.
@@ -319,63 +237,6 @@ type Store interface {
 	// follow-up).
 	UpsertUserByAppleSubject(ctx context.Context, appleSubject, email string) (User, error)
 
-	// ListCategories returns the user's categories ordered by name.
-	ListCategories(ctx context.Context, userID string) ([]Category, error)
-
-	// GetCategory returns one category by id, scoped to the user. Returns
-	// ErrNotFound if missing or owned by another user.
-	GetCategory(ctx context.Context, userID, id string) (Category, error)
-
-	// CreateCategory inserts a new category using its client-generated id,
-	// idempotent on id (replay → created=false). A case-insensitive name
-	// collision returns ErrCategoryExists.
-	CreateCategory(ctx context.Context, c Category) (Category, bool, error)
-
-	// UpdateCategory applies a partial LWW update on name/icon. Returns
-	// ErrNotFound, ErrConflict, or ErrCategoryExists.
-	UpdateCategory(ctx context.Context, userID, id string, p CategoryPatch) (Category, error)
-
-	// DeleteCategory hard-deletes a category and its join rows (entries are
-	// unaffected). Returns ErrNotFound if missing.
-	DeleteCategory(ctx context.Context, userID, id string) error
-
-	// ListEntries returns one page of the user's entries ordered by started_at
-	// DESC, filtered by EntryFilter, each with its own ordered category tags.
-	// nextCursor is the opaque cursor for the next page, or empty when the
-	// page is the last.
-	ListEntries(ctx context.Context, userID string, f EntryFilter) (items []Entry, nextCursor string, err error)
-
-	// GetEntry returns one entry by id with its own ordered categories.
-	// Returns ErrNotFound if missing/foreign.
-	GetEntry(ctx context.Context, userID, id string) (Entry, error)
-
-	// CreateEntry inserts a new entry using its client-generated id, idempotent
-	// on id (replay → created=false). ActivityText is the entry's own trimmed
-	// display text; CategoryIDs (nil/empty = untagged) are stored via the
-	// entry_categories join with order preserved — unknown or non-owned ids
-	// are strictly rejected (ErrInvalidCategoryID → 422 validation_error with
-	// details.category_ids; atomic, nothing persisted). duration_seconds is
-	// computed from ended_at - started_at when ended_at is present.
-	CreateEntry(ctx context.Context, e Entry) (Entry, bool, error)
-
-	// UpdateEntry applies a partial LWW update on activity_text/notes/
-	// category_ids/started_at/ended_at and recomputes duration_seconds.
-	// Returns ErrNotFound or ErrConflict.
-	UpdateEntry(ctx context.Context, userID, id string, p EntryPatch) (Entry, error)
-
-	// ListRecents returns up to limit representative entries for the
-	// recents experience (design D5): entries grouped by exact activity_text,
-	// where per group the newest started_at wins (id DESC tiebreak), ordered
-	// by that newest started_at DESC, each with its own ordered categories.
-	ListRecents(ctx context.Context, userID string, limit int) ([]Entry, error)
-
-	// DeleteEntry hard-deletes an entry. Returns ErrNotFound if missing.
-	DeleteEntry(ctx context.Context, userID, id string) error
-
-	// ListDeletions returns the user's tombstones with deleted_at > since
-	// (nil/zero = all), ordered by deleted_at ASC.
-	ListDeletions(ctx context.Context, userID string, since *time.Time) ([]Tombstone, error)
-
 	// SaveAppleCredential upserts the encrypted Apple revocable credential
 	// for an Apple user (same-subject deletion authorization). Never
 	// persists a plaintext token.
@@ -416,8 +277,7 @@ type Store interface {
 	// operational row: it locks the account row first, moves a stored Apple
 	// credential into a durable revocation job (referencing the passed
 	// clientID) where one exists, deletes refresh-recovery receipts, refresh
-	// tokens, OTPs, entry-category joins, entries, categories, tombstones,
-	// the Apple vault row, and finally the user. Commit-all or commit-nothing:
+	// tokens, OTPs, tombstones, the Apple vault row, and finally the user. Commit-all or commit-nothing:
 	// any failure rolls the whole purge back. A missing account returns
 	// ErrNotFound. digestFn maps the Apple subject to the job's HMAC subject
 	// digest (purpose-separated, rotation-stable).

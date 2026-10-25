@@ -1,36 +1,11 @@
 import Testing
 import Foundation
 @testable import TimeOfLife
-import LifioLiveActivityCore
 
 /// Shared harness for the account-deletion coordinator suites: fake network,
-/// in-memory Keychain, isolated session cache with a throwaway sidecar, a
-/// recording Live Activity controller, and a throwaway file base so scoped
-/// erasure is asserted against real files without touching other tests.
-@MainActor
-final class RecordingLiveActivity: LiveActivityControlling, @unchecked Sendable {
-    private let lock = NSLock()
-    private(set) var endedOrphanedCalls = 0
-    private(set) var endedRuns = 0
-    func runStarted(text: String, iconSymbol: String, startedAt: Date, categoryChips: [LiveCategoryChip]) async {}
-    func runEnded(startedAt: Date, durationSeconds: Int) async {
-        incrementRuns()
-    }
-    func endOrphanedActivities(knownDurationSeconds: Int?) async {
-        incrementOrphaned()
-    }
-
-    /// Synchronous lock dance (Swift 6 mode forbids direct `NSLock` use
-    /// from async contexts).
-    private func incrementRuns() {
-        lock.lock(); endedRuns += 1; lock.unlock()
-    }
-
-    private func incrementOrphaned() {
-        lock.lock(); endedOrphanedCalls += 1; lock.unlock()
-    }
-}
-
+/// in-memory Keychain, isolated session cache with a throwaway sidecar,
+/// and a throwaway file base so scoped erasure is asserted against real
+/// files without touching other tests.
 @MainActor
 struct AccountDeletionHarness {
     let repo: FakeAuthRepository
@@ -39,11 +14,9 @@ struct AccountDeletionHarness {
     let sessionStore: SessionStore
     let syncController: SyncController
     let store: LocalStore
-    let timerService: TimerService
     let navigation: AppNavigationStack
     let connectivity: MockConnectivity
     let coordinator: AccountDeletionCoordinator
-    let live: RecordingLiveActivity
     let base: URL
     let defaults: UserDefaults
 }
@@ -55,14 +28,11 @@ func makeAccountDeletionHarness(connected: Bool = true) -> AccountDeletionHarnes
     let connectivity = MockConnectivity(connected: connected)
     let syncController = SyncController(
         store: store,
-        remote: MockCatalogRepository(),
         connectivity: connectivity
     ) { [weak sessionStore = pieces.sessionStore] in
         guard case let .signedIn(session) = sessionStore?.state else { return nil }
         return session.id
     }
-    let live = RecordingLiveActivity()
-    let timerService = TimerService(store: store, liveActivities: live)
     let navigation = AppNavigationStack()
     let authService = AuthService(
         repository: pieces.repo, keychain: pieces.keychain,
@@ -76,7 +46,6 @@ func makeAccountDeletionHarness(connected: Bool = true) -> AccountDeletionHarnes
         cache: pieces.cache,
         syncController: syncController,
         localStore: store,
-        timerService: timerService,
         navigation: navigation,
         connectivity: connectivity,
         appleService: AppleSignInService(),
@@ -88,9 +57,9 @@ func makeAccountDeletionHarness(connected: Bool = true) -> AccountDeletionHarnes
     return AccountDeletionHarness(
         repo: pieces.repo, keychain: pieces.keychain, cache: pieces.cache,
         sessionStore: pieces.sessionStore, syncController: syncController,
-        store: store, timerService: timerService, navigation: navigation,
+        store: store, navigation: navigation,
         connectivity: connectivity, coordinator: coordinator,
-        live: live, base: pieces.base, defaults: pieces.defaults
+        base: pieces.base, defaults: pieces.defaults
     )
 }
 

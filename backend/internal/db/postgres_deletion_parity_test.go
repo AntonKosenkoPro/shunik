@@ -33,20 +33,6 @@ func TestPostgres_PurgeFenceCutoffParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	cat, _, err := store.CreateCategory(ctx, Category{ID: uuidV7(), UserID: user.ID, Name: "W", Icon: "tag"})
-	if err != nil {
-		t.Fatalf("CreateCategory: %v", err)
-	}
-	entry, _, err := store.CreateEntry(ctx, Entry{
-		ID: uuidV7(), UserID: user.ID, ActivityText: "F",
-		Categories: []CategoryTag{{ID: cat.ID}}, StartedAt: time.Now(),
-	})
-	if err != nil {
-		t.Fatalf("CreateEntry: %v", err)
-	}
-	if err := store.DeleteEntry(ctx, user.ID, entry.ID); err != nil {
-		t.Fatalf("DeleteEntry: %v", err)
-	}
 
 	// Apple identity + vault + lineage.
 	if _, err := store.UpsertAppleUser(ctx, "pg-sub", "pg-purge@example.com", "digest-pg", now); err != nil {
@@ -108,8 +94,6 @@ func TestPostgres_PurgeFenceCutoffParity(t *testing.T) {
 		`SELECT COUNT(*) FROM otp_codes WHERE user_id = $1`,
 		`SELECT COUNT(*) FROM refresh_tokens WHERE user_id = $1`,
 		`SELECT COUNT(*) FROM refresh_recovery_receipts WHERE user_id = $1`,
-		`SELECT COUNT(*) FROM entries WHERE user_id = $1`,
-		`SELECT COUNT(*) FROM categories WHERE user_id = $1`,
 		`SELECT COUNT(*) FROM tombstones WHERE user_id = $1`,
 		`SELECT COUNT(*) FROM apple_vault WHERE user_id = $1`,
 	} {

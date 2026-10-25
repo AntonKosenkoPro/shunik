@@ -12,8 +12,11 @@ import (
 )
 
 // TestMigrations_FilesOrderedSequential pins the migration file contract:
-// zero-padded sequence numbers, no duplicates (the old duplicate 004), no
-// gaps, and lexical order == apply order.
+// zero-padded sequence numbers, no duplicates, strictly increasing numbers,
+// and lexical order == apply order. Gaps are allowed: the time-tracking
+// domain (003_catalog, 004_provenance, 007_upgrade_legacy) was stripped for
+// the auth-only relay, leaving its numbers unreused so deployed databases
+// keep a consistent history.
 func TestMigrations_FilesOrderedSequential(t *testing.T) {
 	files, err := listMigrationFiles()
 	if err != nil {
@@ -36,16 +39,13 @@ func TestMigrations_FilesOrderedSequential(t *testing.T) {
 		if i > 0 && files[i-1] >= f {
 			t.Errorf("files not in lexical order: %q before %q", files[i-1], f)
 		}
+		if i > 0 && files[i-1][:3] >= num {
+			t.Errorf("migration numbers not strictly increasing: %q before %q", files[i-1], f)
+		}
 	}
 	// Sequential from 001 with no gaps.
 	if len(files) >= 10 {
 		t.Fatalf("test only supports <10 migrations, got %d", len(files))
-	}
-	for i := range files {
-		wantNum := [3]byte{'0', '0', byte('0' + i + 1)}
-		if got := files[i][:3]; got != string(wantNum[:]) {
-			t.Errorf("gap in sequence: position %d holds %q, want %q", i, files[i], string(wantNum[:]))
-		}
 	}
 }
 
@@ -163,14 +163,16 @@ func TestMigrations_RunSQLite_Idempotent(t *testing.T) {
 	}
 
 	// The squashed schema carries the final shape directly: no activities
-	// layer, entries own their text/notes, categories carry icon.
-	for _, table := range []string{"users", "otp_codes", "refresh_tokens", "categories", "entries", "entry_categories", "tombstones", "schema_migrations"} {
+	// layer, no time-tracking domain (categories/entries/joins were stripped
+	// for the auth-only relay); the generic tombstones table stays for future
+	// resources.
+	for _, table := range []string{"users", "otp_codes", "refresh_tokens", "tombstones", "schema_migrations"} {
 		var name string
 		if err := db.QueryRowContext(ctx, `SELECT name FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&name); err != nil {
 			t.Errorf("expected table %s: %v", table, err)
 		}
 	}
-	for _, dropped := range []string{"activities", "activity_categories"} {
+	for _, dropped := range []string{"activities", "activity_categories", "categories", "entries", "entry_categories"} {
 		var name string
 		if err := db.QueryRowContext(ctx, `SELECT name FROM sqlite_master WHERE type='table' AND name=?`, dropped).Scan(&name); err == nil {
 			t.Errorf("legacy table %s must not exist, found %q", dropped, name)

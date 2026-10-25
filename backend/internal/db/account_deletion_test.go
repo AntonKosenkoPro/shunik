@@ -20,8 +20,7 @@ func attachAppleSubject(t *testing.T, store *SQLiteStore, userID, subject string
 }
 
 // seedAccount builds a user with one of every associated operational row:
-// OTP, refresh token + recovery receipt, category + entry + join, tombstone,
-// and an Apple vault credential.
+// OTP, refresh token + recovery receipt, and an Apple vault credential.
 func seedAccount(t *testing.T, store *SQLiteStore, email, subject string) (userID string) {
 	t.Helper()
 	ctx := context.Background()
@@ -42,21 +41,6 @@ func seedAccount(t *testing.T, store *SQLiteStore, email, subject string) (userI
 		AttemptHash: "attempt-" + email, SealedSuccessor: []byte("sealed"), ExpiresAt: time.Now().Add(time.Hour),
 	}); err != nil {
 		t.Fatalf("RotateRefreshToken: %v", err)
-	}
-
-	cat, _, err := store.CreateCategory(ctx, Category{ID: uuidV7(), UserID: user.ID, Name: "Work-" + email, Icon: "tag"})
-	if err != nil {
-		t.Fatalf("CreateCategory: %v", err)
-	}
-	entry, _, err := store.CreateEntry(ctx, Entry{
-		ID: uuidV7(), UserID: user.ID, ActivityText: "Focus",
-		Categories: []CategoryTag{{ID: cat.ID}}, StartedAt: time.Now(),
-	})
-	if err != nil {
-		t.Fatalf("CreateEntry: %v", err)
-	}
-	if err := store.DeleteEntry(ctx, user.ID, entry.ID); err != nil {
-		t.Fatalf("DeleteEntry: %v", err)
 	}
 
 	var sealed [32]byte
@@ -106,33 +90,6 @@ func TestPurge_RemovesEveryOperationalRow(t *testing.T) {
 	keep := seedAccount(t, store, "keep@example.com", "")
 	gone := seedAccount(t, store, "gone@example.com", "apple-sub-gone")
 
-	// One surviving entry for the kept account (seed deletes its own entry
-	// to leave a tombstone behind).
-	if _, _, err := store.CreateEntry(ctx, Entry{
-		ID: uuidV7(), UserID: keep, ActivityText: "Kept",
-		StartedAt: time.Now(),
-	}); err != nil {
-		t.Fatalf("CreateEntry: %v", err)
-	}
-
-	// A live entry + join on the purged account proves join cleanup. The
-	// seed's own entry was deleted before purge (leaving only its
-	// tombstone), and an entry-side subquery cannot observe an orphaned
-	// join (it only counts joins whose entry still exists) — so the join
-	// count below runs from the category side, where a leaked join stays
-	// visible. Categories stay FK-bound on both engines, which is the
-	// schema-enforced backstop this count double-checks.
-	liveCat, _, err := store.CreateCategory(ctx, Category{ID: uuidV7(), UserID: gone, Name: "Live", Icon: "tag"})
-	if err != nil {
-		t.Fatalf("CreateCategory: %v", err)
-	}
-	if _, _, err := store.CreateEntry(ctx, Entry{
-		ID: uuidV7(), UserID: gone, ActivityText: "Live",
-		Categories: []CategoryTag{{ID: liveCat.ID}}, StartedAt: time.Now(),
-	}); err != nil {
-		t.Fatalf("CreateEntry: %v", err)
-	}
-
 	res, err := store.PurgeUser(ctx, gone, "com.test.app", func(_ string) string { return "digest-apple-sub-gone" })
 	if err != nil {
 		t.Fatalf("PurgeUser: %v", err)
@@ -147,17 +104,10 @@ func TestPurge_RemovesEveryOperationalRow(t *testing.T) {
 		t.Fatalf("expected job to carry the vault lineage, got %+v", res)
 	}
 
-	for _, table := range []string{"otp_codes", "refresh_tokens", "refresh_recovery_receipts", "entries", "categories", "tombstones"} {
+	for _, table := range []string{"otp_codes", "refresh_tokens", "refresh_recovery_receipts", "tombstones"} {
 		if n := countRows(t, store, table, gone); n != 0 {
 			t.Errorf("expected zero %s rows for purged account, got %d", table, n)
 		}
-	}
-	var joins int
-	if err := store.DB().QueryRow(`SELECT COUNT(*) FROM entry_categories WHERE category_id IN (SELECT id FROM categories WHERE user_id = ?)`, gone).Scan(&joins); err != nil {
-		t.Fatalf("count joins: %v", err)
-	}
-	if joins != 0 {
-		t.Errorf("expected zero join rows, got %d", joins)
 	}
 	if _, err := store.GetUserByID(ctx, gone); !errors.Is(err, ErrNotFound) {
 		t.Errorf("expected user gone, got %v", err)
@@ -169,7 +119,7 @@ func TestPurge_RemovesEveryOperationalRow(t *testing.T) {
 	if _, err := store.GetUserByID(ctx, keep); err != nil {
 		t.Errorf("second account must survive: %v", err)
 	}
-	for _, table := range []string{"otp_codes", "refresh_tokens", "entries", "categories", "tombstones"} {
+	for _, table := range []string{"otp_codes", "refresh_tokens"} {
 		if n := countRows(t, store, table, keep); n == 0 {
 			t.Errorf("expected %s rows preserved for the surviving account", table)
 		}
@@ -198,10 +148,10 @@ func TestPurge_EmailAccountSkipsAppleWork(t *testing.T) {
 }
 
 // TestPurge_RaceWithWriteLeavesNoOrphans runs purge against concurrent
-// catalog writes: the single-writer store serializes them, and the final
-// state holds rows for exactly one outcome (written-then-purged, or
+// OTP writes: the single-writer store serializes them, and the final state
+// holds rows for exactly one outcome (written-then-purged, or
 // rejected/never-written). Committed orphans are impossible here by schema:
-// categories.user_id REFERENCES users(id) is FK-enforced (PRAGMA
+// otp_codes.user_id REFERENCES users(id) is FK-enforced (PRAGMA
 // foreign_keys = ON in SQLite, native enforcement in Postgres), so this
 // count is a documented schema-enforced tripwire, not a purge-correctness
 // proof — it stays green regardless. The test's real value is the race
@@ -220,7 +170,7 @@ func TestPurge_RaceWithWriteLeavesNoOrphans(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, _, _ = store.CreateCategory(ctx, Category{ID: uuidV7(), UserID: user.ID, Name: "R" + uuidV7(), Icon: "tag"})
+			_ = store.SaveOTP(ctx, user.ID, "hash-"+uuidV7(), time.Now().Add(time.Hour), 5)
 		}()
 	}
 	wg.Add(1)
@@ -231,11 +181,11 @@ func TestPurge_RaceWithWriteLeavesNoOrphans(t *testing.T) {
 	wg.Wait()
 
 	var orphans int
-	if err := store.DB().QueryRow(`SELECT COUNT(*) FROM categories WHERE user_id NOT IN (SELECT id FROM users)`).Scan(&orphans); err != nil {
+	if err := store.DB().QueryRow(`SELECT COUNT(*) FROM otp_codes WHERE user_id NOT IN (SELECT id FROM users)`).Scan(&orphans); err != nil {
 		t.Fatalf("orphan check: %v", err)
 	}
 	if orphans != 0 {
-		t.Errorf("expected no orphan categories, got %d", orphans)
+		t.Errorf("expected no orphan OTP rows, got %d", orphans)
 	}
 }
 

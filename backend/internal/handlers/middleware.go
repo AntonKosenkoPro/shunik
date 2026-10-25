@@ -105,3 +105,12 @@ func UserIDFromContext(ctx context.Context) (string, bool) {
 	id, ok := ctx.Value(ContextKeyUserID).(string)
 	return id, ok
 }
+
+// requireUserID writes a 401 and returns false when the request is not authed.
+func (h *Handler) requireUserID(w http.ResponseWriter, r *http.Request) (string, bool) {
+	userID, ok := UserIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "Not authenticated", nil)
+	}
+	return userID, ok
+}

@@ -87,29 +87,10 @@
 "appleSignIn.error" = "Sign in with Apple failed. Please try again.";
 
 // Timer
-"timer.start" = "Start";
-"timer.stop" = "Stop";
-"timer.stopHint" = "Stops the timer and saves the entry";
-"timer.idlePrompt" = "Enter an activity name to start";
-"timer.namePlaceholder" = "What did you work on?";
-"timer.saved" = "Saved";
-"timer.saving" = "Saving…";
-"timer.running" = "Running";
-"timer.ready" = "Ready";
-"timer.chooserRecent" = "Recent";
-"timer.recentsEmptyHint" = "Activities you track will appear here.";
-"timer.selectActivity" = "Select %@";
-"timer.compactStop" = "Stop and save timer";
-"timer.compactReturnHint" = "Returns to Track";
-"timer.compactRunning" = "%@, timer running";
 
 // Live Activity (renders in the widget extension from the shared strings)
-"activity.savedWithDuration" = "Saved %@";
 
 // App shell
-"tab.track" = "Track";
-"tab.history" = "History";
-"tab.insights" = "Insights";
 "profile.title" = "Profile";
 "profile.account" = "Account";
 "profile.signOut" = "Sign Out";
@@ -119,213 +100,16 @@
 "profile.lastSynced.ago" = "%@ ago";
 "profile.lastSynced.justNow" = "Less than a minute ago";
 "profile.syncError" = "Sync failed. Try again.";
-"profile.categories" = "Categories";
-"profile.onDevice" = "On This Device";
-"profile.onDeviceFooter" = "Categories and time entries are stored on this device. Sync is optional.";
-"profile.eraseLocalData" = "Erase local data";
-"profile.eraseLocalDataConfirmTitle" = "Erase local data?";
-"profile.eraseLocalDataConfirmMessage" = "This permanently deletes all categories, entries, and pending sync data on this device, and signs you out.";
+"profile.eraseLocalDataConfirmMessage" = "This permanently deletes all local data and pending sync data on this device, and signs you out.";
 "profile.eraseConfirm" = "Erase";
 "profile.eraseCancel" = "Cancel";
 // Build-configuration suffix for the Profile version row (universal
 // technical term — identical in ru).
 "profile.versionDebugSuffix" = "Debug";
 
-// Destination empty states
-"history.emptyTitle" = "Nothing here yet";
-"history.emptySubtitle" = "Your completed sessions will form a timeline here.";
-"insights.emptyTitle" = "Nothing here yet";
-"insights.emptySubtitle" = "Patterns emerge after you have tracked a little time.";
-
-// History day-group labels
-"history.day.today" = "Today";
-"history.day.yesterday" = "Yesterday";
-
-// In-progress indicator
-"history.inProgress" = "In progress";
-
-// Day total suffix
-"history.tracked" = "tracked";
-
-// Notes indicator (history-entry-list)
-"history.hasNotes" = "has notes";
-
-// History pull-to-refresh (history-pull-to-sync)
-"history.pull.offline" = "You're offline. Connect and try again.";
-"history.syncError.title" = "Sync failed";
 "common.ok" = "OK";
 
-// Insights breakdown (insights-breakdown)
-"insights.period.today" = "Today";
-"insights.period.week" = "This week";
-"insights.period.all" = "All time";
-"insights.lens.category" = "By category";
-"insights.lens.activity" = "By activity";
-"insights.noCategory" = "Without category";
-"insights.footnote" = "An entry with several categories counts fully toward each.";
-"insights.empty.today" = "Nothing tracked today yet.";
-"insights.empty.week" = "Nothing tracked this week yet.";
-
-// Entry provenance (entry-provenance spec, activity-detail-sheet)
-"provenance.via.widget" = "via Widget";
-"provenance.via.siri" = "via Siri";
-"provenance.via.control" = "via Control";
-"provenance.via.screentime" = "via Screen Time";
-"provenance.via.garmin" = "via Garmin";
-"provenance.via.calendar" = "via Calendar";
-"provenance.via.healthkit" = "via HealthKit";
-
-// Entry source names (activity-detail-sheet entry rows: sync icon + name)
-"provenance.name.widget" = "Widget";
-"provenance.name.siri" = "Siri";
-"provenance.name.control" = "Control";
-"provenance.name.screentime" = "Screen Time";
-"provenance.name.garmin" = "Garmin";
-"provenance.name.calendar" = "Calendar";
-"provenance.name.healthkit" = "HealthKit";
-
-// Log Time sheet (manual-entry spec)
-"logTime.title" = "Log Time";
-"logTime.cancel" = "Cancel";
-"logTime.starts" = "Starts";
-"logTime.ends" = "Ends";
-
-// Unified entry form (entry-editor spec: EDIT + LOCKED modes)
-"entry.editTitle" = "Edit entry";
-"entry.lockedTitle" = "Imported entry";
-"entry.dismissLabel" = "Close";
-"entry.confirmAddLabel" = "Add entry";
-"entry.confirmSaveLabel" = "Save entry";
-"entry.delete" = "Delete entry";
-"entry.deleteTitle" = "Delete this entry?";
-"entry.deleteMessage" = "This entry will be deleted. You can shake to undo.";
-"entry.deleteConfirm" = "Delete";
-"entry.staleError" = "This entry changed elsewhere. Dismiss and reopen it, then try again.";
-"entry.lockedNote" = "Imported via %@ — editing is disabled to avoid conflicts with the source.";
-"entry.nameLabel" = "Name";
-"entry.namePlaceholder" = "e.g. Gym";
-"entry.duration" = "Duration: %@";
-"entry.invalidInterval" = "End must be after Start";
-"entry.categoriesLabel" = "Categories";
-"entry.notesLabel" = "Notes";
-"entry.notesPlaceholder" = "Optional notes";
-
-// History manual entry (add-manual-entry)
-"history.logTime" = "Log time";
-
-// Name picker (dedicated-name-picker: shared push page)
 "name.clear" = "Clear name";
-"name.pickerTitle" = "Choose name";
-"name.pickerNoMatchHint" = "No matches — Done will use “%@” as a new name.";
-"notes.editorSubtitle" = "%@ • %d/2000";
-"notes.editorCounter" = "%d/2000";
-"notes.editorPlaceholder" = "Dear diary...";
 
-// Starter categories (category-management spec, seed requirement)
-"category.seed.work" = "Work";
-"category.seed.hobby" = "Hobby";
-"category.seed.sport" = "Sport";
-"category.seed.education" = "Education";
-"category.seed.relax" = "Relax";
-"category.seed.sleep" = "Sleep";
-"category.seed.entertainment" = "Entertainment";
-
-// Undo (chip selection accessibility)
-"undo.selected" = "Selected";
-"undo.notSelected" = "Not selected";
-"undo.selectedPosition" = "Selected, %d of %d";
-
-// Manage categories (category-management D4)
-"manage.categories.title" = "Categories";
-"manage.categories.add" = "Add category";
-"manage.categories.emptyTitle" = "No categories yet";
-"manage.categories.emptySubtitle" = "Add one to tag your entries.";
-"manage.categories.rowA11y" = "Category";
-"manage.categories.editHint" = "Double-tap to edit.";
-"manage.categories.loading" = "Loading categories…";
-"delete.category.title" = "Delete category?";
-"delete.category.message" = "%@ will be untagged from all entries. Your entries are kept. You can shake to undo.";
-"delete.category.confirm" = "Delete";
-"error.categoryExists" = "A category with this name already exists.";
-"error.conflict" = "Edited on another device. Showing the latest version.";
 "error.localPersistence" = "Could not save locally. Please try again.";
 
-// Category editor (category-management D4)
-"categoryEditor.createTitle" = "New category";
-"categoryEditor.editTitle" = "Edit category";
-"categoryEditor.nameLabel" = "Name";
-"categoryEditor.namePlaceholder" = "e.g. Sport";
-"categoryEditor.iconLabel" = "Icon";
-"categoryEditor.iconUnavailable" = "This icon is unavailable on this iOS version and is shown as a tag.";
-"categoryEditor.save" = "Save";
-"categoryEditor.cancel" = "Cancel";
-"categoryEditor.dismissLabel" = "Close";
-"categoryEditor.confirmSaveLabel" = "Save category";
-"categoryEditor.delete" = "Delete category";
-"category.nameRequired" = "Enter a category name.";
-"category.nameTooLong" = "Name must be at most 60 characters.";
-
-// Catalog icon accessibility names
-"catalogIcon.clock" = "Clock";
-"catalogIcon.laptopcomputer" = "Laptop";
-"catalogIcon.briefcase" = "Briefcase";
-"catalogIcon.book" = "Book";
-"catalogIcon.pencil.and.ruler" = "Pencil and ruler";
-"catalogIcon.brain.head.profile" = "Brain";
-"catalogIcon.figure.walk" = "Walking";
-"catalogIcon.figure.run" = "Running";
-"catalogIcon.figure.strengthtraining" = "Strength training";
-"catalogIcon.figure.yoga" = "Yoga";
-"catalogIcon.figure.cycling" = "Cycling";
-"catalogIcon.figure.swimming" = "Swimming";
-"catalogIcon.figure.soccer" = "Soccer";
-"catalogIcon.figure.basketball" = "Basketball";
-"catalogIcon.figure.tennis" = "Tennis";
-"catalogIcon.figure.gymnastics" = "Gymnastics";
-"catalogIcon.figure.mindandbody" = "Mind and body";
-"catalogIcon.figure.core.training" = "Core training";
-"catalogIcon.dumbbell" = "Dumbbell";
-"catalogIcon.bicycle" = "Bicycle";
-"catalogIcon.books" = "Books";
-"catalogIcon.graduationcap" = "Graduation cap";
-"catalogIcon.desktopcomputer" = "Desktop computer";
-"catalogIcon.keyboard" = "Keyboard";
-"catalogIcon.gamecontroller" = "Game controller";
-"catalogIcon.fork.knife" = "Fork and knife";
-"catalogIcon.cup.and.saucer" = "Cup and saucer";
-"catalogIcon.bed.double" = "Bed";
-"catalogIcon.moon.stars" = "Moon and stars";
-"catalogIcon.moon.zzz" = "Sleeping moon";
-"catalogIcon.film" = "Film";
-"catalogIcon.music.note" = "Music note";
-"catalogIcon.guitar" = "Guitar";
-"catalogIcon.camera" = "Camera";
-"catalogIcon.tv" = "Television";
-"catalogIcon.musicalnotes" = "Music notes";
-"catalogIcon.paintbrush" = "Paintbrush";
-"catalogIcon.house" = "House";
-"catalogIcon.car.fill" = "Car";
-"catalogIcon.airplane" = "Airplane";
-"catalogIcon.cart" = "Shopping cart";
-"catalogIcon.phone" = "Phone";
-"catalogIcon.hammer" = "Hammer";
-"catalogIcon.heart" = "Heart";
-"catalogIcon.leaf" = "Leaf";
-"catalogIcon.sparkles" = "Sparkles";
-"catalogIcon.pawprint" = "Paw print";
-"catalogIcon.dog" = "Dog";
-"catalogIcon.cat" = "Cat";
-"catalogIcon.fish" = "Fish";
-"catalogIcon.bird" = "Bird";
-"catalogIcon.washer" = "Washer";
-"catalogIcon.dryer" = "Dryer";
-"catalogIcon.dishwasher" = "Dishwasher";
-"catalogIcon.refrigerator" = "Refrigerator";
-"catalogIcon.sofa" = "Sofa";
-"catalogIcon.shower" = "Shower";
-"catalogIcon.lamp.table" = "Table lamp";
-"catalogIcon.person.2" = "People";
-"catalogIcon.figure.and.child.holdinghands" = "Family";
-"catalogIcon.stethoscope" = "Stethoscope";
-"catalogIcon.pill" = "Pill";
-"catalogIcon.tag" = "Tag";

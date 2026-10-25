@@ -71,7 +71,7 @@ struct ActiveAccountFileResolverTests {
             url: base.appendingPathComponent(LocalStore.databaseFileName(userID: "user-a")),
             userID: "user-a"
         )
-        try await dormantA.createCategory(Category(id: "a-cat", name: "A", icon: "briefcase"))
+        try await dormantA.setLastSyncedAt(resource: "scaffold", date: Date())
         await dormantA.closeAccount()
 
         let resolver = ActiveAccountFileResolver(

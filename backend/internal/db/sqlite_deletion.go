@@ -4,8 +4,126 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"time"
 )
+
+// SQLite timestamp shapes: writes use millisecond precision; reads accept
+// both the legacy second-precision and the new millisecond strings so
+// pre-existing rows still parse. Both are fixed-width UTC prefixes, so
+// lexicographic `updated_at < ?` ordering stays chronological.
+const (
+	sqliteTimeMillis = "2006-01-02 15:04:05.999"
+	sqliteTimeSecond = "2006-01-02 15:04:05"
+)
+
+func parseSQLiteTime(s string) (time.Time, error) {
+	if t, err := time.Parse(sqliteTimeMillis, s); err == nil {
+		return t, nil
+	}
+	return time.Parse(sqliteTimeSecond, s)
+}
+
+// parseTime parses a SQLite TEXT timestamp into time.Time. Unparseable
+// input yields the zero time (the previous behavior, preserved for
+// backward-compatible reads); the failure is logged so corrupt rows
+// surface instead of silently becoming year-0001.
+func parseTime(s string) time.Time {
+	t, err := parseSQLiteTime(s)
+	if err != nil {
+		slog.Warn("unparseable sqlite timestamp, using zero time", "value", s)
+		return time.Time{}
+	}
+	return t
+}
+
+// nullTimePtr converts a nullable SQLite TEXT timestamp into a *time.Time.
+// Unparseable input yields a pointer to the zero time (the previous
+// behavior, preserved for backward-compatible reads); the failure is
+// logged so corrupt rows surface instead of passing silently.
+func nullTimePtr(ns sql.NullString) *time.Time {
+	if !ns.Valid || ns.String == "" {
+		return nil
+	}
+	t, err := parseSQLiteTime(ns.String)
+	if err != nil {
+		slog.Warn("unparseable sqlite timestamp, using zero time", "value", ns.String)
+	}
+	return &t
+}
+
+// fmtTime formats a time.Time for SQLite storage.
+func fmtTime(t time.Time) string {
+	return t.UTC().Format(sqliteTimeMillis)
+}
+
+// upsertTombstone records (or refreshes) a deletion tombstone for one hard
+// delete, inside the caller's transaction. Tombstones are generic
+// cross-device delete propagation — future resources reuse them.
+//
+//nolint:unused // kept for future resources; no callers until the next resource lands.
+func upsertTombstone(ctx context.Context, tx *sql.Tx, userID, resource, recordID string) error {
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO tombstones (user_id, resource, record_id, deleted_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT (user_id, resource, record_id)
+		DO UPDATE SET deleted_at = excluded.deleted_at
+	`, userID, resource, recordID, fmtTime(time.Now().UTC()))
+	if err != nil {
+		return fmt.Errorf("upsert tombstone: %w", err)
+	}
+	return nil
+}
+
+// clearTombstone removes a record's tombstone so a recreation never meets its
+// own stale tombstone. Harmless when no tombstone exists.
+//
+//nolint:unused // kept for future resources; no callers until the next resource lands.
+func clearTombstone(ctx context.Context, db *sql.DB, userID, resource, recordID string) error {
+	if _, err := db.ExecContext(ctx, `
+		DELETE FROM tombstones WHERE user_id = ? AND resource = ? AND record_id = ?
+	`, userID, resource, recordID); err != nil {
+		return fmt.Errorf("clear tombstone: %w", err)
+	}
+	return nil
+}
+
+// ListDeletions returns the user's tombstones with deleted_at > since
+// (nil/zero = all), ordered by deleted_at ASC. Kept without a Store
+// interface slot (no deletion-list route): future resources reuse it.
+func (s *SQLiteStore) ListDeletions(ctx context.Context, userID string, since *time.Time) ([]Tombstone, error) {
+	if since != nil && since.IsZero() {
+		since = nil
+	}
+	var sinceArg any
+	if since != nil {
+		sinceArg = fmtTime(*since)
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT resource, record_id, deleted_at
+		FROM tombstones
+		WHERE user_id = ? AND (? IS NULL OR deleted_at > ?)
+		ORDER BY deleted_at ASC
+	`, userID, sinceArg, sinceArg)
+	if err != nil {
+		return nil, fmt.Errorf("list deletions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []Tombstone
+	for rows.Next() {
+		var t Tombstone
+		var deletedAt string
+		if err := rows.Scan(&t.Resource, &t.ID, &deletedAt); err != nil {
+			return nil, fmt.Errorf("list deletions scan: %w", err)
+		}
+		t.DeletedAt = parseTime(deletedAt)
+		out = append(out, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list deletions rows: %w", err)
+	}
+	return out, nil
+}
 
 // SaveAppleCredential upserts the encrypted Apple revocable credential for
 // an Apple user. Only the sealed blob plus routing metadata persist.
@@ -290,9 +408,6 @@ func (s *SQLiteStore) PurgeUser(ctx context.Context, userID, clientID string, di
 		{"recovery receipts", `DELETE FROM refresh_recovery_receipts WHERE user_id = ?`},
 		{"refresh tokens", `DELETE FROM refresh_tokens WHERE user_id = ?`},
 		{"otp codes", `DELETE FROM otp_codes WHERE user_id = ?`},
-		{"entry-category joins", `DELETE FROM entry_categories WHERE entry_id IN (SELECT id FROM entries WHERE user_id = ?)`},
-		{"entries", `DELETE FROM entries WHERE user_id = ?`},
-		{"categories", `DELETE FROM categories WHERE user_id = ?`},
 		{"tombstones", `DELETE FROM tombstones WHERE user_id = ?`},
 	} {
 		if _, err := tx.ExecContext(ctx, stmt.sql, userID); err != nil {

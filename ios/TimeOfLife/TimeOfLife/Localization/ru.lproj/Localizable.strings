@@ -87,29 +87,10 @@
 "appleSignIn.error" = "Не удалось войти через Apple. Попробуйте снова.";
 
 // Timer
-"timer.start" = "Старт";
-"timer.stop" = "Стоп";
-"timer.stopHint" = "Останавливает таймер и сохраняет запись";
-"timer.idlePrompt" = "Введите название активности, чтобы начать";
-"timer.namePlaceholder" = "Чем вы сейчас заняты?";
-"timer.saved" = "Запись сохранена";
-"timer.saving" = "Сохранение…";
-"timer.running" = "Идёт запись";
-"timer.ready" = "Готово";
-"timer.chooserRecent" = "Недавние";
-"timer.recentsEmptyHint" = "Здесь появятся последние сохранённые активности.";
-"timer.selectActivity" = "Выбрать %@";
-"timer.compactStop" = "Остановить таймер и сохранить запись";
-"timer.compactReturnHint" = "Вернуться в Трек";
-"timer.compactRunning" = "%@, идёт запись";
 
 // Live Activity (renders in the widget extension from the shared strings)
-"activity.savedWithDuration" = "Запись сохранена: %@";
 
 // App shell
-"tab.track" = "Трек";
-"tab.history" = "История";
-"tab.insights" = "Аналитика";
 "profile.title" = "Профиль";
 "profile.account" = "Аккаунт";
 "profile.signOut" = "Выйти";
@@ -119,213 +100,16 @@
 "profile.lastSynced.ago" = "%@ назад";
 "profile.lastSynced.justNow" = "Меньше минуты назад";
 "profile.syncError" = "Не удалось синхронизировать. Попробуйте снова.";
-"profile.categories" = "Категории";
-"profile.onDevice" = "На этом устройстве";
-"profile.onDeviceFooter" = "Категории и записи хранятся на этом устройстве. Синхронизация необязательна.";
-"profile.eraseLocalData" = "Стереть локальные данные";
-"profile.eraseLocalDataConfirmTitle" = "Стереть локальные данные?";
-"profile.eraseLocalDataConfirmMessage" = "Это навсегда удалит все категории, записи и ожидающие синхронизацию данные на этом устройстве и выведет вас из аккаунта.";
+"profile.eraseLocalDataConfirmMessage" = "Это навсегда удалит все локальные данные и ожидающие синхронизацию данные на этом устройстве и выведет вас из аккаунта.";
 "profile.eraseConfirm" = "Стереть";
 "profile.eraseCancel" = "Отмена";
 // Build-configuration suffix for the Profile version row (universal
 // technical term — identical in en).
 "profile.versionDebugSuffix" = "Debug";
 
-// Destination empty states
-"history.emptyTitle" = "Пока пусто";
-"history.emptySubtitle" = "Завершённые сессии появятся здесь в виде хронологии.";
-"insights.emptyTitle" = "Пока пусто";
-"insights.emptySubtitle" = "Аналитика появится после добавления первых записей.";
-
-// History day-group labels
-"history.day.today" = "Сегодня";
-"history.day.yesterday" = "Вчера";
-
-// In-progress indicator
-"history.inProgress" = "В процессе";
-
-// Day total suffix
-"history.tracked" = "учтено";
-
-// Notes indicator (history-entry-list)
-"history.hasNotes" = "есть заметки";
-
-// History pull-to-refresh (history-pull-to-sync)
-"history.pull.offline" = "Нет подключения к сети. Подключитесь и попробуйте снова.";
-"history.syncError.title" = "Не удалось синхронизировать";
 "common.ok" = "ОК";
 
-// Insights breakdown (insights-breakdown)
-"insights.period.today" = "Сегодня";
-"insights.period.week" = "Эта неделя";
-"insights.period.all" = "Всё время";
-"insights.lens.category" = "По категориям";
-"insights.lens.activity" = "По активностям";
-"insights.noCategory" = "Без категории";
-"insights.footnote" = "Запись с несколькими категориями учитывается в каждой из них.";
-"insights.empty.today" = "Сегодня пока ничего не учтено.";
-"insights.empty.week" = "На этой неделе пока ничего не учтено.";
-
-// Entry provenance (entry-provenance spec, activity-detail-sheet)
-"provenance.via.widget" = "через Виджет";
-"provenance.via.siri" = "через Siri";
-"provenance.via.control" = "через Элемент управления";
-"provenance.via.screentime" = "через Экранное время";
-"provenance.via.garmin" = "через Garmin";
-"provenance.via.calendar" = "через Календарь";
-"provenance.via.healthkit" = "через Здоровье";
-
-// Entry source names (activity-detail-sheet entry rows: sync icon + name)
-"provenance.name.widget" = "Виджет";
-"provenance.name.siri" = "Siri";
-"provenance.name.control" = "Элемент управления";
-"provenance.name.screentime" = "Экранное время";
-"provenance.name.garmin" = "Garmin";
-"provenance.name.calendar" = "Календарь";
-"provenance.name.healthkit" = "Здоровье";
-
-// Log Time sheet (manual-entry spec)
-"logTime.title" = "Записать время";
-"logTime.cancel" = "Отмена";
-"logTime.starts" = "Начало";
-"logTime.ends" = "Конец";
-
-// Unified entry form (entry-editor spec: EDIT + LOCKED modes)
-"entry.editTitle" = "Редактировать запись";
-"entry.lockedTitle" = "Импортированная запись";
-"entry.dismissLabel" = "Закрыть";
-"entry.confirmAddLabel" = "Добавить запись";
-"entry.confirmSaveLabel" = "Сохранить запись";
-"entry.delete" = "Удалить запись";
-"entry.deleteTitle" = "Удалить эту запись?";
-"entry.deleteMessage" = "Запись будет удалена. Отменить можно встряской.";
-"entry.deleteConfirm" = "Удалить";
-"entry.staleError" = "Запись изменилась. Закройте и откройте её заново, затем повторите.";
-"entry.lockedNote" = "Импортировано через %@: редактирование отключено, чтобы избежать конфликтов с источником.";
-"entry.nameLabel" = "Название";
-"entry.namePlaceholder" = "напр. Спортзал";
-"entry.duration" = "Длительность: %@";
-"entry.invalidInterval" = "Окончание должно быть позже начала";
-"entry.categoriesLabel" = "Категории";
-"entry.notesLabel" = "Заметки";
-"entry.notesPlaceholder" = "Необязательные заметки";
-
-// History manual entry (add-manual-entry)
-"history.logTime" = "Записать время";
-
-// Name picker (dedicated-name-picker: shared push page)
 "name.clear" = "Очистить название";
-"name.pickerTitle" = "Выберите название";
-"name.pickerNoMatchHint" = "Совпадений нет — «%@» будет использовано как новое название.";
-"notes.editorSubtitle" = "%@ • %d/2000";
-"notes.editorCounter" = "%d/2000";
-"notes.editorPlaceholder" = "Дорогой дневник...";
 
-// Starter categories (category-management spec, seed requirement)
-"category.seed.work" = "Работа";
-"category.seed.hobby" = "Хобби";
-"category.seed.sport" = "Спорт";
-"category.seed.education" = "Образование";
-"category.seed.relax" = "Отдых";
-"category.seed.sleep" = "Сон";
-"category.seed.entertainment" = "Развлечения";
-
-// Undo (chip selection accessibility)
-"undo.selected" = "Выбрано";
-"undo.notSelected" = "Не выбрано";
-"undo.selectedPosition" = "Выбрано, %d из %d";
-
-// Manage categories (category-management D4)
-"manage.categories.title" = "Категории";
-"manage.categories.add" = "Добавить категорию";
-"manage.categories.emptyTitle" = "Пока нет категорий";
-"manage.categories.emptySubtitle" = "Добавьте категорию, чтобы размечать записи.";
-"manage.categories.rowA11y" = "Категория";
-"manage.categories.editHint" = "Дважды коснитесь, чтобы изменить.";
-"manage.categories.loading" = "Загрузка категорий…";
-"delete.category.title" = "Удалить категорию?";
-"delete.category.message" = "%@ будет снята со всех записей. Записи сохранятся. Отменить можно встряской.";
-"delete.category.confirm" = "Удалить";
-"error.categoryExists" = "Категория с таким названием уже существует.";
-"error.conflict" = "Изменено на другом устройстве. Показана актуальная версия.";
 "error.localPersistence" = "Не удалось сохранить локально. Попробуйте снова.";
 
-// Category editor (category-management D4)
-"categoryEditor.createTitle" = "Новая категория";
-"categoryEditor.editTitle" = "Изменить категорию";
-"categoryEditor.nameLabel" = "Название";
-"categoryEditor.namePlaceholder" = "напр. Спорт";
-"categoryEditor.iconLabel" = "Значок";
-"categoryEditor.iconUnavailable" = "Этот значок недоступен в этой версии iOS и отображается как тег.";
-"categoryEditor.save" = "Сохранить";
-"categoryEditor.cancel" = "Отмена";
-"categoryEditor.dismissLabel" = "Закрыть";
-"categoryEditor.confirmSaveLabel" = "Сохранить категорию";
-"categoryEditor.delete" = "Удалить категорию";
-"category.nameRequired" = "Введите название категории.";
-"category.nameTooLong" = "Название должно быть не длиннее 60 символов.";
-
-// Catalog icon accessibility names
-"catalogIcon.clock" = "Часы";
-"catalogIcon.laptopcomputer" = "Ноутбук";
-"catalogIcon.briefcase" = "Портфель";
-"catalogIcon.book" = "Книга";
-"catalogIcon.pencil.and.ruler" = "Карандаш и линейка";
-"catalogIcon.brain.head.profile" = "Мозг";
-"catalogIcon.figure.walk" = "Ходьба";
-"catalogIcon.figure.run" = "Бег";
-"catalogIcon.figure.strengthtraining" = "Силовая тренировка";
-"catalogIcon.figure.yoga" = "Йога";
-"catalogIcon.figure.cycling" = "Велосипед";
-"catalogIcon.figure.swimming" = "Плавание";
-"catalogIcon.figure.soccer" = "Футбол";
-"catalogIcon.figure.basketball" = "Баскетбол";
-"catalogIcon.figure.tennis" = "Теннис";
-"catalogIcon.figure.gymnastics" = "Гимнастика";
-"catalogIcon.figure.mindandbody" = "Разум и тело";
-"catalogIcon.figure.core.training" = "Тренировка мышц корпуса";
-"catalogIcon.dumbbell" = "Гантель";
-"catalogIcon.bicycle" = "Велосипед";
-"catalogIcon.books" = "Книги";
-"catalogIcon.graduationcap" = "Академическая шапочка";
-"catalogIcon.desktopcomputer" = "Настольный компьютер";
-"catalogIcon.keyboard" = "Клавиатура";
-"catalogIcon.gamecontroller" = "Игровой контроллер";
-"catalogIcon.fork.knife" = "Вилка и нож";
-"catalogIcon.cup.and.saucer" = "Чашка и блюдце";
-"catalogIcon.bed.double" = "Кровать";
-"catalogIcon.moon.stars" = "Луна и звёзды";
-"catalogIcon.moon.zzz" = "Спящая луна";
-"catalogIcon.film" = "Фильм";
-"catalogIcon.music.note" = "Нота";
-"catalogIcon.guitar" = "Гитара";
-"catalogIcon.camera" = "Камера";
-"catalogIcon.tv" = "Телевизор";
-"catalogIcon.musicalnotes" = "Ноты";
-"catalogIcon.paintbrush" = "Кисть";
-"catalogIcon.house" = "Дом";
-"catalogIcon.car.fill" = "Автомобиль";
-"catalogIcon.airplane" = "Самолёт";
-"catalogIcon.cart" = "Корзина";
-"catalogIcon.phone" = "Телефон";
-"catalogIcon.hammer" = "Молоток";
-"catalogIcon.heart" = "Сердце";
-"catalogIcon.leaf" = "Лист";
-"catalogIcon.sparkles" = "Искры";
-"catalogIcon.pawprint" = "След лапы";
-"catalogIcon.dog" = "Собака";
-"catalogIcon.cat" = "Кошка";
-"catalogIcon.fish" = "Рыба";
-"catalogIcon.bird" = "Птица";
-"catalogIcon.washer" = "Стиральная машина";
-"catalogIcon.dryer" = "Сушильная машина";
-"catalogIcon.dishwasher" = "Посудомоечная машина";
-"catalogIcon.refrigerator" = "Холодильник";
-"catalogIcon.sofa" = "Диван";
-"catalogIcon.shower" = "Душ";
-"catalogIcon.lamp.table" = "Настольная лампа";
-"catalogIcon.person.2" = "Люди";
-"catalogIcon.figure.and.child.holdinghands" = "Семья";
-"catalogIcon.stethoscope" = "Стетоскоп";
-"catalogIcon.pill" = "Таблетка";
-"catalogIcon.tag" = "Тег";

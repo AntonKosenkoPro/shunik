@@ -63,38 +63,6 @@ struct LocalizationTests {
         }
     }
 
-    @Test("every catalog icon has a localized accessibility name")
-    func catalogIconNamesResolve() throws {
-        let main = Bundle.main
-        for locale in ["en", "ru"] {
-            let path = try #require(main.path(forResource: locale, ofType: "lproj"))
-            let bundle = try #require(Bundle(path: path))
-            for icon in CatalogIcon.allCases {
-                let value = L10n.catalogIconName(icon, in: bundle)
-                #expect(value != icon.rawValue, "Missing icon name for \(icon.rawValue) in \(locale)")
-                #expect(!value.isEmpty)
-            }
-        }
-    }
-
-    // MARK: - Notes placeholders
-
-    /// Collapsed presenters keep "Optional notes" while the expanded editor
-    /// page uses its own "Dear diary..." prompt (change-expanded-notes-placeholder).
-    @Test("collapsed and expanded notes placeholders are exact and distinct")
-    func notesPlaceholders() throws {
-        let main = Bundle.main
-        let enPath = try #require(main.path(forResource: "en", ofType: "lproj"))
-        let ruPath = try #require(main.path(forResource: "ru", ofType: "lproj"))
-        let en = try #require(Bundle(path: enPath))
-        let ru = try #require(Bundle(path: ruPath))
-
-        #expect(NSLocalizedString("entry.notesPlaceholder", bundle: en, comment: "") == "Optional notes")
-        #expect(NSLocalizedString("entry.notesPlaceholder", bundle: ru, comment: "") == "Необязательные заметки")
-        #expect(NSLocalizedString("notes.editorPlaceholder", bundle: en, comment: "") == "Dear diary...")
-        #expect(NSLocalizedString("notes.editorPlaceholder", bundle: ru, comment: "") == "Дорогой дневник...")
-    }
-
     // MARK: - Error codes
 
     @Test("known error codes resolve via ErrorLocalization without falling back to unknown")
@@ -206,99 +174,18 @@ struct LocalizationTests {
         "account.thisDeviceFooter",
         "account.thisDeviceSection",
         "account.title",
-        "activity.savedWithDuration",
         "app.name",
         "appleSignIn.error",
         "appleSignIn.title",
         "authGate.title",
-        "category.nameRequired",
-        "category.nameTooLong",
-        "category.seed.education",
-        "category.seed.entertainment",
-        "category.seed.hobby",
-        "category.seed.relax",
-        "category.seed.sleep",
-        "category.seed.sport",
-        "category.seed.work",
-        "categoryEditor.cancel",
-        "categoryEditor.confirmSaveLabel",
-        "categoryEditor.createTitle",
-        "categoryEditor.delete",
-        "categoryEditor.dismissLabel",
-        "categoryEditor.editTitle",
-        "categoryEditor.iconLabel",
-        "categoryEditor.iconUnavailable",
-        "categoryEditor.nameLabel",
-        "categoryEditor.namePlaceholder",
-        "categoryEditor.save",
         "common.and",
         "common.ok",
-        "delete.category.confirm",
-        "delete.category.message",
-        "delete.category.title",
         "emailEntry.email",
         "emailEntry.submit",
         "emailEntry.subtitle",
         "emailEntry.title",
-        "entry.categoriesLabel",
-        "entry.confirmAddLabel",
-        "entry.confirmSaveLabel",
-        "entry.delete",
-        "entry.deleteConfirm",
-        "entry.deleteMessage",
-        "entry.deleteTitle",
-        "entry.dismissLabel",
-        "entry.duration",
-        "entry.editTitle",
-        "entry.invalidInterval",
-        "entry.lockedNote",
-        "entry.lockedTitle",
-        "entry.nameLabel",
-        "entry.namePlaceholder",
-        "entry.notesLabel",
-        "entry.notesPlaceholder",
-        "entry.staleError",
-        "error.categoryExists",
-        "error.conflict",
         "error.localPersistence",
-        "history.day.today",
-        "history.day.yesterday",
-        "history.emptySubtitle",
-        "history.emptyTitle",
-        "history.hasNotes",
-        "history.inProgress",
-        "history.logTime",
-        "history.pull.offline",
-        "history.syncError.title",
-        "history.tracked",
-        "insights.empty.today",
-        "insights.empty.week",
-        "insights.emptySubtitle",
-        "insights.emptyTitle",
-        "insights.footnote",
-        "insights.lens.activity",
-        "insights.lens.category",
-        "insights.noCategory",
-        "insights.period.all",
-        "insights.period.today",
-        "insights.period.week",
-        "logTime.cancel",
-        "logTime.ends",
-        "logTime.starts",
-        "logTime.title",
-        "manage.categories.add",
-        "manage.categories.editHint",
-        "manage.categories.emptySubtitle",
-        "manage.categories.emptyTitle",
-        "manage.categories.loading",
-        "manage.categories.rowA11y",
-        "manage.categories.title",
         "name.clear",
-        "name.pickerNoMatchHint",
-        "name.pickerTitle",
-        "notes.editorCounter",
-        "notes.editorPlaceholder",
-        "notes.editorSubtitle",
         "otp.codeHint",
         "otp.codeLabel",
         "otp.resend",
@@ -306,16 +193,11 @@ struct LocalizationTests {
         "otp.sentTo",
         "otp.title",
         "profile.account",
-        "profile.categories",
         "profile.eraseCancel",
         "profile.eraseConfirm",
-        "profile.eraseLocalData",
         "profile.eraseLocalDataConfirmMessage",
-        "profile.eraseLocalDataConfirmTitle",
         "profile.lastSynced.ago",
         "profile.lastSynced.justNow",
-        "profile.onDevice",
-        "profile.onDeviceFooter",
         "profile.signOut",
         "profile.syncError",
         "profile.syncNow",
@@ -323,42 +205,7 @@ struct LocalizationTests {
         "profile.syncing",
         "profile.title",
         "profile.versionDebugSuffix",
-        "provenance.name.calendar",
-        "provenance.name.control",
-        "provenance.name.garmin",
-        "provenance.name.healthkit",
-        "provenance.name.screentime",
-        "provenance.name.siri",
-        "provenance.name.widget",
-        "provenance.via.calendar",
-        "provenance.via.control",
-        "provenance.via.garmin",
-        "provenance.via.healthkit",
-        "provenance.via.screentime",
-        "provenance.via.siri",
-        "provenance.via.widget",
         "signOut.cancel",
-        "tab.history",
-        "tab.insights",
-        "tab.track",
-        "timer.chooserRecent",
-        "timer.compactReturnHint",
-        "timer.compactRunning",
-        "timer.compactStop",
-        "timer.idlePrompt",
-        "timer.namePlaceholder",
-        "timer.ready",
-        "timer.recentsEmptyHint",
-        "timer.running",
-        "timer.saved",
-        "timer.saving",
-        "timer.selectActivity",
-        "timer.start",
-        "timer.stop",
-        "timer.stopHint",
-        "undo.notSelected",
-        "undo.selected",
-        "undo.selectedPosition",
         "validation.email.prefix",
         "validation.email.rule.invalid",
         "validation.email.rule.tooLong",

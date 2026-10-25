@@ -37,7 +37,6 @@ struct ProfileView: View {
     var body: some View {
         List {
             accountSection
-            onDeviceSection
             versionFooter
         }
         .navigationTitle(L10n.profileTitle.text)
@@ -150,25 +149,8 @@ struct ProfileView: View {
         lastIdleDate.map { Self.ageSubtitle(since: $0, now: now) }
     }
 
-    // MARK: - On This Device
-
-    private var onDeviceSection: some View {
-        Section(
-            header: Text(L10n.profileOnDevice.text),
-            footer: Text(L10n.profileOnDeviceFooter.text)
-        ) {
-            NavigationLink {
-                ManageCategoriesView(
-                    store: container.localStore,
-                    undoBuffer: container.undoBuffer
-                )
-                .environmentObject(container)
-            } label: {
-                ListRow(title: L10n.profileCategories.text, icon: "tag")
-            }
-            .accessibilityIdentifier("ProfileCategoriesRow")
-        }
-    }
+    // swiftlint:disable:next todo
+    // SHUNIK-TODO: scaffold — the pet-care on-device section will live here.
 
     /// Trailing diagnostic version footer (add-version-label-release): plain
     /// footer text with no row/card, so it stays dim and never reads as

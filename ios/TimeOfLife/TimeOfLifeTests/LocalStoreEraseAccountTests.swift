@@ -29,7 +29,7 @@ struct LocalStoreEraseAccountTests {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = LocalStore.databaseURL(userID: "erase-active-a", in: dir)
         let bound = try LocalStore(url: url, userID: "erase-active-a")
-        _ = try await bound.categories()
+        _ = try await bound.outboxRows()
         try await bound.eraseAccount(userID: "erase-active-a", in: dir)
         #expect(!fileExists(url))
     }
@@ -41,13 +41,13 @@ struct LocalStoreEraseAccountTests {
         let dormantURL = LocalStore.databaseURL(userID: "erase-dorm-b", in: base)
         let active = try LocalStore(url: activeURL, userID: "erase-dorm-a")
         let dormant = try LocalStore(url: dormantURL, userID: "erase-dorm-b")
-        _ = try await active.categories()
-        _ = try await dormant.categories()
+        _ = try await active.outboxRows()
+        _ = try await dormant.outboxRows()
         try await active.eraseAccount(userID: "erase-dorm-b", in: base)
         #expect(!fileExists(dormantURL))
         #expect(fileExists(activeURL))
         // The active store still serves its own account.
-        _ = try await active.categories()
+        _ = try await active.outboxRows()
     }
 
     @Test("removes SQLite sidecars with the file")
@@ -56,7 +56,7 @@ struct LocalStoreEraseAccountTests {
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         let url = LocalStore.databaseURL(userID: "erase-side-a", in: base)
         let store = try LocalStore(url: url, userID: "erase-side-a")
-        _ = try await store.categories()
+        _ = try await store.outboxRows()
         for sidecar in sidecars(of: url) {
             FileManager.default.createFile(atPath: sidecar.path, contents: Data("x".utf8))
         }

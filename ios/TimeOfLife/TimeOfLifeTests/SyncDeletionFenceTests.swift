@@ -14,17 +14,15 @@ struct SyncDeletionFenceTests {
 
     private func makeContext(
         connected: Bool = true
-    ) -> (store: LocalStore, mock: MockCatalogRepository, controller: SyncController) {
+    ) -> (store: LocalStore, controller: SyncController) {
         // swiftlint:disable:next force_try
         let store = try! LocalStore(url: temporaryStoreURL())
-        let mock = MockCatalogRepository()
         let connectivity = MockConnectivity(connected: connected)
         let controller = SyncController(
             store: store,
-            remote: mock,
             connectivity: connectivity
         ) { "u1" }
-        return (store, mock, controller)
+        return (store, controller)
     }
 
     private func temporaryStoreURL() -> URL {
@@ -42,7 +40,7 @@ struct SyncDeletionFenceTests {
 
     @Test("fence is account-scoped and observable")
     func fenceIsAccountScoped() {
-        let (_, _, controller) = makeContext()
+        let (_, controller) = makeContext()
         #expect(!controller.isDeletionFenced(userID: "u1"))
         controller.setDeletionFence(userID: "u1", fenced: true)
         #expect(controller.isDeletionFenced(userID: "u1"))
@@ -53,7 +51,7 @@ struct SyncDeletionFenceTests {
 
     @Test("activate under fence parks as inactive without draining")
     func activateUnderFenceParksInactive() async {
-        let (_, mock, controller) = makeContext()
+        let (_, controller) = makeContext()
         controller.setDeletionFence(userID: "u1", fenced: true)
         controller.activate(userID: "u1")
         await waitUntil {
@@ -64,12 +62,11 @@ struct SyncDeletionFenceTests {
         } else {
             Issue.record("fenced activate must park as inactive, got \(controller.status)")
         }
-        #expect(mock.calls.isEmpty)
     }
 
     @Test("syncNow and trigger are refused while fenced")
     func manualAndAutoTriggersRefused() async {
-        let (_, _, controller) = makeContext()
+        let (_, controller) = makeContext()
         controller.activate(userID: "u1")
         await waitUntil {
             if case .idle = controller.status { return true }
@@ -85,7 +82,7 @@ struct SyncDeletionFenceTests {
 
     @Test("releasing the fence and activating resumes exactly one owner")
     func releaseAndActivateResumes() async {
-        let (_, _, controller) = makeContext()
+        let (_, controller) = makeContext()
         controller.setDeletionFence(userID: "u1", fenced: true)
         controller.activate(userID: "u1")
         await waitUntil {
@@ -106,7 +103,7 @@ struct SyncDeletionFenceTests {
 
     @Test("fence for another account does not block this one")
     func otherAccountFenceIgnored() async {
-        let (_, _, controller) = makeContext()
+        let (_, controller) = makeContext()
         controller.setDeletionFence(userID: "u2", fenced: true)
         controller.activate(userID: "u1")
         await waitUntil {

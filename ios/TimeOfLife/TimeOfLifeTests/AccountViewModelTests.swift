@@ -43,7 +43,6 @@ struct AccountViewModelTests {
         }
         let syncController = SyncController(
             store: localStore,
-            remote: MockCatalogRepository(),
             connectivity: connectivity
         ) { [weak sessionStore] in
             guard case let .signedIn(session) = sessionStore?.state else { return nil }
@@ -62,7 +61,6 @@ struct AccountViewModelTests {
                 repository: repo, keychain: keychain, cache: cache, sessionStore: sessionStore
             ),
             appleService: AppleSignInService(),
-            timerService: TimerService(store: localStore),
             localStore: localStore,
             undoBuffer: UndoBufferStore(store: localStore),
             syncController: syncController

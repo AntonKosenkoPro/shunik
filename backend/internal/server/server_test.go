@@ -248,23 +248,6 @@ func TestAuthRoutesProtected(t *testing.T) {
 	}
 }
 
-func TestCatalogRoutesProtected(t *testing.T) {
-	s := newTestServer(t)
-
-	for _, path := range []string{
-		"/api/v1/categories",
-		"/api/v1/entries",
-		"/api/v1/deletions",
-	} {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
-		w := httptest.NewRecorder()
-		s.ServeHTTP(w, req)
-		if w.Code != http.StatusUnauthorized {
-			t.Errorf("GET %s without auth: expected 401, got %d", path, w.Code)
-		}
-	}
-}
-
 func TestServerContentType(t *testing.T) {
 	s := newTestServer(t)
 
@@ -304,11 +287,11 @@ func TestHealthExcludedFromAccessLogs(t *testing.T) {
 
 	// Other routes must still log.
 	buf.Reset()
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/categories", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
 	w = httptest.NewRecorder()
 	s.ServeHTTP(w, req)
 
-	if out := buf.String(); !strings.Contains(out, "/api/v1/categories") {
+	if out := buf.String(); !strings.Contains(out, "/api/v1/auth/me") {
 		t.Errorf("expected access-log line for non-health route, got %q", out)
 	}
 }

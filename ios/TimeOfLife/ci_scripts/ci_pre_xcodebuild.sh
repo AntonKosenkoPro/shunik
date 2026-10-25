@@ -65,7 +65,7 @@ swiftlint lint --strict
 # silently disable the gate below (`|| true` would swallow grep's error).
 # Single source of truth for the gate's scan roots (loop + grep below must
 # never drift apart). Unquoted `$scan_dirs` word-splitting is intentional.
-scan_dirs="TimeOfLife LifioLiveActivities LifioLiveActivityCore TimeOfLifeTests"
+scan_dirs="TimeOfLife TimeOfLifeTests"
 for d in $scan_dirs; do
   [ -d "$d" ] || { echo "error: expected scan dir '$d' is missing — commented-code gate cannot run"; exit 1; }
 done

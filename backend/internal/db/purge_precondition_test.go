@@ -28,16 +28,6 @@ func TestPurge_MissingVaultAbortsApplePurge(t *testing.T) {
 	if err := store.SaveRefreshTokenWithAuth(ctx, user.ID, "pred", "d1", &now, "lin"); err != nil {
 		t.Fatalf("SaveRefreshToken: %v", err)
 	}
-	cat, _, err := store.CreateCategory(ctx, Category{ID: uuidV7(), UserID: user.ID, Name: "W", Icon: "tag"})
-	if err != nil {
-		t.Fatalf("CreateCategory: %v", err)
-	}
-	if _, _, err := store.CreateEntry(ctx, Entry{
-		ID: uuidV7(), UserID: user.ID, ActivityText: "F",
-		Categories: []CategoryTag{{ID: cat.ID}}, StartedAt: now,
-	}); err != nil {
-		t.Fatalf("CreateEntry: %v", err)
-	}
 
 	// Sanity: no vault row (identity-token-only history).
 	if _, err := store.GetAppleCredential(ctx, user.ID); !errors.Is(err, ErrNotFound) {
@@ -53,7 +43,7 @@ func TestPurge_MissingVaultAbortsApplePurge(t *testing.T) {
 		t.Fatalf("account must survive the aborted purge: %v", err)
 	}
 	for table, want := range map[string]int{
-		"otp_codes": 1, "refresh_tokens": 1, "entries": 1, "categories": 1,
+		"otp_codes": 1, "refresh_tokens": 1,
 	} {
 		if n := countRows(t, store, table, user.ID); n != want {
 			t.Errorf("expected %d %s rows preserved, got %d", want, table, n)

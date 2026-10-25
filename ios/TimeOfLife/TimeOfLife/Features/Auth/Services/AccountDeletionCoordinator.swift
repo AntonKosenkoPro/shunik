@@ -96,7 +96,6 @@ final class AccountDeletionCoordinator: ObservableObject {
     private let cache: SessionCache
     private let syncController: SyncController
     private let localStore: LocalStore
-    private let timerService: TimerService
     private let navigation: AppNavigationStack
     private let connectivity: Connectivity
     private let appleService: AppleSignInService
@@ -138,7 +137,6 @@ final class AccountDeletionCoordinator: ObservableObject {
         cache: SessionCache,
         syncController: SyncController,
         localStore: LocalStore,
-        timerService: TimerService,
         navigation: AppNavigationStack,
         connectivity: Connectivity,
         appleService: AppleSignInService,
@@ -155,7 +153,6 @@ final class AccountDeletionCoordinator: ObservableObject {
         self.cache = cache
         self.syncController = syncController
         self.localStore = localStore
-        self.timerService = timerService
         self.navigation = navigation
         self.connectivity = connectivity
         self.appleService = appleService
@@ -491,11 +488,6 @@ final class AccountDeletionCoordinator: ObservableObject {
         guard !syncController.isCycleLive else {
             Self.logger.error("cleanup deferred: sync cycle still live")
             return false
-        }
-        if isTargetActive {
-            // End only the deleted account's Live Activity immediately —
-            // no Saved face, no entry, no outbox row.
-            await timerService.discardTimerDraftForDeletedAccount()
         }
         do {
             try await localStore.eraseAccount(userID: accountID, in: fileBaseURL)

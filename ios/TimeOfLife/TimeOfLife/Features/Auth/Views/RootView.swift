@@ -27,13 +27,6 @@ struct RootView: View {
     /// late sign-out close can never unbind a newer sign-in's file
     /// (open-after-close).
     @State private var lifecycleTask: Task<Void, Never>?
-    /// The gate-preloaded first-paint snapshot (steady-track-launch): set
-    /// alongside `boundUserID` once bind, seed, and the snapshot load all
-    /// succeed, so the shell mounts with complete data and the first Track
-    /// paint never shows an empty store. Nil when no snapshot was resolved
-    /// (preload failure) — the shell still mounts and `TrackViewModel`
-    /// loads on appear with the recoverable error path.
-    @State private var launchSnapshot: TrackSnapshot?
     /// Auth-gate deletion state: the one-time pending-Apple-unlink notice
     /// (set when a submit completes with durable pending revocation) and the
     /// account id offered confirmed-cleanup retry after a post-purge local
@@ -85,10 +78,6 @@ struct RootView: View {
                 // deletions stay restorable until their push succeeds).
                 if case .signedIn = session.state {
                     container.syncController.trigger(userID: sessionUserID())
-                    // Island Stop while suspended: the Darwin signal may
-                    // have been missed, so reap here too (the entry-recency
-                    // heuristic resolves Saved-vs-silent; live-activities D8).
-                    Task { await container.timerService.endOrphanedActivities() }
                 }
             }
     }
@@ -113,11 +102,8 @@ struct RootView: View {
             switch session.state {
         case .signedIn(let current):
             if boundUserID == current.id {
-                AppShellView(
-                    vm: AppShellViewModel(service: container.timerService),
-                    container: container,
-                    trackSnapshot: launchSnapshot
-                )
+                AppShellView(vm: AppShellViewModel())
+                    .environmentObject(container)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 // Bind-then-reveal: the gate holds a blank background (never
@@ -180,23 +166,9 @@ struct RootView: View {
         }
     }
 
-    /// Runs once per signed-in shell mount: every sign-in path (fresh OTP/
-    /// Apple sign-in, silent session restore at launch, re-login) lands here.
-    /// Ordering matters (seed-before-reveal): the account's file is opened
-    /// (`lifio_<userId>.db` via `prepareAccountStore`, account-bound-store
-    /// spec — nothing may touch a tracker file before an account is bound),
-    /// a restart finalizes deletions buffered by the previous process, and
-    /// starter categories seed idempotently (per-file marker) — all BEFORE
-    /// the shell mounts, so the first Track paint already carries the seed.
-    /// The first Track snapshot resolves in the same step (steady-track-launch),
-    /// so the first paint carries local recents and the running draft too.
-    /// Sync activation (pull-first first-sync, sync-client spec) runs after
-    /// the reveal, in the background; Track converges on pulled data via its
-    /// sync-exit reload.
-    ///
-    /// The caller cancels superseded lifecycles, so every suspension point
-    /// re-checks cancellation and the live session: a sign-out that lands
-    /// mid-prepare must neither reveal the shell nor activate sync for it.
+    // swiftlint:disable:next todo
+    // SHUNIK-TODO: scaffold sign-in — binds the account store, then reveals
+    // the shell. Pet-care preload will hook in here.
     private func beginSignIn(userID: String) {
         lifecycleTask?.cancel()
         lifecycleTask = Task {
@@ -210,20 +182,10 @@ struct RootView: View {
             let ready = await container.prepareAccountStore(userID: userID)
             if Task.isCancelled { return }
             guard case let .signedIn(current) = session.state, current.id == userID else { return }
-            // A failed prepare leaves the store unbound (failed open) or
-            // bound-but-unseeded (failed seed): either way the gate stays up
+            // A failed prepare leaves the store unbound: the gate stays up
             // (the error is surfaced via `localStoreOpenError` above) and
-            // `boundUserID` is never set — no tracker read may mount. The
-            // next sign-in (or relaunch restore) retries the prepare.
+            // `boundUserID` is never set. The next sign-in retries.
             guard ready else { return }
-            // Best-effort snapshot: the shell mounts with it and paints
-            // complete; on failure the snapshot stays nil and TrackViewModel
-            // loads on appear with the recoverable error path. Either way
-            // `boundUserID` is set in the same MainActor turn, so the mount
-            // never observes a half-prepared gate.
-            launchSnapshot = try? await container.timerService.loadSnapshot(recentsLimit: TrackViewModel.recentsLimit)
-            if Task.isCancelled { return }
-            guard case let .signedIn(current) = session.state, current.id == userID else { return }
             boundUserID = userID
             // Crash-reporting identity (observability Stage 0): opaque
             // account id only, never email.
@@ -286,7 +248,6 @@ struct RootView: View {
         container.navigation.path = []
         container.navigation.resetTapRequests()
         boundUserID = nil
-        launchSnapshot = nil
         // A stale bind error must never leak into a later sign-in: the error
         // branch's sign-out is the only escape from a failed bind, and the
         // next beginSignIn clears on entry anyway — belt and braces.

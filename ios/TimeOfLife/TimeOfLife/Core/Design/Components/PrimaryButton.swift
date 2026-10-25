@@ -143,7 +143,7 @@ struct PrimaryButton: View {
 
 #Preview("Primary Button — With Icon") {
     PrimaryButton(
-        title: L10n.timerStart.text,
+        title: L10n.emailEntrySubmit.text,
         icon: "play.fill",
         isLoading: false,
         isDisabled: false,

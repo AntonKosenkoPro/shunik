@@ -2,7 +2,9 @@ package db
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -37,4 +39,29 @@ func fallbackSeed(b []byte) {
 		b[i] = byte(now >> (8 * (i % 8)))
 		now = now*6364136223846793005 + 1442695040888963407
 	}
+}
+
+// encodeCursor builds an opaque pagination cursor ordered by (timestamp,
+// id): it encodes the last item's (timestamp, id) so the next page can
+// resume strictly below it. Generic pagination infrastructure — future
+// resources reuse it.
+func encodeCursor(t time.Time, id string) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(t.UTC().Format(time.RFC3339Nano) + "|" + id))
+}
+
+// decodeCursor reverses encodeCursor. Returns ok=false on any malformed input.
+func decodeCursor(s string) (time.Time, string, bool) {
+	b, err := base64.RawURLEncoding.DecodeString(s)
+	if err != nil {
+		return time.Time{}, "", false
+	}
+	parts := strings.SplitN(string(b), "|", 2)
+	if len(parts) != 2 || parts[1] == "" {
+		return time.Time{}, "", false
+	}
+	t, err := time.Parse(time.RFC3339Nano, parts[0])
+	if err != nil {
+		return time.Time{}, "", false
+	}
+	return t, parts[1], true
 }

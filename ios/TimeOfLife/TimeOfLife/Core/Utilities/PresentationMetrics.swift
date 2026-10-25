@@ -1,6 +1,31 @@
 import Foundation
 import SwiftUI
 
+extension DynamicTypeSize {
+    // swiftlint:disable:next todo
+    // SHUNIK-TODO: scaffold — rescued from the deleted recents chips; the
+    // pet-care UI will own this mapping.
+    /// The `UIContentSizeCategory` equivalent of the environment's Dynamic
+    /// Type size, used to build a measurement trait collection.
+    var uiContentSizeCategory: UIContentSizeCategory {
+        switch self {
+        case .xSmall: return .extraSmall
+        case .small: return .small
+        case .medium: return .medium
+        case .large: return .large
+        case .xLarge: return .extraLarge
+        case .xxLarge: return .extraExtraLarge
+        case .xxxLarge: return .extraExtraExtraLarge
+        case .accessibility1: return .accessibilityMedium
+        case .accessibility2: return .accessibilityLarge
+        case .accessibility3: return .accessibilityExtraLarge
+        case .accessibility4: return .accessibilityExtraExtraLarge
+        case .accessibility5: return .accessibilityExtraExtraExtraLarge
+        @unknown default: return .large
+        }
+    }
+}
+
 /// Shared presentation-settle delay before programmatic focus (sheet push
 /// and picker push alike): focusing instantly fires the keyboard
 /// mid-transition and the keyboard-driven relayout jumps. One constant —

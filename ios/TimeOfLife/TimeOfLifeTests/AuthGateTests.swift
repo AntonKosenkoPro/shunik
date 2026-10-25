@@ -197,7 +197,7 @@ struct AuthGateTests {
         // The store is cleanly unbound: boundUserID nil, every op notBound.
         #expect(await container.localStore.boundUserID == nil)
         await #expect(throws: LocalStore.LocalStoreError.notBound) {
-            try await container.localStore.categories()
+            try await container.localStore.outboxRows()
         }
     }
 
@@ -227,12 +227,10 @@ struct AuthGateTests {
             connectivity: connectivity,
             authService: authService,
             appleService: AppleSignInService(),
-            timerService: TimerService(store: localStore),
             localStore: localStore,
             undoBuffer: UndoBufferStore(store: localStore),
             syncController: SyncController(
                 store: localStore,
-                remote: MockCatalogRepository(),
                 connectivity: connectivity
             ) { nil }
         )

@@ -2,8 +2,6 @@ import Foundation
 import OSLog
 import SwiftUI
 
-import LifioLiveActivityCore
-
 /// Composition root. Builds the real production graph and exposes the
 /// objects views/view models need. Everything is injectable for tests.
 ///
@@ -25,7 +23,6 @@ final class AppContainer: ObservableObject {
     let connectivity: Connectivity
     let authService: AuthService
     let appleService: AppleSignInService
-    let timerService: TimerService
     /// Owns the account-deletion lifecycle (submit, status resolution,
     /// scoped cleanup). Wired with the same graph pieces as everything else.
     let deletionCoordinator: AccountDeletionCoordinator
@@ -61,7 +58,6 @@ final class AppContainer: ObservableObject {
         connectivity: Connectivity,
         authService: AuthService,
         appleService: AppleSignInService,
-        timerService: TimerService,
         localStore: LocalStore,
         undoBuffer: UndoBufferStore,
         syncController: SyncController,
@@ -78,7 +74,6 @@ final class AppContainer: ObservableObject {
         self.connectivity = connectivity
         self.authService = authService
         self.appleService = appleService
-        self.timerService = timerService
         self.localStore = localStore
         self.undoBuffer = undoBuffer
         self.syncController = syncController
@@ -91,81 +86,10 @@ final class AppContainer: ObservableObject {
             cache: sessionCache,
             syncController: syncController,
             localStore: localStore,
-            timerService: timerService,
             navigation: navigation,
             connectivity: connectivity,
             appleService: appleService,
             authService: authService
-        )
-        registerReapCheck()
-        observeExternalStopSignal()
-    }
-
-    /// Handles an Island Stop: reaps activities orphaned by the intent and
-    /// tells tracker surfaces to reload (the intent already saved the entry
-    /// and cleared the draft — Track/compact would otherwise keep ticking
-    /// stale in-memory state). The run is definitively over, so the
-    /// background reap chain is cancelled — unless a new run started in
-    /// the meantime (its Start re-armed the chain; cancelling here would
-    /// strand it), so the cancel is draft-gated.
-    func handleExternalStop() {
-        Task {
-            await timerService.endOrphanedActivities()
-            if (try? await timerService.runningTimerDraft()) == nil {
-                BackgroundReapScheduler.cancelReapCheck()
-            }
-            NotificationCenter.default.post(name: .timerStoppedExternally, object: nil)
-        }
-    }
-
-    /// Registers the background reap check (live-activities BG chain): a
-    /// background launch runs `AppContainer.init` too, so registering here
-    /// covers both foreground and background launches. The handler runs
-    /// the orphan-reap funnel (which resolves Saved-vs-silent itself) and
-    /// re-arms only while a draft is still live — a finished run ends the
-    /// chain, and the next Start re-arms it.
-    private func registerReapCheck() {
-        BackgroundReapScheduler.register { [weak self] in
-            guard let self else { return false }
-            await self.timerService.endOrphanedActivities()
-            // Fail-open toward re-arming: an unreadable store must not drop
-            // the chain (the funnel itself already failed closed by ending
-            // nothing), or a transient DB error would strand a live banner.
-            let draft: RunningTimerDraft?
-            do {
-                draft = try await self.timerService.runningTimerDraft()
-            } catch {
-                return true
-            }
-            return draft != nil
-        }
-    }
-
-    /// Observes the Darwin signal posted by the Stop intent (live-activities
-    /// D8). The C callback hops to the actor; the box lives as long as the
-    /// container (app lifetime) by design.
-    private func observeExternalStopSignal() {
-        final class HandlerBox: Sendable {
-            let onSignal: @Sendable () -> Void
-            init(_ onSignal: @escaping @Sendable () -> Void) {
-                self.onSignal = onSignal
-            }
-        }
-        let box = HandlerBox { [weak self] in
-            Task { await self?.handleExternalStop() }
-        }
-        let context = Unmanaged.passRetained(box).toOpaque()
-        CFNotificationCenterAddObserver(
-            CFNotificationCenterGetDarwinNotifyCenter(),
-            context,
-            { _, observer, _, _, _ in
-                guard let observer else { return }
-                let box = Unmanaged<HandlerBox>.fromOpaque(observer).takeUnretainedValue()
-                box.onSignal()
-            } as CFNotificationCallback,
-            LiveActivitySignal.name as CFString,
-            nil,
-            .deliverImmediately
         )
     }
 
@@ -190,7 +114,6 @@ final class AppContainer: ObservableObject {
         let navigation = AppNavigationStack()
         let connectivity = NetworkMonitor()
         let localStore = LocalStore()
-        let timerService = TimerService(store: localStore)
 
         let (client, clientHolder) = makeAuthClient(baseURL: baseURL, keychain: keychain)
         let repository = RemoteAuthRepository(client: client)
@@ -203,11 +126,9 @@ final class AppContainer: ObservableObject {
         clientHolder.service = authService
 
         let appleService = AppleSignInService()
-        let catalog = RemoteCatalogRepository(client: client)
         let undoBuffer = UndoBufferStore(store: localStore)
         let syncController = SyncController(
             store: localStore,
-            remote: catalog,
             connectivity: connectivity
         ) { [weak sessionStore] in
             // The same-account guard reads the session user at guard time:
@@ -228,7 +149,6 @@ final class AppContainer: ObservableObject {
             connectivity: connectivity,
             authService: authService,
             appleService: appleService,
-            timerService: timerService,
             localStore: localStore,
             undoBuffer: undoBuffer,
             syncController: syncController,
@@ -276,36 +196,16 @@ final class AppContainer: ObservableObject {
         await localStore.closeAccount()
     }
 
-    /// Prepares the account's local store for shell reveal
-    /// (fix-track-empty-after-reinstall): opens the account file, commits
-    /// deletions buffered by the previous process, then seeds the starter
-    /// categories — all BEFORE the caller reveals the shell, so the first
-    /// Track paint already carries the seed and never flashes an empty
-    /// store. Sync activation stays with the caller (background, post-reveal).
-    ///
-    /// Returns whether the store is bound AND seeded. The caller (`RootView`
-    /// `beginSignIn`) MUST check this and must not reveal on `false`: the
-    /// gate stays up with `localStoreOpenError` (same branch as a failed
-    /// bind, with the same sign-out escape) and the next sign-in retries.
-    /// `seedNames` defaults to the localized starter set; tests inject a
-    /// short array to drive the seed-failure path.
+    // swiftlint:disable:next todo
+    // SHUNIK-TODO: scaffold — opens the account file and commits buffered
+    // deletions before the shell reveals. Pet-care seeding will hook in here.
     @discardableResult
-    func prepareAccountStore(
-        userID: String,
-        seedNames: [String] = String.starterCategoryNames
-    ) async -> Bool {
+    func prepareAccountStore(userID: String) async -> Bool {
         let opened = await openLocalStore(userID: userID)
         guard opened else { return false }
         // Best-effort like before: a commit failure must not block reveal —
         // the buffer retries on the next launch.
         try? await undoBuffer.commitAll()
-        do {
-            _ = try await localStore.seedStarterCategoriesIfNeeded(names: seedNames)
-        } catch {
-            localStoreOpenError = error
-            Self.logger.error("LocalStore starter seeding failed: \(String(describing: error), privacy: .public)")
-            return false
-        }
         return true
     }
 
@@ -361,10 +261,4 @@ final class AppContainer: ObservableObject {
 final class APIClientHolder {
     weak var service: AuthService?
     init() {}
-}
-
-extension Notification.Name {
-    /// Posted (in-process) after an Island Stop is handled: tracker surfaces
-    /// reload so no stale running state survives (live-activities D8).
-    static let timerStoppedExternally = Notification.Name("timerStoppedExternally")
 }

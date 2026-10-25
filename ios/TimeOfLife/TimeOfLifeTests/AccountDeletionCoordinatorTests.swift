@@ -36,9 +36,6 @@ struct AccountDeletionCoordinatorTests {
             Issue.record("expected signed out after confirmed cleanup")
         }
         #expect(h.navigation.path.isEmpty)
-        // No Saved face: the draft path discards without an entry.
-        #expect(h.live.endedRuns == 0)
-        #expect(h.live.endedOrphanedCalls == 1)
         // Intent and markers cleared after durable success.
         if case .success(let intent) = await AccountDeletionStorage(keychain: h.keychain).loadIntent() {
             #expect(intent == nil)

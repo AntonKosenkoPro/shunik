@@ -1,12 +1,18 @@
 import Foundation
 
-import LifioLiveActivityCore
+// swiftlint:disable:next todo
+// SHUNIK-TODO: scaffold — the shared Live Activity contract module is gone.
+// The scheme/host literals are inlined from the deleted contract.
+private enum TrackLink {
+    static let scheme = "lifio"
+    static let host = "track"
+    static let stopQueryKey = "stop"
+    static let stopQueryValue = "1"
+}
 
-/// Deep links into the app (live-activities change: every Live Activity
-/// face taps `lifio://track`). Pure parsing — navigation effects live in
+/// Deep links into the app. Pure parsing — navigation effects live in
 /// `AppNavigationStack` (`requestTrack`) so this stays unit-testable with
-/// no SwiftUI dependency. Scheme/host come from the shared contract, so
-/// construction (widget) and parsing (app) cannot drift apart.
+/// no SwiftUI dependency.
 enum DeepLink: Equatable {
     /// Select the Track tab (the running timer lives there).
     case track
@@ -18,13 +24,13 @@ enum DeepLink: Equatable {
     /// Parses an incoming URL, or nil when it is not a known link
     /// (unknown links are ignored — never routed, never crashed on).
     static func parse(_ url: URL) -> DeepLink? {
-        guard url.scheme == LiveActivityDeepLink.trackScheme,
-              url.host == LiveActivityDeepLink.trackHost
+        guard url.scheme == TrackLink.scheme,
+              url.host == TrackLink.host
         else { return nil }
         let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         if items.contains(where: {
-            $0.name == LiveActivityDeepLink.stopQueryKey
-                && $0.value == LiveActivityDeepLink.stopQueryValue
+            $0.name == TrackLink.stopQueryKey
+                && $0.value == TrackLink.stopQueryValue
         }) {
             return .stopTimer
         }

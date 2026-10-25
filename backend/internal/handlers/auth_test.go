@@ -496,3 +496,45 @@ func TestRequestOTP_SpoofedHeaderDoesNotBypassRateLimit(t *testing.T) {
 		t.Errorf("expected 429 (spoofed header must not bypass), got %d", w.Code)
 	}
 }
+
+// testJWTSecret is the shared HMAC secret for test-minted bearer tokens
+// (mintBearer) and test handlers (newTestHandlerWithDependencies): both
+// sides must agree or auth fails.
+const testJWTSecret = "test-secret-key-at-least-32-bytes!!"
+
+// mintBearer creates a user and a valid access token for it.
+func mintBearer(t *testing.T, store db.Store, email string) (userID, token string) {
+	t.Helper()
+	user, err := store.UpsertUser(context.Background(), email)
+	if err != nil {
+		t.Fatalf("UpsertUser: %v", err)
+	}
+	ts := auth.NewTokenService(testJWTSecret, 15*time.Minute, 7*24*time.Hour)
+	tok, err := ts.CreateAccessToken(user.ID, user.Email)
+	if err != nil {
+		t.Fatalf("CreateAccessToken: %v", err)
+	}
+	return user.ID, tok
+}
+
+// decodeBody decodes a JSON response body into v.
+func decodeBody(t *testing.T, w *httptest.ResponseRecorder, v any) {
+	t.Helper()
+	if err := json.NewDecoder(w.Body).Decode(v); err != nil {
+		t.Fatalf("decode response: %v (body=%s)", err, w.Body.String())
+	}
+}
+
+// errCode decodes the error envelope and returns its code.
+func errCode(t *testing.T, w *httptest.ResponseRecorder) string {
+	t.Helper()
+	var resp struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+			Details any    `json:"details"`
+		} `json:"error"`
+	}
+	decodeBody(t, w, &resp)
+	return resp.Error.Code
+}

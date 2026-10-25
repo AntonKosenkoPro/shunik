@@ -35,7 +35,6 @@ struct AccountDeletionMonitorTests {
         } else {
             Issue.record("B must stay signed in")
         }
-        #expect(h.live.endedOrphanedCalls == 0)
         #expect(await h.coordinator.pendingCleanupAccounts().isEmpty)
     }
 

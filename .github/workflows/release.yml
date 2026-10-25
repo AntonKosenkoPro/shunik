@@ -314,7 +314,6 @@ jobs:
           # bumps have never touched them (see v0.1.4 bump 206cc3d).
           RELEASE_PLISTS = [
               "ios/TimeOfLife/TimeOfLife/Configuration/Info.plist",
-              "ios/TimeOfLife/LifioLiveActivities/Info.plist",
           ]
           # Single source of truth for the commit step (see PLISTS env there).
           if "GITHUB_OUTPUT" in os.environ:
