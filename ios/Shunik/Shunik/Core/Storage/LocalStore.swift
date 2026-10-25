@@ -717,6 +717,18 @@ actor LocalStore {
         }
     }
 
+    /// Every pet's events, newest first (the All-pets timeline). Detail rows
+    /// join exactly like `listEvents(petID:)` via the shared row mapping.
+    func listAllEvents() throws -> [EventRecord] {
+        try queue.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT * FROM event_base
+                ORDER BY occurred_at DESC, id ASC
+                """)
+            return try rows.map { try Self.event(from: $0, db: db) }
+        }
+    }
+
     /// Pull-merge upsert: normalizes timestamps, replaces base + detail
     /// atomically only when the server `updated_at` is newer, and skips
     /// locally-deleted rows.

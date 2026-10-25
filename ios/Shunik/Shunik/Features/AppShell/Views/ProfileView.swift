@@ -79,7 +79,7 @@ struct ProfileView: View {
     // types or adding/removing the trailing button re-lays-out the section
     // and the screen jumps on every tap of Sync now.
     @ViewBuilder private var syncStatusRow: some View {
-        TimelineView(.periodic(from: Date(), by: 60)) { context in
+        SwiftUI.TimelineView(.periodic(from: Date(), by: 60)) { context in
             switch sync.status {
             case .inactive:
                 EmptyView()

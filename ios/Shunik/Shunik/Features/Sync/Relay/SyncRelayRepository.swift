@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import Foundation
 
 /// The sync relay surface: the Go backend's household-scoped CRUD for pets,
@@ -22,6 +23,14 @@ protocol SyncRelay: Sendable {
     func createDocument(_ doc: DocumentRecord) async throws -> DocumentRecord
     func updateDocument(id: String, body: DocumentUpdateBody) async throws -> DocumentRecord
     func deleteDocument(id: String) async throws
+    /// Mints a presigned upload URL (`{"upload_url","expires_at"}`).
+    func uploadURL(id: String) async throws -> URL
+    /// Confirms bytes at the blob key: 200 decodes the ready `DocumentRecord`,
+    /// 409 `upload_incomplete` surfaces as a plain `APIError` (never a
+    /// `ConflictError` — there is no server copy to rebase onto).
+    func confirmUpload(id: String) async throws -> DocumentRecord
+    /// Mints a presigned download URL (`{"download_url","expires_at"}`).
+    func downloadURL(id: String) async throws -> URL
     func listDeletions(since: String?) async throws -> DeletionListResponse
 }
 
@@ -151,6 +160,46 @@ final class SyncRelayRepository: SyncRelay {
         try await deleteResource("documents/\(id)")
     }
 
+    // MARK: - Document transfer (presigned CDN URLs)
+
+    func uploadURL(id: String) async throws -> URL {
+        let response: UploadURLResponse = try await get("documents/\(id)/upload-url")
+        guard let url = URL(string: response.uploadURL) else {
+            throw APIError.decoding(underlying: "malformed upload_url")
+        }
+        return url
+    }
+
+    /// POST confirm: 200 decodes the ready record. The 409 envelope carries
+    /// `upload_incomplete` — decoded into a plain `APIError.server` on the
+    /// tuple path (fake client) and rethrown as-is on the production path
+    /// (real `APIClient.sendRaw` already throws the envelope error). Neither
+    /// path touches `ConflictError`: only `patch` maps `conflict`.
+    func confirmUpload(id: String) async throws -> DocumentRecord {
+        let result: (data: Data, statusCode: Int)
+        do {
+            result = try await client.sendRaw(endpoint(.post, "documents/\(id)/confirm"))
+        } catch let api as APIError where api.code == "upload_incomplete" {
+            throw api
+        }
+        switch result.statusCode {
+        case 200 ... 299:
+            return try decode(result.data)
+        case 409:
+            throw serverError(from: result.data, statusCode: result.statusCode)
+        default:
+            throw APIError.unexpected
+        }
+    }
+
+    func downloadURL(id: String) async throws -> URL {
+        let response: DownloadURLResponse = try await get("documents/\(id)/download-url")
+        guard let url = URL(string: response.downloadURL) else {
+            throw APIError.decoding(underlying: "malformed download_url")
+        }
+        return url
+    }
+
     // MARK: - Deletions
 
     func listDeletions(since: String?) async throws -> DeletionListResponse {
@@ -240,6 +289,25 @@ final class SyncRelayRepository: SyncRelay {
         }
     }
 
+    /// Decodes a non-conflict error envelope (e.g. confirm's 409
+    /// `upload_incomplete`) into a plain `APIError.server`. Falls back to a
+    /// status-derived code when the body is not an envelope.
+    private func serverError(from data: Data, statusCode: Int) -> Error {
+        do {
+            let envelope = try JSONDecoder().decode(ErrorEnvelope.self, from: data)
+            return APIError.server(
+                code: envelope.error.code,
+                message: envelope.error.message,
+                details: envelope.detailsAsStringMap
+            )
+        } catch {
+            return APIError.server(
+                code: "http_\(statusCode)",
+                message: HTTPURLResponse.localizedString(forStatusCode: statusCode)
+            )
+        }
+    }
+
     /// DELETE: 204 success; 404 (already gone) is success too. Both the
     /// tuple form (fake client) and the thrown envelope form (production
     /// `APIClient`, code `not_found` / `http_404`) are swallowed.
@@ -266,6 +334,33 @@ private struct ConflictEnvelope<T: Decodable>: Decodable {
         let server: T
     }
     let error: Body
+}
+
+/// Presigned-URL envelopes (`DocumentUploadResponse` /
+/// `DocumentDownloadResponse` in `openapi.yaml`).
+private struct UploadURLResponse: Decodable {
+    let uploadURL: String
+
+    enum CodingKeys: String, CodingKey {
+        case uploadURL = "upload_url"
+    }
+}
+
+private struct DownloadURLResponse: Decodable {
+    let downloadURL: String
+
+    enum CodingKeys: String, CodingKey {
+        case downloadURL = "download_url"
+    }
+}
+
+/// Offline defaults for the document-transfer surface so test doubles and the
+/// UI-testing stub that only exercise household/pet paths keep compiling
+/// without stubbing CDN methods. Real doubles override these.
+extension SyncRelay {
+    func uploadURL(id: String) async throws -> URL { throw APIError.offline }
+    func confirmUpload(id: String) async throws -> DocumentRecord { throw APIError.offline }
+    func downloadURL(id: String) async throws -> URL { throw APIError.offline }
 }
 
 // MARK: - HouseholdService

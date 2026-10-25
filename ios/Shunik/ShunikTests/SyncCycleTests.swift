@@ -76,6 +76,9 @@ struct SyncCycleTests {
         func createDocument(_ doc: DocumentRecord) async throws -> DocumentRecord { doc }
         func updateDocument(id: String, body: DocumentUpdateBody) async throws -> DocumentRecord { throw APIError.offline }
         func deleteDocument(id: String) async throws {}
+        func uploadURL(id: String) async throws -> URL { throw APIError.offline }
+        func confirmUpload(id: String) async throws -> DocumentRecord { throw APIError.offline }
+        func downloadURL(id: String) async throws -> URL { throw APIError.offline }
 
         func listDeletions(since: String?) async throws -> DeletionListResponse {
             DeletionListResponse(deletions: deletions, cursor: "")

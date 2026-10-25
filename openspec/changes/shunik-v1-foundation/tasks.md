@@ -40,10 +40,12 @@
 
 ## 6. iOS — domain features
 
-- [ ] 6.1 Pets + adaptive IA: scope chrome appears only when `pets.count > 1`; en+ru strings + `L10n` for every new copy (U4); Theme colors only
-- [ ] 6.2 Events: vacc/grooming point + next-due forms; weight log + history + trend (`unit-system` chips, integer grams, epsilon)
-- [ ] 6.3 Medications: course editor (plan fields, schedule kinds in-scope only) + intake states taken/missed/skipped + auto-miss on supersede + early-stop pruning; PRN log-only
-- [ ] 6.4 Documents: library + pet filter (shared-included counts) + name search + system-sheet share + background CDN upload with offline queue
+- [x] 6.1 Pets + adaptive IA: scope chrome appears only when `pets.count > 1`; en+ru strings + `L10n` for every new copy (U4); Theme colors only
+- [x] 6.2 Events: vacc/grooming point + next-due forms; weight log + history + trend (`unit-system` chips, integer grams, epsilon)
+- [x] 6.3 Medications: course editor (plan fields, schedule kinds in-scope only) + intake states taken/missed/skipped + auto-miss on supersede + early-stop pruning; PRN log-only
+- [x] 6.4 Documents: library + pet filter (shared-included counts) + name search + system-sheet share + background CDN upload with offline queue
+- iOS detail: TabView shell (Timeline/Pets/Meds/Documents/Profile, per-tab NavigationStack); `PetScope` adaptive helper; `UnitLens` per-device Metric/Imperial (locale default, decimal lb, 10g epsilon); `MedicationEngine` (wall-clock slots, Mon=1..Sun=7 → Calendar map, materialize/auto-miss/adherence excl. skipped, stop prunes future pendings); `DocumentTransferService` (presigned PUT → confirm, download cache, staged offline bytes, explicit retry); relay +3 methods (upload/confirm/download URL, 409 upload_incomplete never ConflictError); blob_key server-supplied; merger fixes: `SwiftUI.TimelineView` qualification in ProfileView, `meds.infoRef` case, L10n snapshot refresh.
+- Verified: `swiftlint --strict` clean, `xcodebuild test` 409/409 green (49 suites incl. new Pets/Timeline/UnitLens/MedicationEngine/Medications/DocumentTransfer suites), backend untouched, `openspec validate --all --strict` green (re-run at commit).
 
 ## 7. iOS — reminders + units
 
