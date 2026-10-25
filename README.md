@@ -90,6 +90,7 @@ Prerequisites: Release build installed on the device (`Product → Destination �
 7. [ ] **Cancel is silent** — start the Apple flow, dismiss the sheet; no error banner appears.
 8. [ ] **Offline gates the button** — airplane mode on; the Apple button is disabled (dimmed); the email path still navigates.
 9. [ ] **Idempotent re-sign-in** — sign out, sign in with Apple again; same user (the same account file reattaches, no duplicate account or duplicate seeded categories).
+10. [ ] **Hide My Email attribution (email-OTP path)** — on Continue with Email, the system Hide My Email sheet attributes to Lifio (never a numeric PID); the saved alias label in Settings → Apple Account → iCloud → Hide My Email agrees. Requires the `webcredentials:antonkosenko.pro` association verified (`swcd`).
 
 ### Live Activities — manual smoke checklist
 
