@@ -89,4 +89,11 @@ var (
 	// user who already belongs to a household (day-1: one household per
 	// user). The handler maps it to 409 already_member.
 	ErrAlreadyMember = errors.New("user already belongs to a household")
+
+	// ErrInvalidPetID is returned when a write references a pet id that
+	// does not exist in the household — unknown pet, or another
+	// household's pet (never distinguished, no cross-household leak). The
+	// same sentinel covers unknown courses/documents' pets ("unknown
+	// reference" shape). The handler maps it to 422 invalid_pet_id.
+	ErrInvalidPetID = errors.New("invalid pet id")
 )

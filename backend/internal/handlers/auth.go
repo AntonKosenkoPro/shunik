@@ -18,6 +18,7 @@ import (
 
 	"github.com/antonkosenko/shunik/backend/internal/apple"
 	"github.com/antonkosenko/shunik/backend/internal/auth"
+	"github.com/antonkosenko/shunik/backend/internal/blobs"
 	"github.com/antonkosenko/shunik/backend/internal/db"
 	"github.com/antonkosenko/shunik/backend/internal/email"
 	"github.com/antonkosenko/shunik/backend/internal/observe"
@@ -47,6 +48,10 @@ type Handler struct {
 	appleTokenKeys  *recovery.Keyring
 	digestKey       []byte
 	appleClientID   string
+	// blobStore holds document bytes (nil = unconfigured: blob endpoints
+	// 503 and purge/GC byte cleanup skips silently). Wired via
+	// WithBlobStore.
+	blobStore blobs.Store
 }
 
 // RateLimiterGroup holds the rate limiters used by the handlers.

@@ -34,9 +34,9 @@ func (s *PostgresStore) EnsureHousehold(ctx context.Context, userID string) (Hou
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO household_members (household_id, user_id, added_by, joined_at)
-		VALUES ($1, $2, $2, NOW())
+		VALUES ($1, $2::uuid, $3, NOW())
 		ON CONFLICT DO NOTHING
-	`, hid, userID); err != nil {
+	`, hid, userID, userID); err != nil {
 		return Household{}, fmt.Errorf("ensure household member insert: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -178,8 +178,8 @@ func (s *PostgresStore) AcceptInvite(ctx context.Context, inviteID, userID strin
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO household_members (household_id, user_id, added_by, joined_at)
-		VALUES ($1, $2, $2, NOW())
-	`, householdID, userID); err != nil {
+		VALUES ($1, $2::uuid, $3, NOW())
+	`, householdID, userID, userID); err != nil {
 		return Household{}, fmt.Errorf("accept invite member insert: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `

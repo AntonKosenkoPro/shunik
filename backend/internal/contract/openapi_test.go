@@ -37,6 +37,11 @@ var canonicalErrorCodes = []string{
 	"household_not_found",
 	"invite_not_found",
 	"already_member",
+	"not_found",
+	"conflict",
+	"invalid_pet_id",
+	"upload_incomplete",
+	"blob_not_configured",
 	"unauthorized",
 }
 
@@ -50,7 +55,19 @@ var bearerProtectedPaths = []string{
 	"/api/v1/households/mine",
 	"/api/v1/households/invites",
 	"/api/v1/households/invites/accept",
-	"/api/v1/households/members",
+	"/api/v1/households/members/{userId}",
+	"/api/v1/pets",
+	"/api/v1/pets/{id}",
+	"/api/v1/events",
+	"/api/v1/events/{id}",
+	"/api/v1/intakes",
+	"/api/v1/intakes/{id}",
+	"/api/v1/documents",
+	"/api/v1/documents/{id}",
+	"/api/v1/documents/{id}/upload-url",
+	"/api/v1/documents/{id}/confirm",
+	"/api/v1/documents/{id}/download-url",
+	"/api/v1/deletions",
 }
 
 type rawSpec struct {

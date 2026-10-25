@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 )
 
 // authedRequest builds a request carrying the authenticated user id,
@@ -184,8 +186,7 @@ func TestRemoveMember_RevokesThenRemoves(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	h.RemoveMember(w, authedRequest(t, http.MethodDelete, "/api/v1/households/members",
-		map[string]string{"user_id": guestID}, ownerID))
+	h.RemoveMember(w, authedMemberRequest(t, guestID, ownerID))
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d (%s)", w.Code, w.Body.String())
 	}
@@ -208,11 +209,21 @@ func TestRemoveMember_RevokesThenRemoves(t *testing.T) {
 
 	// Removing a non-member 404s.
 	w = httptest.NewRecorder()
-	h.RemoveMember(w, authedRequest(t, http.MethodDelete, "/api/v1/households/members",
-		map[string]string{"user_id": guestID}, ownerID))
+	h.RemoveMember(w, authedMemberRequest(t, guestID, ownerID))
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", w.Code)
 	}
+}
+
+// authedMemberRequest builds a DELETE /members/{userID} request carrying
+// the acting user's auth plus chi's route params.
+func authedMemberRequest(t *testing.T, targetID, actorID string) *http.Request {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/households/members/"+targetID, nil)
+	routeCtx := chi.NewRouteContext()
+	routeCtx.URLParams.Add("userID", targetID)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, routeCtx))
+	return req.WithContext(context.WithValue(req.Context(), ContextKeyUserID, actorID))
 }
 
 func TestCreateInvite_Validation(t *testing.T) {

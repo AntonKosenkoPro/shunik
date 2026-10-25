@@ -21,12 +21,14 @@
 - [x] 3.4 Revoke-member = lock-not-wipe; member devices gate on next refresh (files intact) (RemoveMember revokes ALL refresh tokens of the removed user BEFORE deleting the membership; devices 401 to the auth gate with files intact; `TestRemoveMember_RevokesThenRemoves`)
 - Verified: `gofmt` clean, `go vet` clean, `golangci-lint` 0 issues, `go test ./...` green (new `households_test.go` ×2: store + handlers incl. 202-always/no-enumeration, 409 double-join, 404 unknown/consumed/expired, revoke-before-remove, OTP-verify auto-household), contract gate green (4 paths + `household`/`household_member`/`invite` schemas + 3 error codes).
 
-## 4. Backend — domain + blobs + sync
+## 4. Backend — domain + blobs + sync [DONE]
 
-- [ ] 4.1 Tables: `pets`, `event_base` + `vacc_detail`, `grooming_detail`, `weight_point`, `med_course` + `intakes[]`, `documents` + `document_pets` (+ reserved `extracted_text`; `document_events` noted, not built)
-- [ ] 4.2 Sync: per-resource cursors + tombstones for all new resources; order pets-before-dependents; ensure-pet-before-push
-- [ ] 4.3 Blob endpoints: presigned PUT → confirm → presigned GET, short-lived household-scoped URLs, GC for unconfirmed uploads, async blob delete on tombstone
-- [ ] 4.4 Contract gate: `openapi.yaml` + `internal/contract` tests covering new paths, envelope, idempotent creates, LWW, deletions feed
+- [x] 4.1 Tables: `pets`, `event_base` + `vacc_detail`, `grooming_detail`, `weight_point`, `med_course` + `intakes[]`, `documents` + `document_pets` (+ reserved `extracted_text`; `document_events` noted, not built) (migrations `011_pets_events`, `012_documents`, `013_tombstones_household` for household-scoped tombstones)
+- [x] 4.2 Sync: per-resource cursors + tombstones for all new resources; order pets-before-dependents; ensure-pet-before-push (server side: changed-since pulls + cursor, base `updated_at` as LWW clock with 409 + server copy, idempotent creates, `GET /deletions?deleted_since=` reintroduced household-scoped; full outbox-drain order is §5)
+- [x] 4.3 Blob endpoints: presigned PUT → confirm → presigned GET, short-lived household-scoped URLs, GC for unconfirmed uploads, async blob delete on tombstone (`BlobStore` interface + AWS SDK v2 S3 impl + in-memory fake; `NewBlobStoreFromConfig`, disabled → 503; opportunistic 24h/20-cap GC sweep; purge collects orphaned blob keys, handler deletes best-effort)
+- [x] 4.4 Contract gate: `openapi.yaml` + `internal/contract` tests covering new paths, envelope, idempotent creates, LWW, deletions feed (12 domain paths + household `DELETE /members/{userID}` path-param migration; new codes: `not_found conflict invalid_pet_id upload_incomplete blob_not_configured`; update guards: pet_id/kind immutable — 422/400 respectively)
+- Merger fixes (post-fan-out): pg `$2::uuid` param-type fix in `EnsureHousehold`/`AcceptInvite` (runtime-verified on live PG 18), migration-test `<10` cap removed, `ListUnconfirmedDocuments`/`DeleteDocumentsByIDs` promoted to the Store contract (both backends), store-assigned opaque blob keys via shared `blobKeyFor` (single enforcement point), GC sweep rewritten onto the non-tombstoning pair, 24 golangci revive findings cleared.
+- Verified: `gofmt`/`go vet` clean, `golangci-lint` 0 issues, `go test ./...` green (incl. live-PG `TestPgDomain_*` + parity suites via local PG18), contract green, iOS suite green (tree untouched by §4).
 
 ## 5. iOS — store, sync, household gate
 

@@ -146,6 +146,11 @@ type PurgeResult struct {
 	RevocationJobID string
 	// SubjectDigest is the job's HMAC subject digest ("" when no job).
 	SubjectDigest string
+	// OrphanedBlobKeys are document blob keys left behind when the purge
+	// emptied a household (its row cascades metadata, not bytes). The
+	// caller deletes them best-effort; failures are logged orphans for the
+	// GC sweep, never a purge failure.
+	OrphanedBlobKeys []string
 }
 
 // Tombstone records a hard delete that other devices must apply.
@@ -370,6 +375,272 @@ type Store interface {
 	// failed revocation after removal would leave valid tokens outside.
 	RemoveMember(ctx context.Context, householdID, userID string) error
 
+	// CreatePet inserts a pet (idempotent on ID: replays return the stored
+	// row with created=false). The pet's household must exist.
+	CreatePet(ctx context.Context, householdID string, in PetInput, updatedBy string) (pet Pet, created bool, err error)
+
+	// GetPet returns a pet or ErrNotFound (other households' pets are
+	// invisible — never a cross-household leak).
+	GetPet(ctx context.Context, householdID, petID string) (Pet, error)
+
+	// ListPetsChangedSince returns pets with updated_at after since
+	// (nil/zero = all), ordered by updated_at ASC, for delta pulls.
+	ListPetsChangedSince(ctx context.Context, householdID string, since *time.Time) ([]Pet, error)
+
+	// UpdatePet full-replaces a pet when baseUpdatedAt matches the stored
+	// updated_at; otherwise ErrConflict with the row untouched.
+	UpdatePet(ctx context.Context, householdID, petID string, in PetInput, baseUpdatedAt time.Time, updatedBy string) (Pet, error)
+
+	// DeletePet removes the pet with cascade: every event (details,
+	// intakes) is tombstoned per resource, documents drop the pet from
+	// their link sets via document updates, then the pet is tombstoned.
+	DeletePet(ctx context.Context, householdID, petID, deletedBy string) error
+
+	// CreateEvent inserts an event with its kind detail in one transaction
+	// (idempotent on ID). The pet must belong to the household or the
+	// write fails loudly (ErrInvalidPetID). Base updated_at is the LWW
+	// clock for the whole event.
+	CreateEvent(ctx context.Context, householdID string, in EventInput, updatedBy string) (event Event, created bool, err error)
+
+	// GetEvent returns the event with its detail joined, or ErrNotFound.
+	GetEvent(ctx context.Context, householdID, eventID string) (Event, error)
+
+	// ListEventsChangedSince returns events (details joined) with base
+	// updated_at after since, ordered ASC. Empty petID = all pets.
+	ListEventsChangedSince(ctx context.Context, householdID string, since *time.Time, petID string) ([]Event, error)
+
+	// UpdateEvent full-replaces base + detail when baseUpdatedAt matches
+	// the stored base updated_at; otherwise ErrConflict.
+	UpdateEvent(ctx context.Context, householdID, eventID string, in EventInput, baseUpdatedAt time.Time, updatedBy string) (Event, error)
+
+	// DeleteEvent removes details + base and tombstones resource 'event'.
+	DeleteEvent(ctx context.Context, householdID, eventID string) error
+
+	// CreateIntake inserts an intake under a household course (idempotent
+	// on ID). The course must belong to the household (ErrInvalidPetID
+	// covers the missing-course case: same "unknown reference" shape).
+	CreateIntake(ctx context.Context, householdID string, in IntakeInput, createdBy string) (intake MedIntake, created bool, err error)
+
+	// GetIntake returns an intake or ErrNotFound.
+	GetIntake(ctx context.Context, householdID, intakeID string) (MedIntake, error)
+
+	// ListIntakesChangedSince returns intakes with updated_at after since,
+	// ordered ASC. Empty courseID = all courses.
+	ListIntakesChangedSince(ctx context.Context, householdID, courseID string, since *time.Time) ([]MedIntake, error)
+
+	// UpdateIntake replaces mutable fields when baseUpdatedAt matches;
+	// otherwise ErrConflict. Status transitions stamp MarkedBy from the
+	// caller; a taken mark without TakenAt stamps now.
+	UpdateIntake(ctx context.Context, householdID, intakeID string, in IntakeUpdate, baseUpdatedAt time.Time, markedBy string) (MedIntake, error)
+
+	// DeleteIntake removes the intake and tombstones resource 'intake'.
+	DeleteIntake(ctx context.Context, householdID, intakeID string) error
+
+	// CreateDocument inserts document metadata with its pet link set in one
+	// transaction (idempotent on ID) and assigns the blob key. Bytes upload
+	// separately; ready stays false until ConfirmDocument.
+	CreateDocument(ctx context.Context, householdID string, in DocumentInput, updatedBy string) (doc Document, created bool, err error)
+
+	// GetDocument returns document metadata with pet IDs, or ErrNotFound.
+	GetDocument(ctx context.Context, householdID, docID string) (Document, error)
+
+	// ListDocumentsChangedSince returns document metadata with updated_at
+	// after since, ordered ASC. Never bytes.
+	ListDocumentsChangedSince(ctx context.Context, householdID string, since *time.Time) ([]Document, error)
+
+	// UpdateDocument replaces title + link set when baseUpdatedAt matches;
+	// otherwise ErrConflict.
+	UpdateDocument(ctx context.Context, householdID, docID, title string, petIDs []string, baseUpdatedAt time.Time, updatedBy string) (Document, error)
+
+	// DeleteDocument removes links + row and tombstones resource
+	// 'document'. The blob bytes are the caller's job (delete after
+	// commit; failures leave orphans for the GC sweep).
+	DeleteDocument(ctx context.Context, householdID, docID string) (Document, error)
+
+	// ConfirmDocument marks a document ready (bytes verified by the caller).
+	ConfirmDocument(ctx context.Context, householdID, docID string) (Document, error)
+
+	// ListUnconfirmedDocuments returns up to limit documents that are still
+	// unready and were created before olderThan, oldest first — the GC
+	// sweep input. Only ID and BlobKey are populated.
+	ListUnconfirmedDocuments(ctx context.Context, olderThan time.Time, limit int) ([]Document, error)
+
+	// DeleteDocumentsByIDs deletes the listed documents + their links
+	// WITHOUT tombstones (GC path — clients never saw unready rows because
+	// pulls filter ready=true).
+	DeleteDocumentsByIDs(ctx context.Context, ids []string) error
+
+	// ListHouseholdDeletions returns the household's tombstones with
+	// deleted_at after since (nil/zero = all), ordered ASC.
+	ListHouseholdDeletions(ctx context.Context, householdID string, since *time.Time) ([]Tombstone, error)
+
+	// RecordTombstone writes one tombstone row.
+	RecordTombstone(ctx context.Context, householdID, resource, recordID string, at time.Time) error
+
 	// Close closes the database connection.
 	Close() error
+}
+
+// Pet is one animal in a household. Birthdate is day-precision UTC
+// (midnight); NULL means unknown.
+type Pet struct {
+	ID          string     `json:"id"`
+	HouseholdID string     `json:"household_id"`
+	Name        string     `json:"name"`
+	Species     string     `json:"species"`
+	Birthdate   *time.Time `json:"birthdate,omitempty"`
+	Notes       string     `json:"notes"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+	UpdatedBy   string     `json:"updated_by"`
+}
+
+// PetInput is the full client-supplied pet shape (creates and full-replace
+// updates alike — PATCH is full-replace, never partial).
+type PetInput struct {
+	ID        string     `json:"id"`
+	Name      string     `json:"name"`
+	Species   string     `json:"species"`
+	Birthdate *time.Time `json:"birthdate"`
+	Notes     string     `json:"notes"`
+}
+
+// Event kinds: vaccination | grooming | weight | med_course. Exactly one
+// detail below is non-nil, matching Kind.
+type Event struct {
+	ID          string        `json:"id"`
+	HouseholdID string        `json:"household_id"`
+	PetID       string        `json:"pet_id"`
+	Kind        string        `json:"kind"`
+	OccurredAt  time.Time     `json:"occurred_at"`
+	NextDueAt   *time.Time    `json:"next_due_at,omitempty"`
+	Title       string        `json:"title"`
+	Vaccination *VaccDetail   `json:"vaccination,omitempty"`
+	Grooming    *GroomDetail  `json:"grooming,omitempty"`
+	Weight      *WeightDetail `json:"weight,omitempty"`
+	Course      *MedCourse    `json:"course,omitempty"`
+	CreatedAt   time.Time     `json:"created_at"`
+	UpdatedAt   time.Time     `json:"updated_at"`
+	UpdatedBy   string        `json:"updated_by"`
+}
+
+// EventInput is the full client-supplied event shape, detail included.
+type EventInput struct {
+	ID          string          `json:"id"`
+	PetID       string          `json:"pet_id"`
+	Kind        string          `json:"kind"`
+	OccurredAt  time.Time       `json:"occurred_at"`
+	NextDueAt   *time.Time      `json:"next_due_at"`
+	Title       string          `json:"title"`
+	Vaccination *VaccDetail     `json:"vaccination,omitempty"`
+	Grooming    *GroomDetail    `json:"grooming,omitempty"`
+	Weight      *WeightDetail   `json:"weight,omitempty"`
+	Course      *MedCourseInput `json:"course,omitempty"`
+}
+
+// VaccDetail is the vaccination-specific detail of an event.
+type VaccDetail struct {
+	Vaccine string `json:"vaccine"`
+	Batch   string `json:"batch"`
+	Vet     string `json:"vet"`
+	Notes   string `json:"notes"`
+}
+
+// GroomDetail is the grooming-specific detail of an event.
+type GroomDetail struct {
+	Service string `json:"service"`
+	Place   string `json:"place"`
+	Notes   string `json:"notes"`
+}
+
+// WeightDetail is the weight-specific detail of an event (grams, canonical).
+type WeightDetail struct {
+	Grams int64 `json:"grams"`
+}
+
+// MedCourse is the plan hanging off an event_base row of kind med_course.
+// DoseAmount stays a string ("0.5", never a float) so no driver or JSON
+// layer can round it; ScheduleTimes is comma "HH:MM" ("08:00,20:00", ""
+// for prn); ScheduleWeekdays is comma ISO dow ("1,3,5", "" = every day).
+type MedCourse struct {
+	DrugName         string     `json:"drug_name"`
+	DoseAmount       string     `json:"dose_amount"`
+	DoseUnit         string     `json:"dose_unit"`
+	Route            string     `json:"route"`
+	ScheduleKind     string     `json:"schedule_kind"`
+	ScheduleTimes    string     `json:"schedule_times"`
+	ScheduleWeekdays string     `json:"schedule_weekdays"`
+	DurationDays     int        `json:"duration_days"`
+	EndsOn           *time.Time `json:"ends_on,omitempty"`
+	Status           string     `json:"status"`
+	Instructions     string     `json:"instructions"`
+	InfoRef          string     `json:"info_ref"`
+}
+
+// MedCourseInput is the client-supplied med-course shape (full-replace on
+// update, same as MedCourse).
+type MedCourseInput = MedCourse
+
+// MedIntake is one due or logged giving of a course. DueAt is NULL for
+// PRN-logged intakes. MarkedBy is "" while pending.
+type MedIntake struct {
+	ID           string     `json:"id"`
+	HouseholdID  string     `json:"household_id"`
+	CourseID     string     `json:"course_id"`
+	DueAt        *time.Time `json:"due_at,omitempty"`
+	Status       string     `json:"status"`
+	TakenAt      *time.Time `json:"taken_at,omitempty"`
+	DoseSnapshot string     `json:"dose_snapshot"`
+	Note         string     `json:"note"`
+	MarkedBy     string     `json:"marked_by"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+}
+
+// IntakeInput is the client-supplied intake shape for creates.
+type IntakeInput struct {
+	ID           string     `json:"id"`
+	CourseID     string     `json:"course_id"`
+	DueAt        *time.Time `json:"due_at"`
+	DoseSnapshot string     `json:"dose_snapshot"`
+	Note         string     `json:"note"`
+}
+
+// IntakeUpdate replaces the mutable intake fields (status transitions
+// included). TakenAt is client-supplied (offline giving time) and validated;
+// absent on a taken mark, the server stamps now.
+type IntakeUpdate struct {
+	Status       string     `json:"status"`
+	TakenAt      *time.Time `json:"taken_at"`
+	Note         string     `json:"note"`
+	DoseSnapshot string     `json:"dose_snapshot"`
+}
+
+// Document is account-library metadata; bytes live on the CDN and never
+// pass through the sync path. PetIDs replaces the link set wholesale.
+type Document struct {
+	ID            string    `json:"id"`
+	HouseholdID   string    `json:"household_id"`
+	Title         string    `json:"title"`
+	Mime          string    `json:"mime"`
+	SizeBytes     int64     `json:"size_bytes"`
+	Filename      string    `json:"filename"`
+	BlobKey       string    `json:"blob_key"`
+	Ready         bool      `json:"ready"`
+	ExtractedText string    `json:"extracted_text"`
+	PetIDs        []string  `json:"pet_ids"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	UpdatedBy     string    `json:"updated_by"`
+}
+
+// DocumentInput is the client-supplied document shape for creates.
+// The blob key is assigned by the store (fixed scheme h/<household>/d/<doc>/<safe>).
+type DocumentInput struct {
+	ID        string   `json:"id"`
+	Title     string   `json:"title"`
+	Mime      string   `json:"mime"`
+	SizeBytes int64    `json:"size_bytes"`
+	Filename  string   `json:"filename"`
+	PetIDs    []string `json:"pet_ids"`
 }

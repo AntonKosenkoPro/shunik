@@ -1038,7 +1038,7 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
-  /api/v1/households/members:
+  /api/v1/households/members/{userId}:
     delete:
       operationId: removeMember
       summary: Remove member
@@ -1052,17 +1052,19 @@ paths:
         - Households
       security:
         - BearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RemoveMemberRequest"
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Member to remove; must belong to the caller's household.
       responses:
         "204":
           description: Membership removed; the removed user's sessions revoked.
         "400":
-          description: Invalid request body.
+          description: Missing user ID.
           content:
             application/json:
               schema:
@@ -1091,6 +1093,1358 @@ paths:
                 error:
                   code: household_not_found
                   message: Member is not in your household
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/pets:
+    post:
+      operationId: createPet
+      summary: Create a pet
+      description: |
+        Creates a pet in the caller's household. `id` is client-generated
+        (UUID v7). Idempotent: replaying a create with an existing `id`
+        returns the stored row with 200 instead of 201. Requires a valid
+        Bearer access token.
+      tags:
+        - Pets
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PetInput"
+      responses:
+        "201":
+          description: Pet created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+        "200":
+          description: Idempotent replay — a pet with this id already exists; the stored row is returned unchanged.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+        "400":
+          description: Invalid request body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_body
+                  message: Invalid request body
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      operationId: listPets
+      summary: List pets
+      description: |
+        Returns the caller's household pets with an opaque `cursor` for
+        incremental sync. Requires a valid Bearer access token.
+      tags:
+        - Pets
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: modified_since
+          in: query
+          required: false
+          description: |
+            RFC 3339 timestamp; only pets updated after it are returned.
+            Malformed values are rejected with 400 `invalid_body`.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Household pets with sync cursor.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PetList"
+        "400":
+          description: Malformed modified_since timestamp.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_body
+                  message: Invalid modified_since timestamp
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/pets/{id}:
+    get:
+      operationId: getPet
+      summary: Get a pet
+      description: Returns one household pet. Requires a valid Bearer access token.
+      tags:
+        - Pets
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The pet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "404":
+          description: Pet not found in the caller's household.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: not_found
+                  message: Pet not found
+        "500":
+          $ref: "#/components/responses/InternalError"
+    patch:
+      operationId: updatePet
+      summary: Update a pet
+      description: |
+        Last-writer-wins guarded update: `base_updated_at` must equal the
+        stored row's `updated_at`, followed by the full mutable shape
+        (`name`, `species`, `birthdate`, `notes`). A stale base returns 409
+        `conflict` with the server copy under `details.server`.
+        Requires a valid Bearer access token.
+      tags:
+        - Pets
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PetUpdate"
+      responses:
+        "200":
+          description: Pet updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+        "400":
+          description: Invalid request body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_body
+                  message: Invalid request body
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "404":
+          description: Pet not found in the caller's household.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: not_found
+                  message: Pet not found
+        "409":
+          description: Stale base_updated_at — the server copy is returned under details.server.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: conflict
+                  message: Record was modified by another device
+                  details:
+                    server:
+                      id: 550e8400-e29b-41d4-a716-446655440000
+                      name: Barsik
+                      species: cat
+                      updated_at: "2026-10-24T12:00:00Z"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: deletePet
+      summary: Delete a pet
+      description: |
+        Deletes a pet (cascades to its events, intakes, and document links)
+        and records a tombstone for sync. Requires a valid Bearer access token.
+      tags:
+        - Pets
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Pet deleted.
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/events:
+    post:
+      operationId: createEvent
+      summary: Create an event
+      description: |
+        Creates an event_base row with exactly one kind detail
+        (vaccination, grooming, weight, med_course) in the caller's
+        household. `id` is client-generated (UUID v7); `pet_id` is immutable
+        and must belong to the household (else 422 `invalid_pet_id`).
+        Idempotent replay of an existing `id` returns the stored row with
+        200. Requires a valid Bearer access token.
+      tags:
+        - Events
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EventInput"
+      responses:
+        "201":
+          description: Event created (detail joined).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+        "200":
+          description: Idempotent replay — an event with this id already exists; the stored row is returned unchanged.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+        "400":
+          description: Invalid request body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_body
+                  message: Invalid request body
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "422":
+          description: Unknown pet reference — pet_id is not in the caller's household.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_pet_id
+                  message: Unknown pet reference
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      operationId: listEvents
+      summary: List events
+      description: |
+        Returns the caller's household events with kind details joined and
+        an opaque `cursor` for incremental sync. Requires a valid Bearer
+        access token.
+      tags:
+        - Events
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: modified_since
+          in: query
+          required: false
+          description: |
+            RFC 3339 timestamp; only events updated after it are returned.
+            Malformed values are rejected with 400 `invalid_body`.
+          schema:
+            type: string
+            format: date-time
+        - name: pet_id
+          in: query
+          required: false
+          description: Restrict to one household pet.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Household events (details joined) with sync cursor.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventList"
+        "400":
+          description: Malformed modified_since timestamp.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_body
+                  message: Invalid modified_since timestamp
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/events/{id}:
+    get:
+      operationId: getEvent
+      summary: Get an event
+      description: Returns one household event with its kind detail joined. Requires a valid Bearer access token.
+      tags:
+        - Events
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The event (detail joined).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "404":
+          description: Event not found in the caller's household.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: not_found
+                  message: Event not found
+        "500":
+          $ref: "#/components/responses/InternalError"
+    patch:
+      operationId: updateEvent
+      summary: Update an event
+      description: |
+        Last-writer-wins guarded update: `base_updated_at` must equal the
+        stored base row's `updated_at`, followed by the full mutable shape.
+        `pet_id` and `kind` are immutable (a changed `pet_id` is rejected
+        with 422 `invalid_pet_id`; a changed `kind` with 400 `invalid_body`).
+        A stale base returns 409 `conflict` with the server copy under
+        `details.server`. Requires a valid Bearer access token.
+      tags:
+        - Events
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EventUpdate"
+      responses:
+        "200":
+          description: Event updated (detail joined).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+        "400":
+          description: Invalid request body (including kind change).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_body
+                  message: Invalid request body
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "404":
+          description: Event not found in the caller's household.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: not_found
+                  message: Event not found
+        "409":
+          description: Stale base_updated_at — the server copy is returned under details.server.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: conflict
+                  message: Record was modified by another device
+                  details:
+                    server:
+                      id: 550e8400-e29b-41d4-a716-446655440000
+                      kind: vaccination
+                      updated_at: "2026-10-24T12:00:00Z"
+        "422":
+          description: Unknown pet reference — pet_id is not in the caller's household.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_pet_id
+                  message: Unknown pet reference
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: deleteEvent
+      summary: Delete an event
+      description: |
+        Deletes an event with its kind detail and records a tombstone for
+        sync. Requires a valid Bearer access token.
+      tags:
+        - Events
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Event deleted.
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/intakes:
+    post:
+      operationId: createIntake
+      summary: Create a medication intake
+      description: |
+        Creates a med_intakes row under a medication course in the caller's
+        household. `id` is client-generated (UUID v7). An unknown `course_id`
+        is rejected with 422 `invalid_pet_id` (same unknown-reference shape
+        as events). Idempotent replay of an existing `id` returns the stored
+        row with 200. Requires a valid Bearer access token.
+      tags:
+        - Intakes
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IntakeInput"
+      responses:
+        "201":
+          description: Intake created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MedIntake"
+        "200":
+          description: Idempotent replay — an intake with this id already exists; the stored row is returned unchanged.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MedIntake"
+        "400":
+          description: Invalid request body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_body
+                  message: Invalid request body
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "422":
+          description: Unknown course reference — course_id is not in the caller's household.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_pet_id
+                  message: Unknown course reference
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      operationId: listIntakes
+      summary: List medication intakes
+      description: |
+        Returns the caller's household intakes with an opaque `cursor` for
+        incremental sync. Requires a valid Bearer access token.
+      tags:
+        - Intakes
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: modified_since
+          in: query
+          required: false
+          description: |
+            RFC 3339 timestamp; only intakes updated after it are returned.
+            Malformed values are rejected with 400 `invalid_body`.
+          schema:
+            type: string
+            format: date-time
+        - name: course_id
+          in: query
+          required: false
+          description: Restrict to one medication course.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Household intakes with sync cursor.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntakeList"
+        "400":
+          description: Malformed modified_since timestamp.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_body
+                  message: Invalid modified_since timestamp
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/intakes/{id}:
+    get:
+      operationId: getIntake
+      summary: Get a medication intake
+      description: Returns one household intake. Requires a valid Bearer access token.
+      tags:
+        - Intakes
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The intake.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MedIntake"
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "404":
+          description: Intake not found in the caller's household.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: not_found
+                  message: Intake not found
+        "500":
+          $ref: "#/components/responses/InternalError"
+    patch:
+      operationId: updateIntake
+      summary: Update a medication intake
+      description: |
+        Last-writer-wins guarded update: `base_updated_at` must equal the
+        stored row's `updated_at`; all other fields are optional marks
+        (`status`, `taken_at`, `note`, `dose_snapshot`). A stale base returns
+        409 `conflict` with the server copy under `details.server`.
+        Requires a valid Bearer access token.
+      tags:
+        - Intakes
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IntakeUpdate"
+      responses:
+        "200":
+          description: Intake updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MedIntake"
+        "400":
+          description: Invalid request body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_body
+                  message: Invalid request body
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "404":
+          description: Intake not found in the caller's household.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: not_found
+                  message: Intake not found
+        "409":
+          description: Stale base_updated_at — the server copy is returned under details.server.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: conflict
+                  message: Record was modified by another device
+                  details:
+                    server:
+                      id: 550e8400-e29b-41d4-a716-446655440000
+                      status: taken
+                      updated_at: "2026-10-24T12:00:00Z"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: deleteIntake
+      summary: Delete a medication intake
+      description: Deletes an intake and records a tombstone for sync. Requires a valid Bearer access token.
+      tags:
+        - Intakes
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Intake deleted.
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/documents:
+    post:
+      operationId: createDocument
+      summary: Create a document record
+      description: |
+        Creates a document metadata row (`ready=false`) with pet links and
+        returns the `blob_key` the client uploads to via
+        POST /api/v1/documents/{id}/upload-url. Bytes never travel through
+        this API. Every `pet_ids` entry must belong to the household (else
+        422 `invalid_pet_id`). Idempotent replay of an existing `id` returns
+        the stored row with 200. Requires a valid Bearer access token.
+      tags:
+        - Documents
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentInput"
+      responses:
+        "201":
+          description: Document record created (not yet uploaded).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Document"
+        "200":
+          description: Idempotent replay — a document with this id already exists; the stored row is returned unchanged.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Document"
+        "400":
+          description: Invalid request body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_body
+                  message: Invalid request body
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "422":
+          description: Unknown pet reference — a pet_id is not in the caller's household.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_pet_id
+                  message: Unknown pet reference
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      operationId: listDocuments
+      summary: List documents
+      description: |
+        Returns document metadata with pet links and an opaque `cursor` for
+        incremental sync. Never returns bytes — use
+        GET /api/v1/documents/{id}/download-url. Requires a valid Bearer
+        access token.
+      tags:
+        - Documents
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: modified_since
+          in: query
+          required: false
+          description: |
+            RFC 3339 timestamp; only documents updated after it are returned.
+            Malformed values are rejected with 400 `invalid_body`.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Document metadata with sync cursor.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentList"
+        "400":
+          description: Malformed modified_since timestamp.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_body
+                  message: Invalid modified_since timestamp
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/documents/{id}:
+    get:
+      operationId: getDocument
+      summary: Get a document
+      description: Returns one document's metadata with pet links (never bytes). Requires a valid Bearer access token.
+      tags:
+        - Documents
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The document metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Document"
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "404":
+          description: Document not found in the caller's household.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: not_found
+                  message: Document not found
+        "500":
+          $ref: "#/components/responses/InternalError"
+    patch:
+      operationId: updateDocument
+      summary: Update a document
+      description: |
+        Last-writer-wins guarded update: `base_updated_at` must equal the
+        stored row's `updated_at`; `title` and `pet_ids` are optional
+        (`pet_ids` replaces the link set; unknown pets are rejected with 422
+        `invalid_pet_id`). A stale base returns 409 `conflict` with the
+        server copy under `details.server`. Requires a valid Bearer access
+        token.
+      tags:
+        - Documents
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentUpdate"
+      responses:
+        "200":
+          description: Document updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Document"
+        "400":
+          description: Invalid request body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_body
+                  message: Invalid request body
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "404":
+          description: Document not found in the caller's household.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: not_found
+                  message: Document not found
+        "409":
+          description: Stale base_updated_at — the server copy is returned under details.server.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: conflict
+                  message: Record was modified by another device
+                  details:
+                    server:
+                      id: 550e8400-e29b-41d4-a716-446655440000
+                      title: Vet passport
+                      updated_at: "2026-10-24T12:00:00Z"
+        "422":
+          description: Unknown pet reference — a pet_id is not in the caller's household.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_pet_id
+                  message: Unknown pet reference
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: deleteDocument
+      summary: Delete a document
+      description: Deletes a document record and its pet links and records a tombstone for sync. Requires a valid Bearer access token.
+      tags:
+        - Documents
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Document deleted.
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/documents/{id}/upload-url:
+    post:
+      operationId: getDocumentUploadUrl
+      summary: Mint a document upload URL
+      description: |
+        Returns a short-lived presigned URL the client PUTs the bytes to,
+        then calls POST /api/v1/documents/{id}/confirm. Without a configured
+        blob store the server returns 503 `blob_not_configured`. Requires a
+        valid Bearer access token.
+      tags:
+        - Documents
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Presigned upload URL with expiry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentUploadResponse"
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "404":
+          description: Document not found in the caller's household.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: not_found
+                  message: Document not found
+        "503":
+          description: No blob store is configured on the server.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: blob_not_configured
+                  message: Document uploads are not configured
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/documents/{id}/confirm:
+    post:
+      operationId: confirmDocumentUpload
+      summary: Confirm a document upload
+      description: |
+        Marks the document `ready=true` after the client PUT the bytes to
+        the presigned URL. When the bytes are absent at the blob key the
+        server returns 409 `upload_incomplete` and keeps `ready=false`.
+        Requires a valid Bearer access token.
+      tags:
+        - Documents
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Upload confirmed — the document with ready=true.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Document"
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "404":
+          description: Document not found in the caller's household.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: not_found
+                  message: Document not found
+        "409":
+          description: No bytes at the blob key yet — upload first, then confirm again.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: upload_incomplete
+                  message: Upload has not completed yet
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/documents/{id}/download-url:
+    get:
+      operationId: getDocumentDownloadUrl
+      summary: Mint a document download URL
+      description: |
+        Returns a short-lived presigned URL the client GETs the bytes from.
+        A missing document and a not-yet-ready (`ready=false`) document are
+        indistinguishable: both are 404 `not_found`. Without a configured
+        blob store the server returns 503 `blob_not_configured`. Requires a
+        valid Bearer access token.
+      tags:
+        - Documents
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Presigned download URL with expiry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentDownloadResponse"
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
+        "404":
+          description: Document missing or not ready (indistinguishable).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: not_found
+                  message: Document not found
+        "503":
+          description: No blob store is configured on the server.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: blob_not_configured
+                  message: Document downloads are not configured
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/deletions:
+    get:
+      operationId: listDeletions
+      summary: List tombstones
+      description: |
+        Returns the caller's household tombstones (`resource`, `record_id`,
+        `deleted_at`) with an opaque `cursor` so devices converge on deletes.
+        Requires a valid Bearer access token.
+      tags:
+        - Sync
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: deleted_since
+          in: query
+          required: false
+          description: |
+            RFC 3339 timestamp; only tombstones deleted after it are returned.
+            Malformed values are rejected with 400 `invalid_body`.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Household tombstones with sync cursor.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeletionList"
+        "400":
+          description: Malformed deleted_since timestamp.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: invalid_body
+                  message: Invalid deleted_since timestamp
+        "401":
+          description: Missing or invalid access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: unauthorized
+                  message: Invalid or expired access token
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -1557,13 +2911,623 @@ components:
           type: string
           description: 64-hex-char invitation token (only its SHA-256 hash is stored).
 
-    RemoveMemberRequest:
+    # ---------- Shunik v1 domain (pets, events, intakes, documents, sync) ----------
+
+    Pet:
       type: object
-      description: Membership removal (any member, including self).
+      description: One pet in the caller's household.
       required:
-        - user_id
+        - id
+        - name
+        - species
+        - created_at
+        - updated_at
+        - updated_by
       properties:
-        user_id:
+        id:
           type: string
           format: uuid
-          description: Member to remove; must belong to the caller's household.
+          description: Client-generated pet ID (UUID v7).
+        name:
+          type: string
+          description: Display name.
+          example: Barsik
+        species:
+          type: string
+          description: Species label (e.g. dog, cat).
+          example: cat
+        birthdate:
+          type: string
+          format: date
+          nullable: true
+          description: Birth date (YYYY-MM-DD), when known.
+        notes:
+          type: string
+          description: Free-form notes.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+          description: LWW clock for guarded updates (echo as base_updated_at).
+        updated_by:
+          type: string
+          description: User ID of the actor of the last write.
+
+    PetInput:
+      type: object
+      description: Create shape for a pet; id is always client-generated.
+      required:
+        - id
+        - name
+        - species
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Barsik
+        species:
+          type: string
+          example: cat
+        birthdate:
+          type: string
+          format: date
+          description: Birth date (YYYY-MM-DD), when known.
+        notes:
+          type: string
+
+    PetUpdate:
+      type: object
+      description: Guarded full-shape update for a pet.
+      required:
+        - base_updated_at
+        - name
+        - species
+      properties:
+        base_updated_at:
+          type: string
+          format: date-time
+          description: Must equal the stored updated_at; stale values yield 409 conflict.
+        name:
+          type: string
+        species:
+          type: string
+        birthdate:
+          type: string
+          format: date
+          nullable: true
+        notes:
+          type: string
+
+    PetList:
+      type: object
+      description: Household pets with an opaque sync cursor.
+      required:
+        - pets
+        - cursor
+      properties:
+        pets:
+          type: array
+          items:
+            $ref: "#/components/schemas/Pet"
+        cursor:
+          type: string
+          description: Opaque pagination cursor; empty when there is nothing newer.
+
+    VaccDetail:
+      type: object
+      description: Vaccination kind detail.
+      required:
+        - vaccine
+      properties:
+        vaccine:
+          type: string
+          description: Vaccine name.
+          example: Rabies
+        batch:
+          type: string
+        vet:
+          type: string
+        notes:
+          type: string
+
+    GroomDetail:
+      type: object
+      description: Grooming kind detail.
+      required:
+        - service
+      properties:
+        service:
+          type: string
+          description: Grooming service performed.
+          example: Full groom
+        place:
+          type: string
+        notes:
+          type: string
+
+    WeightDetail:
+      type: object
+      description: Weight point kind detail.
+      required:
+        - grams
+      properties:
+        grams:
+          type: integer
+          minimum: 1
+          description: Weight in grams.
+          example: 4200
+
+    MedCourse:
+      type: object
+      description: Medication course kind detail (child intakes live in med_intakes).
+      required:
+        - drug_name
+        - dose_amount
+        - dose_unit
+        - schedule_kind
+      properties:
+        drug_name:
+          type: string
+          example: Apoquel
+        dose_amount:
+          type: string
+          example: "16"
+        dose_unit:
+          type: string
+          example: mg
+        route:
+          type: string
+          description: Administration route (default oral).
+          example: oral
+        schedule_kind:
+          type: string
+          enum: [daily, weekdays, prn]
+        schedule_times:
+          type: string
+          description: Daily dose times payload.
+        schedule_weekdays:
+          type: string
+          description: Weekday selection payload for the weekdays schedule.
+        duration_days:
+          type: integer
+          minimum: 0
+        ends_on:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: string
+          enum: [active, paused, done, stopped]
+          example: active
+        instructions:
+          type: string
+        info_ref:
+          type: string
+
+    EventDetail:
+      type: object
+      description: |
+        Exactly one member is present, matching the base row's kind:
+        vaccination -> VaccDetail, grooming -> GroomDetail, weight ->
+        WeightDetail, med_course -> MedCourse. Clients ignore unknown
+        members but still list the base row.
+      properties:
+        vaccination:
+          $ref: "#/components/schemas/VaccDetail"
+        grooming:
+          $ref: "#/components/schemas/GroomDetail"
+        weight:
+          $ref: "#/components/schemas/WeightDetail"
+        course:
+          $ref: "#/components/schemas/MedCourse"
+
+    Event:
+      type: object
+      description: One timeline row with its kind detail joined.
+      required:
+        - id
+        - pet_id
+        - kind
+        - occurred_at
+        - title
+        - detail
+        - created_at
+        - updated_at
+        - updated_by
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Client-generated event ID (UUID v7).
+        pet_id:
+          type: string
+          format: uuid
+          description: Owning pet; immutable after creation.
+        kind:
+          type: string
+          enum: [vaccination, grooming, weight, med_course]
+        occurred_at:
+          type: string
+          format: date-time
+        next_due_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Next due date (vaccination/grooming reminders).
+        title:
+          type: string
+        detail:
+          $ref: "#/components/schemas/EventDetail"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+          description: LWW clock for the whole event (detail writes touch it); echo as base_updated_at.
+        updated_by:
+          type: string
+          description: User ID of the actor of the last write.
+
+    EventInput:
+      type: object
+      description: Create shape for an event with exactly one kind detail.
+      required:
+        - id
+        - pet_id
+        - kind
+        - occurred_at
+        - title
+        - detail
+      properties:
+        id:
+          type: string
+          format: uuid
+        pet_id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [vaccination, grooming, weight, med_course]
+        occurred_at:
+          type: string
+          format: date-time
+        next_due_at:
+          type: string
+          format: date-time
+        title:
+          type: string
+        detail:
+          $ref: "#/components/schemas/EventDetail"
+
+    EventUpdate:
+      type: object
+      description: Guarded full-shape update for an event (pet_id/kind immutable).
+      required:
+        - base_updated_at
+        - kind
+        - occurred_at
+        - title
+        - detail
+      properties:
+        base_updated_at:
+          type: string
+          format: date-time
+          description: Must equal the stored base updated_at; stale values yield 409 conflict.
+        kind:
+          type: string
+          enum: [vaccination, grooming, weight, med_course]
+          description: Echoed; must match the existing row (kind changes are rejected).
+        occurred_at:
+          type: string
+          format: date-time
+        next_due_at:
+          type: string
+          format: date-time
+          nullable: true
+        title:
+          type: string
+        detail:
+          $ref: "#/components/schemas/EventDetail"
+
+    EventList:
+      type: object
+      description: Household events (details joined) with an opaque sync cursor.
+      required:
+        - events
+        - cursor
+      properties:
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/Event"
+        cursor:
+          type: string
+          description: Opaque pagination cursor; empty when there is nothing newer.
+
+    MedIntake:
+      type: object
+      description: One medication intake under a course.
+      required:
+        - id
+        - course_id
+        - status
+        - dose_snapshot
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Client-generated intake ID (UUID v7).
+        course_id:
+          type: string
+          format: uuid
+          description: Owning medication course (event id); immutable after creation.
+        due_at:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: string
+          enum: [pending, taken, missed, skipped]
+          example: pending
+        taken_at:
+          type: string
+          format: date-time
+          nullable: true
+        dose_snapshot:
+          type: string
+          description: Dose as administered (e.g. "16 mg").
+        note:
+          type: string
+        marked_by:
+          type: string
+          description: User ID that last marked the intake.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+          description: LWW clock for guarded updates (echo as base_updated_at).
+
+    IntakeInput:
+      type: object
+      description: Create shape for an intake; id is always client-generated.
+      required:
+        - id
+        - course_id
+        - dose_snapshot
+      properties:
+        id:
+          type: string
+          format: uuid
+        course_id:
+          type: string
+          format: uuid
+        due_at:
+          type: string
+          format: date-time
+        dose_snapshot:
+          type: string
+        note:
+          type: string
+
+    IntakeUpdate:
+      type: object
+      description: Guarded mark update for an intake; only base_updated_at is required.
+      required:
+        - base_updated_at
+      properties:
+        base_updated_at:
+          type: string
+          format: date-time
+          description: Must equal the stored updated_at; stale values yield 409 conflict.
+        status:
+          type: string
+          enum: [pending, taken, missed, skipped]
+        taken_at:
+          type: string
+          format: date-time
+          nullable: true
+        note:
+          type: string
+        dose_snapshot:
+          type: string
+
+    IntakeList:
+      type: object
+      description: Household intakes with an opaque sync cursor.
+      required:
+        - intakes
+        - cursor
+      properties:
+        intakes:
+          type: array
+          items:
+            $ref: "#/components/schemas/MedIntake"
+        cursor:
+          type: string
+          description: Opaque pagination cursor; empty when there is nothing newer.
+
+    Document:
+      type: object
+      description: |
+        Document metadata with pet links. Bytes never appear here — use the
+        presigned upload/download URLs.
+      required:
+        - id
+        - title
+        - mime
+        - size_bytes
+        - filename
+        - blob_key
+        - ready
+        - pet_ids
+        - created_at
+        - updated_at
+        - updated_by
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Client-generated document ID (UUID v7).
+        title:
+          type: string
+        mime:
+          type: string
+          example: application/pdf
+        size_bytes:
+          type: integer
+          minimum: 0
+        filename:
+          type: string
+        blob_key:
+          type: string
+          description: CDN key the client uploads to / downloads from.
+        ready:
+          type: boolean
+          description: True once confirm verified bytes at the blob key.
+        pet_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+          description: LWW clock for guarded updates (echo as base_updated_at).
+        updated_by:
+          type: string
+          description: User ID of the actor of the last write.
+
+    DocumentInput:
+      type: object
+      description: Create shape for a document record; id is always client-generated.
+      required:
+        - id
+        - title
+        - mime
+        - size_bytes
+        - filename
+        - pet_ids
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        mime:
+          type: string
+        size_bytes:
+          type: integer
+          minimum: 0
+        filename:
+          type: string
+        pet_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    DocumentUpdate:
+      type: object
+      description: Guarded update for a document; pet_ids replaces the link set.
+      required:
+        - base_updated_at
+      properties:
+        base_updated_at:
+          type: string
+          format: date-time
+          description: Must equal the stored updated_at; stale values yield 409 conflict.
+        title:
+          type: string
+        pet_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    DocumentList:
+      type: object
+      description: Document metadata with an opaque sync cursor (never bytes).
+      required:
+        - documents
+        - cursor
+      properties:
+        documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/Document"
+        cursor:
+          type: string
+          description: Opaque pagination cursor; empty when there is nothing newer.
+
+    DocumentUploadResponse:
+      type: object
+      description: Short-lived presigned URL for the client PUT.
+      required:
+        - upload_url
+        - expires_at
+      properties:
+        upload_url:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
+
+    DocumentDownloadResponse:
+      type: object
+      description: Short-lived presigned URL for the client GET.
+      required:
+        - download_url
+        - expires_at
+      properties:
+        download_url:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
+
+    Deletion:
+      type: object
+      description: One tombstone in the caller's household.
+      required:
+        - resource
+        - record_id
+        - deleted_at
+      properties:
+        resource:
+          type: string
+          enum: [pets, events, intakes, documents]
+        record_id:
+          type: string
+          format: uuid
+        deleted_at:
+          type: string
+          format: date-time
+
+    DeletionList:
+      type: object
+      description: Household tombstones with an opaque sync cursor.
+      required:
+        - deletions
+        - cursor
+      properties:
+        deletions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Deletion"
+        cursor:
+          type: string
+          description: Opaque pagination cursor; empty when there is nothing newer.

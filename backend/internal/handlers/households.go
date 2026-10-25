@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/antonkosenko/shunik/backend/internal/db"
 	"github.com/antonkosenko/shunik/backend/internal/email"
 )
@@ -26,10 +28,6 @@ type createInviteReq struct {
 
 type acceptInviteReq struct {
 	Token string `json:"token"`
-}
-
-type removeMemberReq struct {
-	UserID string `json:"user_id"`
 }
 
 // sha256Hex digests a token for persistence (R1: only hashes at rest).
@@ -191,7 +189,7 @@ func (h *Handler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// RemoveMember handles DELETE /api/v1/households/members: removes one
+// RemoveMember handles DELETE /api/v1/households/members/{userID}: removes one
 // membership (any member may remove any member, including self — leaving
 // ends the household for the leaver). The removed user's refresh tokens
 // are revoked BEFORE the membership row goes: a failed removal leaves a
@@ -205,12 +203,11 @@ func (h *Handler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req removeMemberReq
-	if err := decodeJSON(r, &req); err != nil || strings.TrimSpace(req.UserID) == "" {
+	target := strings.TrimSpace(chi.URLParam(r, "userID"))
+	if target == "" {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Invalid request body", nil)
 		return
 	}
-	target := strings.TrimSpace(req.UserID)
 
 	household, err := h.store.GetHouseholdForUser(ctx, userID)
 	if err != nil {

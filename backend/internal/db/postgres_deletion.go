@@ -453,6 +453,14 @@ func (s *PostgresStore) purgeUserOnce(ctx context.Context, userID, clientID stri
 		}
 	}
 
+	// Capture the households the purged user belonged to BEFORE memberships
+	// disappear: households left with zero members are removed below (their
+	// rows cascade domain metadata; document bytes are reported as orphans).
+	householdIDs, err := pgHouseholdsOfUserTx(ctx, tx, userID)
+	if err != nil {
+		return res, err
+	}
+
 	// Explicit ordered child deletes (auditable against the schema; no
 	// reliance on FK cascades or the SQLite pragma).
 	for _, stmt := range []struct {
@@ -471,6 +479,10 @@ func (s *PostgresStore) purgeUserOnce(ctx context.Context, userID, clientID stri
 		}
 	}
 
+	if err := pgPurgeEmptyHouseholds(ctx, tx, householdIDs, &res); err != nil {
+		return res, err
+	}
+
 	if _, err := tx.Exec(ctx, `DELETE FROM users WHERE id = $1`, userID); err != nil {
 		return res, fmt.Errorf("purge user account: %w", err)
 	}
@@ -479,6 +491,71 @@ func (s *PostgresStore) purgeUserOnce(ctx context.Context, userID, clientID stri
 		return res, fmt.Errorf("purge user: %w", err)
 	}
 	return res, nil
+}
+
+// pgHouseholdsOfUserTx lists the households a user belongs to, in-txn.
+func pgHouseholdsOfUserTx(ctx context.Context, tx pgx.Tx, userID string) ([]string, error) {
+	rows, err := tx.Query(ctx, `SELECT household_id FROM household_members WHERE user_id = $1`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("purge user households: %w", err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var hid string
+		if err := rows.Scan(&hid); err != nil {
+			return nil, fmt.Errorf("purge user households scan: %w", err)
+		}
+		ids = append(ids, hid)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("purge user households rows: %w", err)
+	}
+	return ids, nil
+}
+
+// pgPurgeEmptyHouseholds removes every given household left with zero
+// members: its documents' blob keys are collected into res.OrphanedBlobKeys
+// (bytes are the caller's best-effort job, never a purge failure), then the
+// household row is deleted and cascades domain metadata. Households that
+// still have members are untouched — data and tombstones stay converged for
+// the survivors.
+func pgPurgeEmptyHouseholds(ctx context.Context, tx pgx.Tx, householdIDs []string, res *PurgeResult) error {
+	for _, hid := range householdIDs {
+		var remaining int
+		if err := tx.QueryRow(ctx, `
+			SELECT COUNT(*) FROM household_members WHERE household_id = $1
+		`, hid).Scan(&remaining); err != nil {
+			return fmt.Errorf("purge user household census: %w", err)
+		}
+		if remaining > 0 {
+			continue
+		}
+		rows, err := tx.Query(ctx, `
+			SELECT blob_key FROM documents WHERE household_id = $1
+		`, hid)
+		if err != nil {
+			return fmt.Errorf("purge user orphaned blob keys: %w", err)
+		}
+		for rows.Next() {
+			var key string
+			if err := rows.Scan(&key); err != nil {
+				rows.Close()
+				return fmt.Errorf("purge user orphaned blob keys scan: %w", err)
+			}
+			if key != "" {
+				res.OrphanedBlobKeys = append(res.OrphanedBlobKeys, key)
+			}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("purge user orphaned blob keys rows: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM households WHERE id = $1`, hid); err != nil {
+			return fmt.Errorf("purge user empty household: %w", err)
+		}
+	}
+	return nil
 }
 
 // HasPendingAppleRevocation reports whether a durable revocation job is
